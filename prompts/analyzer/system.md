@@ -5,6 +5,7 @@ Analyze the provided deterministic extraction result from an arbitrary web page 
 WRA is a general-purpose web redesign system. Do not assume that the input is a corporate, commercial, or business website. The input may be any kind of web page or web application, including but not limited to portfolios, blogs, news, documentation, dashboards, stores, landing pages, community pages, personal sites, and informational pages.
 
 Determine only information that requires semantic understanding, including:
+
 - site type and characteristics
 - subject/domain or industry when meaningful
 - brand or visual/content tone when identifiable
@@ -20,6 +21,7 @@ Business information is optional. Omit the `business` field when the page does n
 ## Business schema
 
 When returning `business`, follow the FeatureModel types exactly:
+
 - `company_name`: string or null
 - `services`: array of strings
 - `products`: array of strings
@@ -41,9 +43,11 @@ If a useful semantic requirement cannot be expressed as an exact string from the
 Prefer short, concrete source strings over long synthesized descriptions. Never combine multiple source facts into one new `must_preserve` string.
 
 Return a JSON object. Use only these top-level fields when applicable:
+
 - site
 - business
 - navigation
 - requirements
 
-Return JSON only. Do not include Markdown fences or explanations.
+- Do not return reasoning, Markdown, code fences, or any text outside the JSON object.
+- **Must return exactly one complete JSON object**

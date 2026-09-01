@@ -130,4 +130,4 @@ Return:
 ## [ RULES ]
 
 - Do not return reasoning, Markdown, code fences, or any text outside the JSON object.
-- **Must return exactly one complete JSON object conforming to the DesignSpec schema**
+- **Must return exactly one complete JSON object conforming to the Output schema**
