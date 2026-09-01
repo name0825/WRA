@@ -167,3 +167,19 @@ def test_analyzer_rejects_invalid_llm_json() -> None:
         assert str(exc) == "Analyzer LLM returned invalid JSON"
     else:
         raise AssertionError("Expected invalid JSON to raise ValueError")
+
+
+def test_analyzer_accepts_markdown_wrapped_json() -> None:
+    llm = FakeLLMClient(response='```json\n{"site": {"type": "portfolio"}}\n```')
+
+    features = HTMLAnalyzer(llm_client=llm, analyzer_model="test-model").analyze(HTML)
+
+    assert features.site.type == "portfolio"
+
+
+def test_analyzer_accepts_prose_around_json() -> None:
+    llm = FakeLLMClient(response='Here is the analysis:\n{"site": {"type": "portfolio"}}\nEnd.')
+
+    features = HTMLAnalyzer(llm_client=llm, analyzer_model="test-model").analyze(HTML)
+
+    assert features.site.type == "portfolio"

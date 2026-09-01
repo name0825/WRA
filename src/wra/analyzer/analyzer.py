@@ -14,6 +14,7 @@ from wra.analyzer.extractor import (
 from wra.analyzer.html_parser import parse_html
 from wra.core.models import BusinessInfo, FeatureModel, ModelSpec, Requirements, Site
 from wra.llm.client import LLMClient
+from wra.llm.response import normalize_json_response
 
 logger = logging.getLogger(__name__)
 
@@ -80,10 +81,11 @@ class HTMLAnalyzer:
 
     @staticmethod
     def _parse_semantic_response(response: str) -> dict[str, Any]:
+        normalized_response = normalize_json_response(response)
         try:
-            data = json.loads(response)
+            data = json.loads(normalized_response)
         except json.JSONDecodeError as exc:
-            logger.error("Analyzer JSON parsing failed: response_chars=%d", len(response))
+            logger.error("Analyzer JSON parsing failed: response_chars=%d normalized_chars=%d", len(response), len(normalized_response))
             logger.debug("Analyzer invalid raw response: %s", response)
             raise ValueError("Analyzer LLM returned invalid JSON") from exc
         if not isinstance(data, dict):

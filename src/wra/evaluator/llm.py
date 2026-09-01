@@ -1,12 +1,12 @@
 import json
 import logging
-import re
 from pathlib import Path
 
 from wra.browser.models import BrowserEvaluationResult
 from wra.core.models import EvaluationResult, FeatureModel
 from wra.designer.schema import DesignSpec
 from wra.llm.client import LLMClient
+from wra.llm.response import normalize_json_response
 
 logger = logging.getLogger(__name__)
 
@@ -14,23 +14,12 @@ logger = logging.getLogger(__name__)
 class LLMEvaluator:
     """Evaluate generated pages using structured LLM and browser evidence."""
 
-    _JSON_FENCE_RE = re.compile(r"^```(?:json)?\s*(.*?)\s*```$", re.IGNORECASE | re.DOTALL)
-
     def __init__(self, llm_client: LLMClient, model: str, think: bool | None = None, timeout: float | None = None) -> None:
         self._llm_client = llm_client
         self._model = model
         self._think = think
         self._timeout = timeout
         self._system_prompt = Path("prompts/evaluator/llm.md").read_text(encoding="utf-8")
-
-    @classmethod
-    def _normalize_json_response(cls, response: str) -> str:
-        """Normalize common Markdown-wrapped JSON responses from LLMs."""
-        normalized = response.strip()
-        match = cls._JSON_FENCE_RE.match(normalized)
-        if match:
-            normalized = match.group(1).strip()
-        return normalized
 
     def evaluate(self, features: FeatureModel, design_spec: DesignSpec, html: str, browser_result: BrowserEvaluationResult | None = None, model: str | None = None, think: bool | None = None, timeout: float | None = None) -> EvaluationResult:
         selected_model = model or self._model
@@ -52,9 +41,9 @@ class LLMEvaluator:
         prompt = f"{self._system_prompt}\n\nINPUT:\n{json.dumps(payload, ensure_ascii=False)}"
         try:
             response = self._llm_client.generate(prompt=prompt, model=selected_model, options={"format": "json"}, images=screenshot_paths or None, think=selected_think, timeout=selected_timeout)
-            normalized_response = self._normalize_json_response(response)
+            normalized_response = normalize_json_response(response)
             if normalized_response != response.strip():
-                logger.debug("Normalized Markdown-wrapped evaluator JSON response")
+                logger.debug("Normalized evaluator JSON response: raw_chars=%d normalized_chars=%d", len(response), len(normalized_response))
             result = EvaluationResult.model_validate_json(normalized_response)
         except Exception:
             logger.exception("Evaluation failed: model=%s", selected_model)

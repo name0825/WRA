@@ -17,6 +17,7 @@ from wra.designer.recovery import (
 )
 from wra.designer.schema import DesignSpec
 from wra.llm.client import LLMClient
+from wra.llm.response import normalize_json_response
 from wra.validator.design import validate_design_spec
 
 logger = logging.getLogger(__name__)
@@ -248,12 +249,11 @@ class DesignPlanner:
 
     @staticmethod
     def _parse_response(response: str) -> DesignSpec:
-        text = response.lstrip("\ufeff").strip()
-        text = re.sub(r"<think>.*?</think>", "", text, flags=re.IGNORECASE | re.DOTALL).strip()
-        text = re.sub(r"<think>.*$", "", text, flags=re.IGNORECASE | re.DOTALL).strip()
+        text = normalize_json_response(response)
 
         candidates: list[str] = [text]
-        candidates.extend(match.strip() for match in re.findall(r"```(?:json)?\s*(.*?)\s*```", text, flags=re.IGNORECASE | re.DOTALL))
+        if text != response.strip():
+            candidates.append(response.strip())
 
         decoder = json.JSONDecoder()
         truncated_detected = False
