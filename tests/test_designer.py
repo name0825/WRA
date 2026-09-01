@@ -131,6 +131,24 @@ def test_invalid_json_revises_previous_response():
     assert "DesignSpec required structure:" in client.calls[1]["prompt"]
 
 
+def test_parse_response_accepts_reasoning_and_markdown_wrappers():
+    payload = json.dumps(make_design_spec())
+    response = f"<think>Let me reason about the design first.</think>\n```json\n{payload}\n```"
+
+    result = DesignPlanner._parse_response(response)
+
+    assert result.design.concept == "Editorial Minimal"
+
+
+def test_parse_response_accepts_prose_around_json():
+    payload = json.dumps(make_design_spec())
+    response = f"Here is the DesignSpec:\n{payload}\nDone."
+
+    result = DesignPlanner._parse_response(response)
+
+    assert result.design.concept == "Editorial Minimal"
+
+
 def test_invalid_json_recovery_does_not_duplicate_original_prompt():
     prompt = "Feature Model: " + ("x" * 30000)
     previous = "{" + ("y" * 12000)

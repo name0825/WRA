@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 from pathlib import Path
 from typing import Any
 
@@ -121,13 +122,50 @@ class DesignPlanner:
 
     @staticmethod
     def _parse_response(response: str) -> DesignSpec:
-        try:
-            data = json.loads(response)
-        except json.JSONDecodeError as exc:
-            raise ValueError("Designer LLM returned invalid JSON") from exc
-        if not isinstance(data, dict):
-            raise ValueError("Designer LLM response must be a JSON object")
-        try:
-            return DesignSpec.model_validate(data)
-        except Exception as exc:
-            raise ValueError("Designer LLM response does not match DesignSpec") from exc
+        """Parse a DesignSpec from an LLM response.
+
+        Ollama's JSON mode does not guarantee that every local model emits a
+        parser-ready bare JSON object. Reasoning-capable models may still wrap
+        the object in <think>...</think> and/or Markdown code fences. Accept
+        those harmless wrappers, while keeping DesignSpec validation strict.
+        """
+        text = response.lstrip("\ufeff").strip()
+        text = re.sub(r"<think>.*?</think>", "", text, flags=re.IGNORECASE | re.DOTALL).strip()
+        text = re.sub(r"<think>.*$", "", text, flags=re.IGNORECASE | re.DOTALL).strip()
+
+        candidates: list[str] = [text]
+        candidates.extend(
+            match.strip()
+            for match in re.findall(r"```(?:json)?\s*(.*?)\s*```", text, flags=re.IGNORECASE | re.DOTALL)
+        )
+
+        decoder = json.JSONDecoder()
+        for candidate in candidates:
+            try:
+                data = json.loads(candidate)
+            except json.JSONDecodeError:
+                data = None
+
+            if isinstance(data, dict):
+                try:
+                    return DesignSpec.model_validate(data)
+                except Exception as exc:
+                    raise ValueError("Designer LLM response does not match DesignSpec") from exc
+
+            # Last-resort extraction for prose before/after an otherwise valid
+            # JSON object. raw_decode preserves nested braces and quoted text.
+            for index, char in enumerate(candidate):
+                if char != "{":
+                    continue
+                try:
+                    data, _ = decoder.raw_decode(candidate[index:])
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(data, dict):
+                    continue
+                try:
+                    return DesignSpec.model_validate(data)
+                except Exception as exc:
+                    raise ValueError("Designer LLM response does not match DesignSpec") from exc
+
+        raise ValueError("Designer LLM returned invalid JSON")
