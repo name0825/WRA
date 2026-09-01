@@ -52,7 +52,7 @@ def main() -> None:
 
     analyzer_model = ModelSelector.select(config.models.analyzer, "analyzer")
     analyzer = HTMLAnalyzer(llm_client=llm_client, analyzer_model=analyzer_model.name, analyzer_think=analyzer_model.think, analyzer_timeout=analyzer_model.timeout)
-    designer = DesignPlanner(llm_client=llm_client, designer_model="", recovery_policy=design_recovery_policy)
+    designer = DesignPlanner(llm_client=llm_client, designer_model="", frameworks=config.frameworks, recovery_policy=design_recovery_policy)
     generator = HTMLGenerator(llm_client=llm_client, generator_model="", frameworks=config.frameworks, recovery_policy=generator_recovery_policy)
     evaluator = LLMEvaluator(llm_client=llm_client, model="")
     browser_evaluator = BrowserEvaluator(config.browser) if config.browser.enabled else None
