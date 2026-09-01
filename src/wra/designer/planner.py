@@ -3,22 +3,35 @@ from pathlib import Path
 from typing import Any
 
 from wra.core.models import FeatureModel
+from wra.designer.recovery import (
+    DesignRecoveryError,
+    RecoveryPolicy,
+    RecoveryStrategy,
+    build_recovery_prompt,
+    classify_exception,
+    strategy_for,
+)
 from wra.designer.schema import DesignSpec
 from wra.llm.client import LLMClient
+from wra.validator.design import validate_design_spec
 
 
 class DesignPlanner:
-    """Create a structured design plan from a generic web FeatureModel."""
+    """Create and recover a structured design plan from a generic web FeatureModel."""
 
     def __init__(
         self,
         llm_client: LLMClient,
         designer_model: str,
         prompt_path: str | Path = "prompts/designer/system.md",
+        revision_prompt_path: str | Path = "prompts/designer/revision.md",
+        recovery_policy: RecoveryPolicy | None = None,
     ) -> None:
         self._llm_client = llm_client
         self._designer_model = designer_model
         self._prompt_path = Path(prompt_path)
+        self._revision_prompt_path = Path(revision_prompt_path)
+        self._recovery_policy = recovery_policy or RecoveryPolicy()
 
     def plan(
         self,
@@ -27,7 +40,8 @@ class DesignPlanner:
         generation_rules: list[str] | None = None,
     ) -> DesignSpec:
         prompt_template = self._prompt_path.read_text(encoding="utf-8")
-        prompt = (
+        revision_template = self._revision_prompt_path.read_text(encoding="utf-8")
+        original_prompt = (
             f"{prompt_template}\n\n"
             "Feature Model:\n"
             f"{features.model_dump_json(indent=2)}\n\n"
@@ -37,12 +51,79 @@ class DesignPlanner:
             f"{json.dumps(generation_rules or [], ensure_ascii=False, indent=2)}"
         )
 
-        response = self._llm_client.generate(
-            prompt=prompt,
-            model=self._designer_model,
-            options={"format": "json"},
+        current_num_ctx = self._recovery_policy.initial_num_ctx
+        previous_response: str | None = None
+        prompt = original_prompt
+        last_error = DesignRecoveryError.UNKNOWN
+        last_details: list[str] = []
+
+        for retry in range(self._recovery_policy.max_retries + 1):
+            try:
+                response = self._llm_client.generate(
+                    prompt=prompt,
+                    model=self._designer_model,
+                    options={"format": "json", "num_ctx": current_num_ctx},
+                )
+                previous_response = response
+                spec = self._parse_response(response)
+                validation = validate_design_spec(spec, features)
+                if not validation.valid:
+                    last_error = DesignRecoveryError.INVALID_DESIGN
+                    last_details = validation.errors
+                    strategy = strategy_for(last_error)
+                else:
+                    return spec
+            except ValueError as exc:
+                last_error = self._classify_parse_error(exc)
+                last_details = [str(exc)]
+                strategy = strategy_for(last_error)
+            except Exception as exc:
+                last_error = classify_exception(exc)
+                last_details = [str(exc)]
+                strategy = strategy_for(last_error)
+
+            if retry >= self._recovery_policy.max_retries:
+                break
+
+            if strategy is RecoveryStrategy.INCREASE_CONTEXT:
+                next_num_ctx = self._recovery_policy.next_num_ctx(current_num_ctx)
+                if next_num_ctx != current_num_ctx:
+                    current_num_ctx = next_num_ctx
+                    prompt = build_recovery_prompt(
+                        original_prompt,
+                        previous_response,
+                        last_error,
+                        last_details,
+                        revision_template,
+                    )
+                    continue
+                strategy = RecoveryStrategy.REGENERATE
+
+            if strategy is RecoveryStrategy.REVISE_RESPONSE:
+                prompt = build_recovery_prompt(
+                    original_prompt,
+                    previous_response,
+                    last_error,
+                    last_details,
+                    revision_template,
+                )
+            else:
+                prompt = original_prompt
+                previous_response = None
+
+        raise RuntimeError(
+            f"Design planning failed after {self._recovery_policy.max_retries} retries: "
+            f"{last_error.value}; {', '.join(last_details)}"
         )
-        return self._parse_response(response)
+
+    @staticmethod
+    def _classify_parse_error(exc: ValueError) -> DesignRecoveryError:
+        message = str(exc).lower()
+        if "invalid json" in message:
+            return DesignRecoveryError.JSON_STRUCTURE
+        if "does not match designspec" in message:
+            return DesignRecoveryError.INVALID_CONTENT
+        return DesignRecoveryError.UNKNOWN
 
     @staticmethod
     def _parse_response(response: str) -> DesignSpec:

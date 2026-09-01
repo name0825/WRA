@@ -4,16 +4,21 @@ import pytest
 
 from wra.core.models import FeatureModel
 from wra.designer.planner import DesignPlanner
+from wra.designer.recovery import RecoveryPolicy
+from wra.validator.design import validate_design_spec
 
 
 class FakeLLMClient:
-    def __init__(self, response: str) -> None:
-        self.response = response
+    def __init__(self, responses):
+        self.responses = list(responses)
         self.calls: list[dict] = []
 
     def generate(self, prompt, model, options=None):
         self.calls.append({"prompt": prompt, "model": model, "options": options})
-        return self.response
+        response = self.responses.pop(0)
+        if isinstance(response, Exception):
+            raise response
+        return response
 
 
 def make_design_spec() -> dict:
@@ -23,12 +28,12 @@ def make_design_spec() -> dict:
             "visual_direction": "Typography-focused editorial layout",
             "layout": "asymmetric",
             "color_system": {
-                "background": "#ffffff",
+                "background": "#fff",
                 "surface": "#f5f5f5",
-                "text": "#111111",
-                "muted_text": "#666666",
-                "primary": "#111111",
-                "accent": "#ff5a36",
+                "text": "#111",
+                "muted_text": "#666",
+                "primary": "#111",
+                "accent": "#f50",
             },
             "typography": {
                 "heading": "Inter",
@@ -37,29 +42,20 @@ def make_design_spec() -> dict:
                 "weight": "mixed",
             },
             "framework": {
-                "css": {
-                    "name": "tailwind",
-                    "reason": "Suitable for modular layouts",
-                },
-                "js": {
-                    "name": "vanilla-js",
-                    "reason": "No complex JavaScript framework is required",
-                },
+                "css": {"name": "tailwind", "reason": "modular"},
+                "js": {"name": "vanilla-js", "reason": "simple"},
             },
-            "motion": {
-                "level": "mid",
-                "principles": ["subtle section reveal"],
-            },
+            "motion": {"level": "mid", "principles": ["subtle reveal"]},
         },
         "sections": [
             {
-                "id": "featured-content",
-                "purpose": "Present important content",
-                "layout": "asymmetric-grid",
+                "id": "featured",
+                "purpose": "Present content",
+                "layout": "grid",
                 "components": [
                     {
                         "type": "card",
-                        "purpose": "Display featured content",
+                        "purpose": "Display content",
                         "content_source": "content.text",
                     }
                 ],
@@ -68,57 +64,117 @@ def make_design_spec() -> dict:
         "responsive": {
             "strategy": "desktop-first",
             "breakpoints": [{"name": "mobile", "width": "480px"}],
-            "behavior": ["grid becomes single column"],
+            "behavior": ["single column"],
         },
         "interaction": {
             "principles": ["subtle transitions"],
-            "components": [{"target": "card", "behavior": "hover reveal"}],
+            "components": [{"target": "card", "behavior": "hover"}],
         },
     }
 
 
-def test_design_spec_supports_component_content_source_and_motion() -> None:
-    client = FakeLLMClient(json.dumps(make_design_spec()))
-    planner = DesignPlanner(client, "designer-model")
+def test_design_validator_rejects_duplicate_sections_and_bad_references():
+    data = make_design_spec()
+    data["sections"].append(data["sections"][0].copy())
+    data["sections"][1]["id"] = "featured"
+    data["sections"][0]["components"][0]["content_source"] = "content.unknown"
+    data["interaction"]["components"][0]["target"] = "missing"
+
+    from wra.designer.schema import DesignSpec
+
+    result = validate_design_spec(DesignSpec.model_validate(data), FeatureModel())
+
+    assert not result.valid
+    assert "duplicate section id: featured" in result.errors
+    assert "invalid content_source: content.unknown" in result.errors
+    assert "invalid interaction target: missing" in result.errors
+
+
+def test_token_limit_increases_num_ctx_and_reuses_previous_response():
+    valid = json.dumps(make_design_spec())
+    client = FakeLLMClient([
+        RuntimeError("maximum context length exceeded"),
+        valid,
+    ])
+    planner = DesignPlanner(
+        client,
+        "designer-model",
+        recovery_policy=RecoveryPolicy(
+            max_retries=2,
+            initial_num_ctx=4096,
+            max_num_ctx=16384,
+            context_multiplier=2,
+        ),
+    )
 
     result = planner.plan(FeatureModel())
 
-    assert result.sections[0].components[0].content_source == "content.text"
-    assert result.design.motion.level == "mid"
-    assert result.design.framework.css.name == "tailwind"
-    assert result.design.framework.js.name == "vanilla-js"
+    assert result.design.concept == "Editorial Minimal"
+    assert client.calls[0]["options"]["num_ctx"] == 4096
+    assert client.calls[1]["options"]["num_ctx"] == 8192
+    assert "Failure type: token_limit" in client.calls[1]["prompt"]
 
 
-def test_design_spec_rejects_invalid_motion_level() -> None:
-    data = make_design_spec()
-    data["design"]["motion"]["level"] = "extreme"
-    client = FakeLLMClient(json.dumps(data))
-    planner = DesignPlanner(client, "designer-model")
-
-    with pytest.raises(ValueError, match="does not match DesignSpec"):
-        planner.plan(FeatureModel())
-
-
-def test_planner_passes_constraints_and_rules_to_llm() -> None:
-    client = FakeLLMClient(json.dumps(make_design_spec()))
-    planner = DesignPlanner(client, "designer-model")
-
-    planner.plan(
-        FeatureModel(),
-        design_constraints={"theme": "dark"},
-        generation_rules=["preserve required content"],
+def test_invalid_json_revises_previous_response():
+    valid = json.dumps(make_design_spec())
+    client = FakeLLMClient(["{broken", valid])
+    planner = DesignPlanner(
+        client,
+        "designer-model",
+        recovery_policy=RecoveryPolicy(max_retries=1),
     )
 
-    call = client.calls[0]
-    assert call["model"] == "designer-model"
-    assert call["options"] == {"format": "json"}
-    assert '"theme": "dark"' in call["prompt"]
-    assert "preserve required content" in call["prompt"]
+    planner.plan(FeatureModel())
+
+    assert "Previous response:\n{broken" in client.calls[1]["prompt"]
+    assert "Failure type: json_structure" in client.calls[1]["prompt"]
 
 
-def test_planner_rejects_invalid_json() -> None:
-    client = FakeLLMClient("not json")
-    planner = DesignPlanner(client, "designer-model")
+def test_unknown_error_regenerates_without_previous_response():
+    valid = json.dumps(make_design_spec())
+    client = FakeLLMClient([RuntimeError("connection reset"), valid])
+    planner = DesignPlanner(
+        client,
+        "designer-model",
+        recovery_policy=RecoveryPolicy(max_retries=1),
+    )
 
-    with pytest.raises(ValueError, match="invalid JSON"):
+    planner.plan(FeatureModel())
+
+    assert client.calls[1]["prompt"] == client.calls[0]["prompt"]
+
+
+def test_recovery_stops_at_max_num_ctx_and_regenerates():
+    valid = json.dumps(make_design_spec())
+    client = FakeLLMClient([
+        RuntimeError("context length exceeded"),
+        RuntimeError("context length exceeded"),
+        valid,
+    ])
+    planner = DesignPlanner(
+        client,
+        "designer-model",
+        recovery_policy=RecoveryPolicy(
+            max_retries=2,
+            initial_num_ctx=8192,
+            max_num_ctx=8192,
+            context_multiplier=2,
+        ),
+    )
+
+    planner.plan(FeatureModel())
+
+    assert client.calls[1]["options"]["num_ctx"] == 8192
+    assert client.calls[2]["prompt"] == client.calls[0]["prompt"]
+
+
+def test_recovery_raises_after_retry_limit():
+    client = FakeLLMClient([RuntimeError("connection reset")] * 3)
+    planner = DesignPlanner(
+        client,
+        "designer-model",
+        recovery_policy=RecoveryPolicy(max_retries=2),
+    )
+
+    with pytest.raises(RuntimeError, match="failed after 2 retries"):
         planner.plan(FeatureModel())

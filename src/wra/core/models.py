@@ -23,12 +23,22 @@ class PipelineConfig(BaseModel):
     evaluation_threshold: float = 8.0
 
 
+class RecoveryConfig(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    max_retries: int = 3
+    initial_num_ctx: int = 8192
+    max_num_ctx: int = 32768
+    context_multiplier: float = 2.0
+
+
 class WRAConfig(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     ollama: OllamaConfig
     models: ModelConfig
     pipeline: PipelineConfig
+    recovery: RecoveryConfig = RecoveryConfig()
 
 
 class Metadata(BaseModel):
