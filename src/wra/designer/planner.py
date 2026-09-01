@@ -4,6 +4,8 @@ import re
 from pathlib import Path
 from typing import Any
 
+from pydantic import ValidationError
+
 from wra.core.models import EvaluationResult, FeatureModel, FrameworkConfig
 from wra.designer.recovery import (
     DesignRecoveryError,
@@ -92,7 +94,7 @@ class DesignPlanner:
                 logger.debug("Designer response received: chars=%d", len(response))
                 spec = self._parse_response(response)
                 logger.debug("DesignSpec JSON parsed successfully")
-                validation = validate_design_spec(spec, features)
+                validation = validate_design_spec(spec, features, self._frameworks)
                 if not validation.valid:
                     last_error = DesignRecoveryError.INVALID_DESIGN
                     last_details = validation.errors
@@ -154,10 +156,23 @@ class DesignPlanner:
         design_context = DesignPlanner._build_design_context(system_template, features, design_constraints, frameworks=frameworks)
         revision = revision_template.format(
             previous_design_spec=previous_design_spec.model_dump_json(indent=2),
-            previous_html=previous_html,
+            previous_html=DesignPlanner._revision_html_excerpt(previous_html),
             evaluation_result=evaluation.model_dump_json(indent=2),
         )
         return f"{design_context}\n\n{revision}"
+
+    @staticmethod
+    def _revision_html_excerpt(previous_html: str, max_chars: int = 12000) -> str:
+        """Keep revision context bounded while retaining both document edges."""
+        if len(previous_html) <= max_chars:
+            return previous_html
+        head_chars = max_chars // 2
+        tail_chars = max_chars - head_chars
+        return (
+            f"{previous_html[:head_chars]}\n\n"
+            f"<!-- WRA: previous HTML excerpt truncated by {len(previous_html) - max_chars} characters -->\n\n"
+            f"{previous_html[-tail_chars:]}"
+        )
 
     @staticmethod
     def _build_recovery_context(features: FeatureModel, design_constraints: dict[str, Any] | None, frameworks: FrameworkConfig | None = None) -> str:
@@ -214,7 +229,7 @@ class DesignPlanner:
         if "invalid json" in message:
             return DesignRecoveryError.JSON_STRUCTURE
         if "does not match designspec" in message:
-            return DesignRecoveryError.INVALID_CONTENT
+            return DesignRecoveryError.INVALID_DESIGN
         return DesignRecoveryError.UNKNOWN
 
     @staticmethod
@@ -253,8 +268,12 @@ class DesignPlanner:
             if isinstance(data, dict):
                 try:
                     return DesignSpec.model_validate(data)
-                except Exception as exc:
-                    raise ValueError("Designer LLM response does not match DesignSpec") from exc
+                except ValidationError as exc:
+                    detail = "; ".join(
+                        f"{'.'.join(map(str, error['loc']))}: {error['msg']}"
+                        for error in exc.errors()
+                    )
+                    raise ValueError(f"Designer LLM response does not match DesignSpec: {detail}") from exc
 
             start = candidate.find("{")
             if start < 0:
@@ -271,7 +290,7 @@ class DesignPlanner:
                 continue
             try:
                 return DesignSpec.model_validate(data)
-            except Exception:
+            except ValidationError:
                 continue
 
         if truncated_detected:
