@@ -2,6 +2,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from wra.browser.models import BrowserConfig
+
 
 class OllamaConfig(BaseModel):
     model_config = ConfigDict(frozen=True)
@@ -80,6 +82,7 @@ class WRAConfig(BaseModel):
     ollama: OllamaConfig
     models: ModelConfig
     evaluation: EvaluationConfig = EvaluationConfig()
+    browser: BrowserConfig = BrowserConfig()
     pipeline: PipelineConfig
     recovery: RecoveryConfig = RecoveryConfig()
     frameworks: FrameworkConfig = FrameworkConfig()

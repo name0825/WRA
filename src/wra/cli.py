@@ -4,6 +4,7 @@ from pathlib import Path
 import yaml
 
 from wra.analyzer.analyzer import HTMLAnalyzer
+from wra.browser.evaluator import BrowserEvaluator
 from wra.core.iteration import IterationEngine
 from wra.core.models import WRAConfig
 from wra.designer.planner import DesignPlanner
@@ -15,7 +16,6 @@ from wra.llm.ollama import OllamaClient
 from wra.utils.logging import configure_logging, get_logger
 
 logger = get_logger(__name__)
-
 INPUT_PATH = Path("input/input.html")
 OUTPUT_ROOT = Path("output")
 CONFIG_PATH = Path("config/config.yaml")
@@ -31,17 +31,14 @@ def create_run_directory() -> Path:
 def load_config() -> WRAConfig:
     if not CONFIG_PATH.is_file():
         raise FileNotFoundError(
-            f"Config file not found: {CONFIG_PATH}. "
-            "Copy config/config.yaml.sample to config/config.yaml first."
+            f"Config file not found: {CONFIG_PATH}. Copy config/config.yaml.sample to config/config.yaml first."
         )
-
     data = yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8")) or {}
     return WRAConfig.model_validate(data)
 
 
 def main() -> None:
     configure_logging()
-
     if not INPUT_PATH.is_file():
         raise FileNotFoundError(f"Input file not found: {INPUT_PATH}")
 
@@ -73,6 +70,7 @@ def main() -> None:
         recovery_policy=generator_recovery_policy,
     )
     evaluator = LLMEvaluator(llm_client=llm_client, model=config.evaluation.model)
+    browser_evaluator = BrowserEvaluator(config.browser) if config.browser.enabled else None
 
     run_dir = create_run_directory()
     engine = IterationEngine(
@@ -81,6 +79,7 @@ def main() -> None:
         designer=designer,
         generator=generator,
         evaluator=evaluator,
+        browser_evaluator=browser_evaluator,
     )
     result = engine.run(INPUT_PATH, run_dir)
 
@@ -91,6 +90,8 @@ def main() -> None:
             logger.error("HTML validation error: %s", error)
     for warning in result.validation.warnings:
         logger.warning("HTML validation warning: %s", warning)
+    if result.browser.enabled:
+        logger.info("Browser evaluation completed for %d viewport(s)", len(result.browser.viewports))
     if result.evaluation is not None:
         logger.info("Evaluation score: %.1f", result.evaluation.overall_score)
         logger.info("Evaluation summary: %s", result.evaluation.summary)

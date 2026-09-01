@@ -16,10 +16,12 @@ class OllamaClient(LLMClient):
         prompt: str,
         model: str,
         options: dict[str, Any] | None = None,
+        images: list[str | bytes] | None = None,
     ) -> str:
         response = self._client.generate(
             model=model,
             prompt=prompt,
             options=options,
+            images=images,
         )
         return response.response

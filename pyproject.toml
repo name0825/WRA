@@ -17,6 +17,9 @@ dependencies = [
 test = [
     "pytest",
 ]
+browser = [
+    "playwright",
+]
 
 [project.scripts]
 redesign = "wra.cli:main"
