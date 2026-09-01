@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 import logging
 
-from wra.core.models import FeatureModel
+from wra.core.models import FeatureModel, FrameworkConfig
 from wra.designer.schema import DesignSpec
 
 logger = logging.getLogger(__name__)
@@ -29,12 +29,67 @@ def _resolve_path(value: object, path: str) -> object | None:
     return current
 
 
-def validate_design_spec(spec: DesignSpec, features: FeatureModel) -> DesignValidationResult:
+def _is_no_framework(name: str) -> bool:
+    return name.strip().lower() in {"", "none", "vanilla", "vanilla css", "vanilla js", "vanilla javascript"}
+
+
+def _validate_frameworks(spec: DesignSpec, frameworks: FrameworkConfig, errors: list[str]) -> None:
+    css_name = spec.design.framework.css.name.strip()
+    if not _is_no_framework(css_name) and frameworks.find_css(css_name) is None:
+        errors.append(f"CSS framework is not configured: {css_name}")
+
+    js_name = spec.design.framework.js.name.strip()
+    if not _is_no_framework(js_name) and frameworks.find_js(js_name) is None:
+        errors.append(f"JavaScript framework is not configured: {js_name}")
+
+
+def _validate_content_coverage(spec: DesignSpec, features: FeatureModel, errors: list[str]) -> None:
+    """Ensure populated content/media collections are represented by a component source."""
+    sources = {
+        component.content_source.strip()
+        for section in spec.sections
+        for component in section.components
+        if component.content_source.strip()
+    }
+
+    required_collections = (
+        "content.headings",
+        "content.paragraphs",
+        "content.lists",
+        "content.tables",
+        "content.buttons",
+        "content.links",
+        "content.labels",
+        "content.text",
+        "media.images",
+        "media.videos",
+        "media.icons",
+        "media.urls",
+    )
+
+    feature_data = features.model_dump(exclude_none=True)
+    for path in required_collections:
+        value = _resolve_path(feature_data, path)
+        if not value:
+            continue
+        if not any(source == path or source.startswith(f"{path}.") for source in sources):
+            errors.append(f"missing content coverage: {path}")
+
+
+def validate_design_spec(spec: DesignSpec, features: FeatureModel, frameworks: FrameworkConfig) -> DesignValidationResult:
     logger.debug("DesignSpec validation started: sections=%d", len(spec.sections))
     errors: list[str] = []
+
+    if not spec.sections:
+        errors.append("sections must contain at least one section")
+
     section_ids = [section.id for section in spec.sections]
     duplicates = {section_id for section_id in section_ids if section_ids.count(section_id) > 1}
     errors.extend(f"duplicate section id: {section_id}" for section_id in sorted(duplicates))
+
+    for section in spec.sections:
+        if not section.components:
+            errors.append(f"section has no components: {section.id}")
 
     component_types = {component.type for section in spec.sections for component in section.components if component.type}
     for section in spec.sections:
@@ -52,6 +107,9 @@ def validate_design_spec(spec: DesignSpec, features: FeatureModel) -> DesignVali
     for breakpoint in spec.responsive.breakpoints:
         if not breakpoint.width.strip():
             errors.append(f"empty breakpoint width: {breakpoint.name}")
+
+    _validate_frameworks(spec, frameworks, errors)
+    _validate_content_coverage(spec, features, errors)
 
     result = DesignValidationResult(valid=not errors, errors=errors)
     if result.valid:
