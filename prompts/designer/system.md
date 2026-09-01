@@ -85,7 +85,10 @@ Before returning, verify:
 
 **Important schema typing rules:**
 - `typography.weight` MUST be a single string. If you internally think in separate heading/body weights, serialize them as one string such as `heading 600, body 400`.
+- `design.motion.principles` MUST be an array of strings, for example `["subtle reveal", "state transition"]`.
+- `responsive.breakpoints` MUST be an array of objects. Every breakpoint object MUST contain both `name` and `width`, for example `{"name":"mobile","width":"480px"}`. Do not emit breakpoint names as a plain string or omit either field.
 - `responsive.behavior` MUST be an array of strings. Each string may describe one breakpoint's changes, for example `mobile: all sections stack vertically; navigation collapses to hamburger`.
+- `interaction.principles` MUST be an array of strings, for example `["clear feedback", "focused disclosure"]`.
 - Do NOT emit objects inside `responsive.behavior` and do NOT emit an object for `typography.weight`.
 
 ## Output schema
