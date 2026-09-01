@@ -1,7 +1,10 @@
 .vscode/
 
+__pycache__/
+output/
+
 .DS_Store
 
-config.yaml
+*egg-info/
 
-__pycache__/
+config.yaml
