@@ -134,6 +134,6 @@ class FeatureModel(BaseModel):
     content: Content = Field(default_factory=Content)
     structure: Structure = Field(default_factory=Structure)
     media: Media = Field(default_factory=Media)
-    business: BusinessInfo = Field(default_factory=BusinessInfo)
+    business: BusinessInfo | None = None
     navigation: dict[str, object] = Field(default_factory=dict)
     requirements: Requirements = Field(default_factory=Requirements)
