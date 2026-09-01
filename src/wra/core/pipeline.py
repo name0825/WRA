@@ -1,4 +1,5 @@
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
+import json
 from pathlib import Path
 from typing import Any
 
@@ -7,6 +8,7 @@ from wra.core.models import WRAConfig
 from wra.designer.planner import DesignPlanner
 from wra.designer.schema import DesignSpec
 from wra.generator.generator import HTMLGenerator
+from wra.validator.html import HTMLValidationResult, validate_html
 
 
 @dataclass(frozen=True)
@@ -14,13 +16,15 @@ class PipelineResult:
     features_path: Path
     design_spec_path: Path
     html_path: Path
+    validation_path: Path
     features: Any
     design_spec: DesignSpec
     html: str
+    validation: HTMLValidationResult
 
 
 class WRAPipeline:
-    """Run the currently implemented Analyze -> Design -> Generate pipeline."""
+    """Run the currently implemented Analyze -> Design -> Generate -> Validate pipeline."""
 
     def __init__(
         self,
@@ -64,6 +68,15 @@ class WRAPipeline:
         html_path = html_dir / "iteration_1.html"
         html_path.write_text(html, encoding="utf-8")
 
+        validation = validate_html(html, features)
+        validation_dir = output_dir / "validation"
+        validation_dir.mkdir(exist_ok=True)
+        validation_path = validation_dir / "iteration_1.json"
+        validation_path.write_text(
+            json.dumps(asdict(validation), ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+
         final_path = output_dir / "final.html"
         final_path.write_text(html, encoding="utf-8")
 
@@ -71,7 +84,9 @@ class WRAPipeline:
             features_path=features_path,
             design_spec_path=design_spec_path,
             html_path=html_path,
+            validation_path=validation_path,
             features=features,
             design_spec=design_spec,
             html=html,
+            validation=validation,
         )
