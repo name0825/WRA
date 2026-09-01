@@ -89,6 +89,8 @@ def test_generator_returns_complete_html(tmp_path):
     assert html.startswith("<!DOCTYPE html>")
     assert "<html>" in html
     assert "</html>" in html
+    assert client.calls[0]["options"] == {"num_ctx": 8192}
+    assert "format" not in client.calls[0]["options"]
 
 
 def test_generator_injects_configured_framework_cdn(tmp_path):
