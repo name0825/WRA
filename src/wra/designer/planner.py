@@ -144,7 +144,7 @@ class DesignPlanner:
     @staticmethod
     def _classify_parse_error(exc: ValueError) -> DesignRecoveryError:
         message = str(exc).lower()
-        if any(marker in message for marker in ("truncated", "unexpected end", "unterminated json")):
+        if any(marker in message for marker in ("truncated", "unexpected end", "unterminated json", "output token limit")):
             return DesignRecoveryError.TOKEN_LIMIT
         if "invalid json" in message:
             return DesignRecoveryError.JSON_STRUCTURE
@@ -154,20 +154,17 @@ class DesignPlanner:
 
     @staticmethod
     def _looks_like_truncated_json(candidate: str, error: json.JSONDecodeError) -> bool:
-        """Detect JSON that likely stopped because the model exhausted its output budget.
-
-        A normal malformed response such as ``{broken`` fails near the beginning.
-        Token-truncated JSON typically fails at, or very close to, the end of a
-        long object, often with an unterminated string or an unclosed structure.
-        """
+        """Detect JSON that likely stopped because the model exhausted its output budget."""
         text = candidate.rstrip()
         if len(text) < 256 or not text.startswith("{"):
             return False
 
         tail_window = max(64, len(text) // 50)
         error_near_end = error.pos >= max(0, len(text) - tail_window)
-        unterminated = "unterminated string" in error.msg.lower()
-        return error_near_end or unterminated
+        message = error.msg.lower()
+        unterminated = "unterminated string" in message
+        unclosed = message.startswith("expecting") and error.pos >= max(0, len(text) - 32)
+        return error_near_end or unterminated or unclosed
 
     @staticmethod
     def _parse_response(response: str) -> DesignSpec:
@@ -187,27 +184,33 @@ class DesignPlanner:
                 if DesignPlanner._looks_like_truncated_json(candidate, exc):
                     truncated_detected = True
                 data = None
+
             if isinstance(data, dict):
                 try:
                     return DesignSpec.model_validate(data)
                 except Exception as exc:
                     raise ValueError("Designer LLM response does not match DesignSpec") from exc
-            for index, char in enumerate(candidate):
-                if char != "{":
-                    continue
-                fragment = candidate[index:]
-                try:
-                    data, _ = decoder.raw_decode(fragment)
-                except json.JSONDecodeError as exc:
-                    if DesignPlanner._looks_like_truncated_json(fragment, exc):
-                        truncated_detected = True
-                    continue
-                if not isinstance(data, dict):
-                    continue
-                try:
-                    return DesignSpec.model_validate(data)
-                except Exception as exc:
-                    raise ValueError("Designer LLM response does not match DesignSpec") from exc
+
+            # Decode only from the first opening brace. Scanning every `{` can
+            # accidentally accept a nested object from a truncated root object,
+            # causing TOKEN_LIMIT to be misclassified as INVALID_CONTENT.
+            start = candidate.find("{")
+            if start < 0:
+                continue
+            fragment = candidate[start:]
+            try:
+                data, _ = decoder.raw_decode(fragment)
+            except json.JSONDecodeError as exc:
+                if DesignPlanner._looks_like_truncated_json(fragment, exc):
+                    truncated_detected = True
+                continue
+
+            if not isinstance(data, dict):
+                continue
+            try:
+                return DesignSpec.model_validate(data)
+            except Exception:
+                continue
 
         if truncated_detected:
             raise ValueError("Designer LLM response appears truncated, likely due to output token limit")

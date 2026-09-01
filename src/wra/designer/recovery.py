@@ -98,6 +98,21 @@ def build_recovery_prompt(
         return original_prompt
 
     validation_errors = "\n".join(f"- {detail}" for detail in details) or "- unspecified validation failure"
+
+    # A token-limit failure is different from a schema failure. The previous
+    # response is usually the thing that consumed the remaining context, so do
+    # not feed it back into the next request. Re-run the original design prompt
+    # with the larger num_ctx and explicitly ask for a complete, compact object.
+    if error is DesignRecoveryError.TOKEN_LIMIT:
+        return (
+            f"{original_prompt}\n\n"
+            "# WRA Output Recovery\n"
+            "The previous Designer attempt appears to have exhausted its output token budget. "
+            "Regenerate the DesignSpec from the input above using the larger context window. "
+            "Return exactly one complete JSON object. Do not output reasoning, Markdown, code fences, or prose. "
+            "Keep descriptions concise enough to finish every required field and close every JSON object/array."
+        )
+
     previous = previous_response or "(no previous response)"
 
     # Do not append a potentially huge previous response to the full original

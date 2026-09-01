@@ -13,8 +13,8 @@ class FakeLLMClient:
         self.responses = list(responses)
         self.calls: list[dict] = []
 
-    def generate(self, prompt, model, options=None):
-        self.calls.append({"prompt": prompt, "model": model, "options": options})
+    def generate(self, prompt, model, options=None, **kwargs):
+        self.calls.append({"prompt": prompt, "model": model, "options": options, **kwargs})
         response = self.responses.pop(0)
         if isinstance(response, Exception):
             raise response
@@ -90,34 +90,9 @@ def test_design_validator_rejects_duplicate_sections_and_bad_references():
     assert "invalid interaction target: missing" in result.errors
 
 
-def test_token_limit_increases_num_ctx_and_reuses_previous_response():
+def test_token_limit_increases_num_ctx_and_does_not_reuse_large_previous_response():
     valid = json.dumps(make_design_spec())
-    client = FakeLLMClient([
-        RuntimeError("maximum context length exceeded"),
-        valid,
-    ])
-    planner = DesignPlanner(
-        client,
-        "designer-model",
-        recovery_policy=RecoveryPolicy(
-            max_retries=2,
-            initial_num_ctx=4096,
-            max_num_ctx=16384,
-            context_multiplier=2,
-        ),
-    )
-
-    result = planner.plan(FeatureModel())
-
-    assert result.design.concept == "Editorial Minimal"
-    assert client.calls[0]["options"]["num_ctx"] == 4096
-    assert client.calls[1]["options"]["num_ctx"] == 8192
-    assert "Failure type: token_limit" in client.calls[1]["prompt"]
-
-
-def test_truncated_json_is_detected_as_token_limit():
-    valid = json.dumps(make_design_spec())
-    truncated = "Designer reasoning...\n" + valid[:-24]
+    truncated = "{" + ("x" * 12000)
     client = FakeLLMClient([truncated, valid])
     planner = DesignPlanner(
         client,
@@ -135,6 +110,36 @@ def test_truncated_json_is_detected_as_token_limit():
     assert result.design.concept == "Editorial Minimal"
     assert client.calls[1]["options"]["num_ctx"] == 8192
     assert "Failure type: token_limit" in client.calls[1]["prompt"]
+    assert truncated not in client.calls[1]["prompt"]
+
+
+def test_truncated_json_is_detected_as_token_limit():
+    valid = json.dumps(make_design_spec())
+    truncated = valid[:-24]
+    client = FakeLLMClient([truncated, valid])
+    planner = DesignPlanner(
+        client,
+        "designer-model",
+        recovery_policy=RecoveryPolicy(
+            max_retries=1,
+            initial_num_ctx=4096,
+            max_num_ctx=8192,
+            context_multiplier=2,
+        ),
+    )
+
+    result = planner.plan(FeatureModel())
+
+    assert result.design.concept == "Editorial Minimal"
+    assert client.calls[1]["options"]["num_ctx"] == 8192
+    assert "Failure type: token_limit" in client.calls[1]["prompt"]
+
+
+def test_truncated_root_does_not_validate_inner_object_as_designspec():
+    truncated = '{"design":{"concept":"Editorial Minimal","visual_direction":"x"}'
+
+    with pytest.raises(ValueError, match="truncated"):
+        DesignPlanner._parse_response(truncated)
 
 
 def test_invalid_json_revises_previous_response():
@@ -199,6 +204,22 @@ def test_invalid_json_recovery_does_not_duplicate_original_prompt():
     assert len(recovery) < len(prompt) + len(previous)
     assert prompt not in recovery
     assert previous in recovery
+
+
+def test_token_limit_recovery_uses_original_prompt_without_previous_response():
+    prompt = "Feature Model: " + ("x" * 30000)
+    previous = "{" + ("y" * 12000)
+    recovery = build_recovery_prompt(
+        prompt,
+        previous,
+        DesignRecoveryError.TOKEN_LIMIT,
+        ["Designer LLM response appears truncated"],
+        "",
+    )
+
+    assert prompt in recovery
+    assert previous not in recovery
+    assert "output token budget" in recovery
 
 
 def test_unknown_error_regenerates_without_previous_response():
