@@ -5,6 +5,10 @@ import yaml
 
 from wra.analyzer.analyzer import HTMLAnalyzer
 from wra.core.models import WRAConfig
+from wra.core.pipeline import WRAPipeline
+from wra.designer.planner import DesignPlanner
+from wra.designer.recovery import RecoveryPolicy
+from wra.generator.generator import HTMLGenerator
 from wra.llm.ollama import OllamaClient
 from wra.utils.logging import configure_logging, get_logger
 
@@ -41,17 +45,41 @@ def main() -> None:
 
     config = load_config()
     llm_client = OllamaClient(config.ollama.base_url)
+    recovery_policy = RecoveryPolicy(
+        max_retries=config.recovery.max_retries,
+        initial_num_ctx=config.recovery.initial_num_ctx,
+        max_num_ctx=config.recovery.max_num_ctx,
+        context_multiplier=config.recovery.context_multiplier,
+    )
+
     analyzer = HTMLAnalyzer(
         llm_client=llm_client,
         analyzer_model=config.models.analyzer,
     )
-    features = analyzer.analyze_file(INPUT_PATH)
+    designer = DesignPlanner(
+        llm_client=llm_client,
+        designer_model=config.models.designer,
+        recovery_policy=recovery_policy,
+    )
+    generator = HTMLGenerator(
+        llm_client=llm_client,
+        generator_model=config.models.generator,
+        frameworks=config.frameworks,
+    )
 
     run_dir = create_run_directory()
-    features_path = run_dir / "features.json"
-    features_path.write_text(features.model_dump_json(indent=2), encoding="utf-8")
+    pipeline = WRAPipeline(
+        config=config,
+        analyzer=analyzer,
+        designer=designer,
+        generator=generator,
+    )
+    result = pipeline.run(INPUT_PATH, run_dir)
 
-    logger.info("Feature Model written to %s", features_path)
+    logger.info("Feature Model written to %s", result.features_path)
+    logger.info("DesignSpec written to %s", result.design_spec_path)
+    logger.info("Generated HTML written to %s", result.html_path)
+    logger.info("Final HTML written to %s", run_dir / "final.html")
 
 
 if __name__ == "__main__":
