@@ -24,7 +24,7 @@ class IterationResult:
 
 
 class IterationEngine:
-    """Execute generation and LLM-based evaluation for an iteration."""
+    """Execute generation, validation, evaluation, and iteration control."""
 
     def __init__(
         self,
@@ -50,33 +50,114 @@ class IterationEngine:
         output_dir = Path(run_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
 
+        original_path = output_dir / "original.html"
+        if not original_path.exists():
+            original_path.write_text(input_file.read_text(encoding="utf-8"), encoding="utf-8")
+
         features: FeatureModel = self._analyzer.analyze_file(input_file)
         features_path = output_dir / "features.json"
         if not features_path.exists():
             features_path.write_text(features.model_dump_json(indent=2), encoding="utf-8")
 
-        design_spec = self._designer.plan(features)
-        html = self._generator.generate(features, design_spec)
-        validation = validate_html(html, features)
-        evaluation = self._evaluator.evaluate(features, design_spec, html) if validation.valid else None
-
         output_manager = OutputManager(output_dir, self._config.pipeline.output.save_mode)
-        saved = output_manager.save_iteration(
-            iteration=iteration,
-            html=html,
-            design_spec=design_spec,
-            validation=validation,
-            evaluation=evaluation,
-        )
-        final_path = output_manager.finalize(fallback_html=html)
+        return self._run_iterations(features, output_manager, output_dir, iteration)
 
+    def _run_iterations(
+        self,
+        features: FeatureModel,
+        output_manager: OutputManager,
+        output_dir: Path,
+        start_iteration: int,
+    ) -> IterationResult:
+        iteration = start_iteration
+        last_result: IterationResult | None = None
+        previous_evaluation: EvaluationResult | None = None
+
+        try:
+            while True:
+                design_spec = self._designer.plan(
+                    features,
+                    generation_rules=self._revision_rules(previous_evaluation),
+                )
+                html = self._generator.generate(features, design_spec)
+                validation = validate_html(html, features)
+                evaluation = (
+                    self._evaluator.evaluate(features, design_spec, html)
+                    if validation.valid
+                    else None
+                )
+
+                saved = output_manager.save_iteration(
+                    iteration=iteration,
+                    html=html,
+                    design_spec=design_spec,
+                    validation=validation,
+                    evaluation=evaluation,
+                    score=evaluation.overall_score if evaluation else None,
+                )
+
+                final_path = output_manager.finalize(fallback_html=html)
+                last_result = IterationResult(
+                    iteration=iteration,
+                    design_spec=design_spec,
+                    html=html,
+                    validation=validation,
+                    evaluation=evaluation,
+                    html_path=saved.html_path,
+                    validation_path=saved.validation_path,
+                    final_path=final_path,
+                )
+
+                if self._should_terminate(iteration, evaluation):
+                    return last_result
+
+                previous_evaluation = evaluation
+                iteration += 1
+        except KeyboardInterrupt:
+            if last_result is None:
+                raise
+            last_result = self._with_final_path(last_result, output_manager.finalize(fallback_html=last_result.html))
+            return last_result
+
+    def _should_terminate(
+        self,
+        iteration: int,
+        evaluation: EvaluationResult | None,
+    ) -> bool:
+        termination = self._config.pipeline.termination
+        if not termination.enabled:
+            return False
+
+        if evaluation is not None and evaluation.overall_score >= self._config.pipeline.evaluation_threshold:
+            return True
+
+        return iteration >= self._config.pipeline.max_iterations
+
+    @staticmethod
+    def _revision_rules(evaluation: EvaluationResult | None) -> list[str]:
+        if evaluation is None:
+            return []
+
+        rules = [
+            f"Previous overall evaluation score: {evaluation.overall_score:.2f}/10.",
+        ]
+        if evaluation.summary:
+            rules.append(f"Previous evaluation summary: {evaluation.summary}")
+        rules.extend(
+            f"Improve according to evaluator feedback: {suggestion}"
+            for suggestion in evaluation.improvement_suggestions
+        )
+        return rules
+
+    @staticmethod
+    def _with_final_path(result: IterationResult, final_path: Path) -> IterationResult:
         return IterationResult(
-            iteration=iteration,
-            design_spec=design_spec,
-            html=html,
-            validation=validation,
-            evaluation=evaluation,
-            html_path=saved.html_path,
-            validation_path=saved.validation_path,
+            iteration=result.iteration,
+            design_spec=result.design_spec,
+            html=result.html,
+            validation=result.validation,
+            evaluation=result.evaluation,
+            html_path=result.html_path,
+            validation_path=result.validation_path,
             final_path=final_path,
         )
