@@ -15,7 +15,7 @@ from wra.designer.schema import (
     Typography,
 )
 from wra.generator.generator import GeneratorError, HTMLGenerator
-from wra.generator.recovery import HTMLRecoveryError, RecoveryPolicy, classify_validation_errors, strategy_for
+from wra.generator.recovery import HTMLRecoveryError, RecoveryPolicy, classify_exception, classify_response, classify_validation_errors, strategy_for
 from wra.llm.client import LLMClient
 
 
@@ -182,6 +182,50 @@ def test_generator_increases_context_on_token_error(tmp_path):
 
     assert client.calls[0]["options"]["num_ctx"] == 100
     assert client.calls[1]["options"]["num_ctx"] == 200
+
+
+def test_generator_increases_context_when_html_response_is_truncated(tmp_path):
+    prompt = tmp_path / "system.md"
+    prompt.write_text("Generate HTML.", encoding="utf-8")
+    recovery = tmp_path / "recovery.md"
+    recovery.write_text("Fix {failure_type}. Previous: {previous_response}", encoding="utf-8")
+    truncated = "<!DOCTYPE html><html><head><style>body { background: #111; color: #fff; } .panel { padding: 20px;"
+    complete = "<!DOCTYPE html><html><head></head><body></body></html>"
+    client = FakeLLMClient([truncated, complete])
+    generator = HTMLGenerator(
+        client,
+        "generator-model",
+        FrameworkConfig(),
+        prompt,
+        recovery,
+        RecoveryPolicy(max_retries=2, initial_num_ctx=100, max_num_ctx=400, context_multiplier=2),
+    )
+
+    generator.generate(FeatureModel(), make_spec())
+
+    assert client.calls[0]["options"]["num_ctx"] == 100
+    assert client.calls[1]["options"]["num_ctx"] == 200
+    assert "token_limit" in client.calls[1]["prompt"]
+
+
+def test_recovery_detects_truncated_html_as_token_limit():
+    truncated = "<!DOCTYPE html><html><head><style>body { background: #111; color: #fff;"
+
+    assert classify_response(truncated) is HTMLRecoveryError.TOKEN_LIMIT
+    assert classify_exception(
+        GeneratorError("Generator LLM did not return a complete HTML document"),
+        response=truncated,
+    ) is HTMLRecoveryError.TOKEN_LIMIT
+
+
+def test_recovery_keeps_short_malformed_html_as_structure_error():
+    malformed = "<html><body><div>broken"
+
+    assert classify_response(malformed) is HTMLRecoveryError.UNKNOWN
+    assert classify_exception(
+        GeneratorError("Generator LLM did not return a complete HTML document"),
+        response=malformed,
+    ) is HTMLRecoveryError.STRUCTURE
 
 
 def test_recovery_classifies_content_and_structure_failures():

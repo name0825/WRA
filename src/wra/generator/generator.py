@@ -73,7 +73,7 @@ class HTMLGenerator:
                     logger.info("HTML Generator recovery: reusing previous response")
                 continue
             except Exception as exc:
-                error = classify_exception(exc)
+                error = classify_exception(exc, response=previous_response)
                 last_error = str(exc)
                 logger.exception("HTML Generator attempt failed: type=%s", error.value)
                 if attempt >= self._recovery_policy.max_retries:
