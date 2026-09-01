@@ -18,6 +18,12 @@ class ModelConfig(BaseModel):
     evaluator: str = ""
 
 
+class EvaluationConfig(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    model: str = ""
+
+
 class PipelineTerminationConfig(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -73,6 +79,7 @@ class WRAConfig(BaseModel):
 
     ollama: OllamaConfig
     models: ModelConfig
+    evaluation: EvaluationConfig = EvaluationConfig()
     pipeline: PipelineConfig
     recovery: RecoveryConfig = RecoveryConfig()
     frameworks: FrameworkConfig = FrameworkConfig()
@@ -184,3 +191,23 @@ class FeatureModel(BaseModel):
     business: BusinessInfo | None = None
     navigation: dict[str, object] = Field(default_factory=dict)
     requirements: Requirements = Field(default_factory=Requirements)
+
+
+class EvaluationDimension(BaseModel):
+    score: float = Field(ge=0.0, le=10.0)
+    feedback: str = ""
+
+
+class EvaluationResult(BaseModel):
+    design_completeness: EvaluationDimension
+    visual_hierarchy: EvaluationDimension
+    design_consistency: EvaluationDimension
+    content_preservation: EvaluationDimension
+    ux: EvaluationDimension
+    readability: EvaluationDimension
+    responsive_design: EvaluationDimension
+    originality: EvaluationDimension
+    html_quality: EvaluationDimension
+    overall_score: float = Field(ge=0.0, le=10.0)
+    summary: str = ""
+    improvement_suggestions: list[str] = Field(default_factory=list)
