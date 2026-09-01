@@ -50,9 +50,20 @@ Motion must remain performant and must not interfere with reading or navigation.
 Use the framework recommendations from the DesignSpec when WRA provides the corresponding configured dependency. Do not add framework CDN URLs yourself. WRA injects configured CDN dependencies after generation.
 If vanilla CSS/JS is specified, use it.
 
-## Output
-Return exactly one complete standalone HTML document beginning with `<!DOCTYPE html>` and containing `<html>`, `<head>`, and `<body>`.
-Return only HTML. No Markdown fences, explanations, comments outside the document, or analysis.
+## Output contract — highest priority
+The generation API expects **raw HTML text**, not structured JSON.
+
+Return exactly one complete standalone HTML document:
+- Start directly with `<!DOCTYPE html>`.
+- End with `</html>`.
+- Include `<html>`, `<head>`, and `<body>`.
+- Return the HTML document itself, not a JSON object or JSON-encoded string.
+- Do not return a plan, acknowledgement, status message, explanation, tool call, project exploration, or reasoning.
+- Do not say what you are going to do. Do not say that you will inspect or explore the project.
+- Do not wrap the HTML in Markdown code fences.
+- Do not add any text before `<!DOCTYPE html>` or after `</html>`.
+
+**Start generating the HTML document immediately.**
 
 Before returning, internally verify:
 1. the document is complete
