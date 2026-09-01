@@ -3,6 +3,9 @@ ollama:
 
 models: {}
 
+evaluation:
+  model: ""
+
 frameworks:
   css: []
   js: []
