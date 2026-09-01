@@ -53,7 +53,26 @@ class OllamaClient(LLMClient):
         except Exception:
             logger.exception("LLM request failed: model=%s", model)
             raise
+
         result = response.response
-        logger.info("LLM response received: model=%s response_chars=%d", model, len(result))
+        done_reason = getattr(response, "done_reason", None)
+        logger.info(
+            "LLM response received: model=%s response_chars=%d done=%s done_reason=%s",
+            model,
+            len(result),
+            getattr(response, "done", None),
+            done_reason,
+        )
         logger.debug("LLM raw response: model=%s response=%s", model, result)
+
+        # Ollama explicitly reports `done_reason=length` when generation stops
+        # because the available generation/context budget was exhausted. Keep
+        # this signal instead of returning a partial JSON response that the
+        # planner may incorrectly classify as ordinary malformed JSON.
+        if done_reason == "length":
+            raise RuntimeError(
+                "LLM generation stopped due to output token limit "
+                "(Ollama done_reason=length)"
+            )
+
         return result
