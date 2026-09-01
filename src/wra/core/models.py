@@ -296,3 +296,36 @@ class EvaluationResult(BaseModel):
     overall_score: float = Field(ge=0.0, le=10.0)
     summary: str = ""
     improvement_suggestions: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_llm_output(cls, value):
+        """Accept both the canonical dimension-object format and flat LLM scores."""
+        if not isinstance(value, dict):
+            return value
+
+        normalized = dict(value)
+        dimensions = (
+            "design_completeness",
+            "visual_hierarchy",
+            "design_consistency",
+            "content_preservation",
+            "ux",
+            "readability",
+            "responsive_design",
+            "originality",
+            "html_quality",
+        )
+
+        for name in dimensions:
+            dimension = normalized.get(name)
+            if isinstance(dimension, (int, float)) and not isinstance(dimension, bool):
+                normalized[name] = {"score": dimension}
+
+        # Older/looser evaluator prompts may return one top-level feedback field.
+        # Preserve it instead of rejecting an otherwise valid evaluation.
+        feedback = normalized.pop("feedback", None)
+        if feedback is not None and not normalized.get("summary"):
+            normalized["summary"] = str(feedback)
+
+        return normalized
