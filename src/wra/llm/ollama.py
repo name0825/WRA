@@ -12,8 +12,14 @@ class OllamaClient(LLMClient):
     """Ollama implementation backed by the official Python client."""
 
     def __init__(self, base_url: str) -> None:
-        self._client = Client(host=base_url)
+        self._base_url = base_url
+        self._clients: dict[float | None, Client] = {None: Client(host=base_url)}
         logger.debug("Initialized Ollama client: %s", base_url)
+
+    def _get_client(self, timeout: float | None) -> Client:
+        if timeout not in self._clients:
+            self._clients[timeout] = Client(host=self._base_url, timeout=timeout)
+        return self._clients[timeout]
 
     def generate(
         self,
@@ -21,21 +27,29 @@ class OllamaClient(LLMClient):
         model: str,
         options: dict[str, Any] | None = None,
         images: list[str | bytes] | None = None,
+        *,
+        think: bool | None = None,
+        timeout: float | None = None,
     ) -> str:
         logger.info(
-            "LLM request: model=%s prompt_chars=%d images=%d options=%s",
+            "LLM request: model=%s prompt_chars=%d images=%d think=%s timeout=%s options=%s",
             model,
             len(prompt),
             len(images or []),
+            think,
+            timeout,
             options or {},
         )
         try:
-            response = self._client.generate(
-                model=model,
-                prompt=prompt,
-                options=options,
-                images=images,
-            )
+            kwargs: dict[str, Any] = {
+                "model": model,
+                "prompt": prompt,
+                "options": options,
+                "images": images,
+            }
+            if think is not None:
+                kwargs["think"] = think
+            response = self._get_client(timeout).generate(**kwargs)
         except Exception:
             logger.exception("LLM request failed: model=%s", model)
             raise

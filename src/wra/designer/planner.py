@@ -23,30 +23,36 @@ logger = logging.getLogger(__name__)
 class DesignPlanner:
     """Create and revise structured design plans from a generic web FeatureModel."""
 
-    def __init__(self, llm_client: LLMClient, designer_model: str, prompt_path: str | Path = "prompts/designer/system.md", revision_prompt_path: str | Path = "prompts/designer/revision.md", recovery_policy: RecoveryPolicy | None = None) -> None:
+    def __init__(self, llm_client: LLMClient, designer_model: str, prompt_path: str | Path = "prompts/designer/system.md", revision_prompt_path: str | Path = "prompts/designer/revision.md", recovery_policy: RecoveryPolicy | None = None, designer_think: bool | None = None, designer_timeout: float | None = None) -> None:
         self._llm_client = llm_client
         self._designer_model = designer_model
+        self._designer_think = designer_think
+        self._designer_timeout = designer_timeout
         self._prompt_path = Path(prompt_path)
         self._revision_prompt_path = Path(revision_prompt_path)
         self._recovery_policy = recovery_policy or RecoveryPolicy()
 
-    def plan(self, features: FeatureModel, design_constraints: dict[str, Any] | None = None, generation_rules: list[str] | None = None, model: str | None = None) -> DesignSpec:
+    def plan(self, features: FeatureModel, design_constraints: dict[str, Any] | None = None, generation_rules: list[str] | None = None, model: str | None = None, think: bool | None = None, timeout: float | None = None) -> DesignSpec:
         selected_model = model or self._designer_model
+        selected_think = self._designer_think if think is None else think
+        selected_timeout = self._designer_timeout if timeout is None else timeout
         logger.info("Design planning started: model=%s mode=%s", selected_model, (design_constraints or {}).get("mode", "unspecified"))
         prompt_template = self._prompt_path.read_text(encoding="utf-8")
         original_prompt = self._build_plan_prompt(prompt_template, features, design_constraints, generation_rules)
-        return self._generate_and_validate(original_prompt=original_prompt, features=features, revision_template=self._revision_prompt_path.read_text(encoding="utf-8"), model=selected_model)
+        return self._generate_and_validate(original_prompt=original_prompt, features=features, revision_template=self._revision_prompt_path.read_text(encoding="utf-8"), model=selected_model, think=selected_think, timeout=selected_timeout)
 
-    def revise(self, features: FeatureModel, previous_design_spec: DesignSpec, previous_html: str, evaluation: EvaluationResult, design_constraints: dict[str, Any] | None = None, model: str | None = None) -> DesignSpec:
+    def revise(self, features: FeatureModel, previous_design_spec: DesignSpec, previous_html: str, evaluation: EvaluationResult, design_constraints: dict[str, Any] | None = None, model: str | None = None, think: bool | None = None, timeout: float | None = None) -> DesignSpec:
         selected_model = model or self._designer_model
+        selected_think = self._designer_think if think is None else think
+        selected_timeout = self._designer_timeout if timeout is None else timeout
         logger.info("Design revision started: model=%s previous_score=%.2f", selected_model, evaluation.overall_score)
         revision_template = self._revision_prompt_path.read_text(encoding="utf-8")
         prompt = revision_template.format(previous_design_spec=previous_design_spec.model_dump_json(indent=2), previous_html=previous_html, evaluation_result=evaluation.model_dump_json(indent=2))
         if design_constraints:
             prompt = self._append_design_constraints(prompt, design_constraints)
-        return self._generate_and_validate(original_prompt=prompt, features=features, revision_template=revision_template, model=selected_model)
+        return self._generate_and_validate(original_prompt=prompt, features=features, revision_template=revision_template, model=selected_model, think=selected_think, timeout=selected_timeout)
 
-    def _generate_and_validate(self, original_prompt, features, revision_template, model):
+    def _generate_and_validate(self, original_prompt, features, revision_template, model, think=None, timeout=None):
         current_num_ctx = self._recovery_policy.initial_num_ctx
         previous_response = None
         prompt = original_prompt
@@ -55,9 +61,9 @@ class DesignPlanner:
 
         for retry in range(self._recovery_policy.max_retries + 1):
             attempt = retry + 1
-            logger.info("Design Planner attempt %d/%d: model=%s num_ctx=%d", attempt, self._recovery_policy.max_retries + 1, model, current_num_ctx)
+            logger.info("Design Planner attempt %d/%d: model=%s num_ctx=%d think=%s timeout=%s", attempt, self._recovery_policy.max_retries + 1, model, current_num_ctx, think, timeout)
             try:
-                response = self._llm_client.generate(prompt=prompt, model=model, options={"format": "json", "num_ctx": current_num_ctx})
+                response = self._llm_client.generate(prompt=prompt, model=model, options={"format": "json", "num_ctx": current_num_ctx}, think=think, timeout=timeout)
                 previous_response = response
                 logger.debug("Designer response received: chars=%d", len(response))
                 spec = self._parse_response(response)
@@ -115,7 +121,6 @@ class DesignPlanner:
 
     @staticmethod
     def _feature_reference_paths(features: FeatureModel) -> str:
-        """Return only reference paths that exist in this Feature Model instance."""
         paths: list[str] = []
 
         def visit(value: Any, prefix: str) -> None:
@@ -147,22 +152,12 @@ class DesignPlanner:
 
     @staticmethod
     def _parse_response(response: str) -> DesignSpec:
-        """Parse a DesignSpec from an LLM response.
-
-        Ollama's JSON mode does not guarantee that every local model emits a
-        parser-ready bare JSON object. Reasoning-capable models may still wrap
-        the object in <think>...</think> and/or Markdown code fences. Accept
-        those harmless wrappers, while keeping DesignSpec validation strict.
-        """
         text = response.lstrip("\ufeff").strip()
         text = re.sub(r"<think>.*?</think>", "", text, flags=re.IGNORECASE | re.DOTALL).strip()
         text = re.sub(r"<think>.*$", "", text, flags=re.IGNORECASE | re.DOTALL).strip()
 
         candidates: list[str] = [text]
-        candidates.extend(
-            match.strip()
-            for match in re.findall(r"```(?:json)?\s*(.*?)\s*```", text, flags=re.IGNORECASE | re.DOTALL)
-        )
+        candidates.extend(match.strip() for match in re.findall(r"```(?:json)?\s*(.*?)\s*```", text, flags=re.IGNORECASE | re.DOTALL))
 
         decoder = json.JSONDecoder()
         for candidate in candidates:
@@ -170,15 +165,11 @@ class DesignPlanner:
                 data = json.loads(candidate)
             except json.JSONDecodeError:
                 data = None
-
             if isinstance(data, dict):
                 try:
                     return DesignSpec.model_validate(data)
                 except Exception as exc:
                     raise ValueError("Designer LLM response does not match DesignSpec") from exc
-
-            # Last-resort extraction for prose before/after an otherwise valid
-            # JSON object. raw_decode preserves nested braces and quoted text.
             for index, char in enumerate(candidate):
                 if char != "{":
                     continue
@@ -192,5 +183,4 @@ class DesignPlanner:
                     return DesignSpec.model_validate(data)
                 except Exception as exc:
                     raise ValueError("Designer LLM response does not match DesignSpec") from exc
-
         raise ValueError("Designer LLM returned invalid JSON")

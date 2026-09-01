@@ -69,19 +69,19 @@ class IterationEngine:
                 designer_model = ModelSelector.select(self._config.models.designer, "designer")
                 generator_model = ModelSelector.select(self._config.models.generator, "generator")
                 evaluator_model = ModelSelector.select(self._config.evaluation.model, "evaluator")
-                logger.info("Models selected: designer=%s generator=%s evaluator=%s", designer_model, generator_model, evaluator_model)
+                logger.info("Models selected: designer=%s think=%s timeout=%s generator=%s think=%s timeout=%s evaluator=%s think=%s timeout=%s", designer_model.name, designer_model.think, designer_model.timeout, generator_model.name, generator_model.think, generator_model.timeout, evaluator_model.name, evaluator_model.think, evaluator_model.timeout)
 
                 design_constraints = self._build_design_constraints(iteration)
                 logger.debug("Design constraints: %s", design_constraints)
                 if previous_result is None or previous_result.evaluation is None:
                     logger.info("Current task: design planning")
-                    design_spec = self._designer.plan(features, design_constraints=design_constraints, model=designer_model)
+                    design_spec = self._designer.plan(features, design_constraints=design_constraints, model=designer_model.name, think=designer_model.think, timeout=designer_model.timeout)
                 else:
                     logger.info("Current task: design revision based on score=%.2f", previous_result.evaluation.overall_score)
-                    design_spec = self._designer.revise(features=features, previous_design_spec=previous_result.design_spec, previous_html=previous_result.html, evaluation=previous_result.evaluation, design_constraints=design_constraints, model=designer_model)
+                    design_spec = self._designer.revise(features=features, previous_design_spec=previous_result.design_spec, previous_html=previous_result.html, evaluation=previous_result.evaluation, design_constraints=design_constraints, model=designer_model.name, think=designer_model.think, timeout=designer_model.timeout)
 
                 logger.info("Current task: HTML generation")
-                html = self._generator.generate(features, design_spec, model=generator_model)
+                html = self._generator.generate(features, design_spec, model=generator_model.name, think=generator_model.think, timeout=generator_model.timeout)
                 logger.info("Current task: HTML validation")
                 validation = validate_html(html, features)
                 browser_result = BrowserEvaluationResult(enabled=False)
@@ -91,7 +91,7 @@ class IterationEngine:
                         logger.info("Current task: browser evaluation")
                         browser_result = self._browser_evaluator.evaluate(html=html, output_dir=browser_tmp, iteration=iteration)
                     logger.info("Current task: LLM evaluation")
-                    evaluation = self._evaluator.evaluate(features, design_spec, html, browser_result=browser_result, model=evaluator_model)
+                    evaluation = self._evaluator.evaluate(features, design_spec, html, browser_result=browser_result, model=evaluator_model.name, think=evaluator_model.think, timeout=evaluator_model.timeout)
                 else:
                     logger.warning("Skipping browser/evaluation because HTML validation failed")
 
@@ -121,20 +121,13 @@ class IterationEngine:
         constraints = {"mode": mode}
         if mode != "auto":
             constraints["available_presets"] = self._config.design.presets
-
-        # This is deliberately a soft exploration hint. It must never prescribe
-        # a palette, layout, component set, or other fixed visual recipe.
         exploration_axes = (
             "Explore composition and information hierarchy; avoid defaulting to a conventional business landing-page structure.",
             "Explore typography, density, and spatial rhythm; allow a substantially different reading flow when content supports it.",
             "Explore color relationships, surfaces, contrast, and visual texture; do not assume a dark corporate palette.",
             "Explore interaction and motion as appropriate; consider different interaction models without sacrificing clarity or accessibility.",
         )
-        constraints["variation_policy"] = {
-            "type": "soft_guidance",
-            "instruction": exploration_axes[(iteration - 1) % len(exploration_axes)],
-            "do_not_force": True,
-        }
+        constraints["variation_policy"] = {"type": "soft_guidance", "instruction": exploration_axes[(iteration - 1) % len(exploration_axes)], "do_not_force": True}
         return constraints
 
     def _finalize(self, result, output_manager, browser_tmp):
@@ -152,6 +145,6 @@ class IterationEngine:
             logger.info("Evaluation threshold reached: %.2f >= %.2f", evaluation.overall_score, self._config.pipeline.evaluation_threshold)
             return True
         if iteration >= self._config.pipeline.max_iterations:
-            logger.info("Maximum iterations reached: %d", self._config.pipeline.max_iterations)
+            logger.info("Maximum iterations reached: %d", iteration)
             return True
         return False

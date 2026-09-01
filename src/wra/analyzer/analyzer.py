@@ -12,7 +12,7 @@ from wra.analyzer.extractor import (
     extract_structure,
 )
 from wra.analyzer.html_parser import parse_html
-from wra.core.models import BusinessInfo, FeatureModel, Requirements, Site
+from wra.core.models import BusinessInfo, FeatureModel, ModelSpec, Requirements, Site
 from wra.llm.client import LLMClient
 
 logger = logging.getLogger(__name__)
@@ -21,9 +21,11 @@ logger = logging.getLogger(__name__)
 class HTMLAnalyzer:
     """Analyze arbitrary web pages with deterministic extraction and optional LLM semantics."""
 
-    def __init__(self, llm_client: LLMClient | None = None, analyzer_model: str = "", prompt_path: str | Path = "prompts/analyzer/system.md") -> None:
+    def __init__(self, llm_client: LLMClient | None = None, analyzer_model: str = "", analyzer_think: bool | None = None, analyzer_timeout: float | None = None, prompt_path: str | Path = "prompts/analyzer/system.md") -> None:
         self._llm_client = llm_client
         self._analyzer_model = analyzer_model
+        self._analyzer_think = analyzer_think
+        self._analyzer_timeout = analyzer_timeout
         self._prompt_path = Path(prompt_path)
 
     def analyze(self, html: str) -> FeatureModel:
@@ -60,7 +62,7 @@ class HTMLAnalyzer:
     def _apply_semantic_analysis(self, features: FeatureModel) -> FeatureModel:
         prompt_template = self._prompt_path.read_text(encoding="utf-8")
         prompt = f"{prompt_template}\n\nDeterministic extraction result:\n{features.model_dump_json(indent=2)}"
-        response = self._llm_client.generate(prompt=prompt, model=self._analyzer_model, options={"format": "json"})
+        response = self._llm_client.generate(prompt=prompt, model=self._analyzer_model, options={"format": "json"}, think=self._analyzer_think, timeout=self._analyzer_timeout)
         semantic = self._parse_semantic_response(response)
         logger.debug("Analyzer semantic response parsed: keys=%s", sorted(semantic.keys()))
 

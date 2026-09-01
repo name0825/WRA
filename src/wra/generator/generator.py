@@ -20,16 +20,20 @@ class GeneratorError(ValueError):
 class HTMLGenerator:
     """Generate and recover a complete HTML document from a FeatureModel and DesignSpec."""
 
-    def __init__(self, llm_client: LLMClient, generator_model: str, frameworks: FrameworkConfig, prompt_path: str | Path = "prompts/generator/system.md", recovery_prompt_path: str | Path = "prompts/generator/recovery.md", recovery_policy: RecoveryPolicy | None = None) -> None:
+    def __init__(self, llm_client: LLMClient, generator_model: str, frameworks: FrameworkConfig, prompt_path: str | Path = "prompts/generator/system.md", recovery_prompt_path: str | Path = "prompts/generator/recovery.md", recovery_policy: RecoveryPolicy | None = None, generator_think: bool | None = None, generator_timeout: float | None = None) -> None:
         self._llm_client = llm_client
         self._generator_model = generator_model
+        self._generator_think = generator_think
+        self._generator_timeout = generator_timeout
         self._frameworks = frameworks
         self._prompt_path = Path(prompt_path)
         self._recovery_prompt_path = Path(recovery_prompt_path)
         self._recovery_policy = recovery_policy or RecoveryPolicy()
 
-    def generate(self, features: FeatureModel, design_spec: DesignSpec, generation_rules: list[str] | None = None, model: str | None = None) -> str:
+    def generate(self, features: FeatureModel, design_spec: DesignSpec, generation_rules: list[str] | None = None, model: str | None = None, think: bool | None = None, timeout: float | None = None) -> str:
         selected_model = model or self._generator_model
+        selected_think = self._generator_think if think is None else think
+        selected_timeout = self._generator_timeout if timeout is None else timeout
         cdn_tags = self._build_framework_tags(design_spec)
         logger.info("HTML generation started: model=%s sections=%d", selected_model, len(design_spec.sections))
         logger.debug("Framework dependencies: %s", cdn_tags or "none")
@@ -42,9 +46,9 @@ class HTMLGenerator:
         last_error = None
 
         for attempt in range(self._recovery_policy.max_retries + 1):
-            logger.info("HTML Generator attempt %d/%d: model=%s num_ctx=%d", attempt + 1, self._recovery_policy.max_retries + 1, selected_model, num_ctx)
+            logger.info("HTML Generator attempt %d/%d: model=%s num_ctx=%d think=%s timeout=%s", attempt + 1, self._recovery_policy.max_retries + 1, selected_model, num_ctx, selected_think, selected_timeout)
             try:
-                response = self._llm_client.generate(prompt=prompt, model=selected_model, options={"num_ctx": num_ctx})
+                response = self._llm_client.generate(prompt=prompt, model=selected_model, options={"num_ctx": num_ctx}, think=selected_think, timeout=selected_timeout)
                 previous_response = response
                 html = self._extract_html(response)
                 html = self._inject_framework_tags(html, cdn_tags)

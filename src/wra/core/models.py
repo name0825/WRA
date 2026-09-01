@@ -11,36 +11,69 @@ class OllamaConfig(BaseModel):
     base_url: str
 
 
+class ModelSpec(BaseModel):
+    """Configuration for one selectable Ollama model."""
+    model_config = ConfigDict(frozen=True)
+
+    name: str
+    think: bool | None = None
+    timeout: float | None = Field(default=None, gt=0)
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Model name must not be empty")
+        return value
+
+
 class ModelConfig(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    analyzer: list[str] = Field(default_factory=list)
-    designer: list[str] = Field(default_factory=list)
-    generator: list[str] = Field(default_factory=list)
+    analyzer: list[ModelSpec] = Field(default_factory=list)
+    designer: list[ModelSpec] = Field(default_factory=list)
+    generator: list[ModelSpec] = Field(default_factory=list)
 
     @field_validator("analyzer", "designer", "generator", mode="before")
     @classmethod
     def normalize_models(cls, value):
         if value is None:
             return []
-        if isinstance(value, str):
-            return [value] if value.strip() else []
-        return value
+        if isinstance(value, (str, dict)):
+            value = [value]
+        normalized = []
+        for item in value:
+            if isinstance(item, str):
+                normalized.append({"name": item})
+            elif isinstance(item, dict):
+                normalized.append(item)
+            else:
+                normalized.append(item)
+        return normalized
 
 
 class EvaluationConfig(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    model: list[str] = Field(default_factory=list)
+    model: list[ModelSpec] = Field(default_factory=list)
 
     @field_validator("model", mode="before")
     @classmethod
     def normalize_models(cls, value):
         if value is None:
             return []
-        if isinstance(value, str):
-            return [value] if value.strip() else []
-        return value
+        if isinstance(value, (str, dict)):
+            value = [value]
+        normalized = []
+        for item in value:
+            if isinstance(item, str):
+                normalized.append({"name": item})
+            elif isinstance(item, dict):
+                normalized.append(item)
+            else:
+                normalized.append(item)
+        return normalized
 
 
 class DesignConfig(BaseModel):

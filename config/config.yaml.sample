@@ -2,11 +2,22 @@ ollama:
   base_url: "http://localhost:11434"
 
 # Multiple models may be configured for each role.
-# One model is selected randomly at the beginning of each iteration.
+# Each entry may be a model name string or an object with per-model options.
+# think: true/false enables/disables Ollama reasoning when supported by the model.
+# timeout: request timeout in seconds. Omit it to use the Ollama client default.
 models:
-  analyzer: []
-  designer: []
-  generator: []
+  analyzer:
+    - name: "gemma4:26b"
+      think: false
+      timeout: 600
+  designer:
+    - name: "gemma4:26b"
+      think: true
+      timeout: 600
+  generator:
+    - name: "gemma4:26b"
+      think: false
+      timeout: 600
 
 design:
   # auto: infer the page type from the FeatureModel.
@@ -20,7 +31,10 @@ design:
     - "ecommerce"
 
 evaluation:
-  model: []
+  model:
+    - name: "gemma4:26b"
+      think: false
+      timeout: 600
 
 browser:
   enabled: false
@@ -58,8 +72,6 @@ recovery:
   context_multiplier: 2.0
 
 logging:
-  # File log level: DEBUG, INFO, WARNING, ERROR, CRITICAL
   level: "INFO"
-  # Console log level: DEBUG, INFO, WARNING, ERROR, CRITICAL
   console_level: "INFO"
   directory: "log"

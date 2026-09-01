@@ -12,6 +12,9 @@ class LLMClient(ABC):
         model: str,
         options: dict[str, Any] | None = None,
         images: list[str | bytes] | None = None,
+        *,
+        think: bool | None = None,
+        timeout: float | None = None,
     ) -> str:
         """Generate a text response from an LLM."""
         raise NotImplementedError

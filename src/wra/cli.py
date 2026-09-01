@@ -37,13 +37,8 @@ def load_config() -> WRAConfig:
 
 
 def main() -> None:
-    # Config is loaded before logging so the configured file/console levels are applied.
     config = load_config()
-    configure_logging(
-        level=config.logging.level,
-        console_level=config.logging.console_level,
-        log_dir=config.logging.directory,
-    )
+    configure_logging(level=config.logging.level, console_level=config.logging.console_level, log_dir=config.logging.directory)
     logger.info("WRA starting")
     logger.info("Input: %s", INPUT_PATH)
     logger.info("Ollama endpoint: %s", config.ollama.base_url)
@@ -52,21 +47,11 @@ def main() -> None:
         raise FileNotFoundError(f"Input file not found: {INPUT_PATH}")
 
     llm_client = OllamaClient(config.ollama.base_url)
-    design_recovery_policy = DesignRecoveryPolicy(
-        max_retries=config.recovery.max_retries,
-        initial_num_ctx=config.recovery.initial_num_ctx,
-        max_num_ctx=config.recovery.max_num_ctx,
-        context_multiplier=config.recovery.context_multiplier,
-    )
-    generator_recovery_policy = GeneratorRecoveryPolicy(
-        max_retries=config.recovery.max_retries,
-        initial_num_ctx=config.recovery.initial_num_ctx,
-        max_num_ctx=config.recovery.max_num_ctx,
-        context_multiplier=config.recovery.context_multiplier,
-    )
+    design_recovery_policy = DesignRecoveryPolicy(max_retries=config.recovery.max_retries, initial_num_ctx=config.recovery.initial_num_ctx, max_num_ctx=config.recovery.max_num_ctx, context_multiplier=config.recovery.context_multiplier)
+    generator_recovery_policy = GeneratorRecoveryPolicy(max_retries=config.recovery.max_retries, initial_num_ctx=config.recovery.initial_num_ctx, max_num_ctx=config.recovery.max_num_ctx, context_multiplier=config.recovery.context_multiplier)
 
     analyzer_model = ModelSelector.select(config.models.analyzer, "analyzer")
-    analyzer = HTMLAnalyzer(llm_client=llm_client, analyzer_model=analyzer_model)
+    analyzer = HTMLAnalyzer(llm_client=llm_client, analyzer_model=analyzer_model.name, analyzer_think=analyzer_model.think, analyzer_timeout=analyzer_model.timeout)
     designer = DesignPlanner(llm_client=llm_client, designer_model="", recovery_policy=design_recovery_policy)
     generator = HTMLGenerator(llm_client=llm_client, generator_model="", frameworks=config.frameworks, recovery_policy=generator_recovery_policy)
     evaluator = LLMEvaluator(llm_client=llm_client, model="")
