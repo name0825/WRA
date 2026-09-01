@@ -183,3 +183,26 @@ def test_analyzer_accepts_prose_around_json() -> None:
     features = HTMLAnalyzer(llm_client=llm, analyzer_model="test-model").analyze(HTML)
 
     assert features.site.type == "portfolio"
+
+
+def test_analyzer_uses_later_valid_json_after_malformed_attempt() -> None:
+    response = '''```json
+{
+  "site": {"type": "broken"},
+  "business": {"phone": ["05</tbody>
+```
+
+Wait, I see a slight error in my output stream. Let me provide the clean, correct JSON.
+
+```json
+{
+  "site": {"type": "corrected"},
+  "business": {"business_information": ["Business registration number: 480-88-03967"]}
+}
+```'''
+    llm = FakeLLMClient(response=response)
+
+    features = HTMLAnalyzer(llm_client=llm, analyzer_model="test-model").analyze(HTML)
+
+    assert features.site.type == "corrected"
+    assert "Business registration number: 480-88-03967" in features.business.business_information
