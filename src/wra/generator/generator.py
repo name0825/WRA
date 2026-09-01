@@ -48,6 +48,9 @@ class HTMLGenerator:
         for attempt in range(self._recovery_policy.max_retries + 1):
             logger.info("HTML Generator attempt %d/%d: model=%s num_ctx=%d think=%s timeout=%s", attempt + 1, self._recovery_policy.max_retries + 1, selected_model, num_ctx, selected_think, selected_timeout)
             try:
+                # The generator returns HTML, not JSON. Ollama's structured-output
+                # format=json option conflicts with this contract, so intentionally
+                # request unrestricted text and validate the returned HTML below.
                 response = self._llm_client.generate(prompt=prompt, model=selected_model, options={"num_ctx": num_ctx}, think=selected_think, timeout=selected_timeout)
                 previous_response = response
                 html = self._extract_html(response)
