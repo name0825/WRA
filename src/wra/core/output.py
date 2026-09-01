@@ -1,8 +1,11 @@
 from dataclasses import asdict, dataclass
 import json
 from pathlib import Path
+import logging
 import shutil
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -28,10 +31,10 @@ class OutputManager:
         self._best_html: str | None = None
         self._best_iteration: int | None = None
         self._best_browser_source: Path | None = None
+        logger.debug("Output manager initialized: run_dir=%s save_mode=%s", self.run_dir, save_mode)
 
-    def save_iteration(self, iteration: int, html: str, design_spec: Any | None = None,
-                       validation: Any | None = None, evaluation: Any | None = None,
-                       browser: Any | None = None, score: float | None = None) -> IterationOutput:
+    def save_iteration(self, iteration: int, html: str, design_spec: Any | None = None, validation: Any | None = None, evaluation: Any | None = None, browser: Any | None = None, score: float | None = None) -> IterationOutput:
+        logger.info("Saving iteration artifacts: iteration=%d mode=%s score=%s", iteration, self.save_mode, score if score is not None else "n/a")
         html_path = design_spec_path = validation_path = evaluation_path = browser_path = None
         if self.save_mode == "all":
             iteration_dir = self.iterations_dir / f"iteration_{iteration:03d}"
@@ -51,12 +54,14 @@ class OutputManager:
                 browser_path = iteration_dir / "browser"
                 self._copy_browser_artifacts(browser, browser_path)
                 self._write_json(iteration_dir / "browser.json", browser)
+            logger.debug("Iteration artifacts saved: %s", iteration_dir)
 
         if score is None or self._best_score is None or score > self._best_score:
             self._best_score = score
             self._best_html = html
             self._best_iteration = iteration
             self._best_browser_source = self._browser_source(browser)
+            logger.info("New best iteration: iteration=%d score=%s", iteration, score if score is not None else "n/a")
 
         return IterationOutput(iteration, html_path, design_spec_path, validation_path, evaluation_path, browser_path)
 
@@ -71,11 +76,8 @@ class OutputManager:
             if browser_dir.exists():
                 shutil.rmtree(browser_dir)
             shutil.copytree(self._best_browser_source, browser_dir)
-        self._write_json(self.run_dir / "result.json", {
-            "save_mode": self.save_mode,
-            "best_iteration": self._best_iteration,
-            "best_score": self._best_score,
-        })
+        self._write_json(self.run_dir / "result.json", {"save_mode": self.save_mode, "best_iteration": self._best_iteration, "best_score": self._best_score})
+        logger.info("Output finalized: final=%s best_iteration=%s best_score=%s", final_path, self._best_iteration, self._best_score)
         return final_path
 
     @staticmethod
