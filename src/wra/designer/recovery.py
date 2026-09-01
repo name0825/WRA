@@ -59,6 +59,20 @@ def strategy_for(error: DesignRecoveryError) -> RecoveryStrategy:
     return RecoveryStrategy.REGENERATE
 
 
+def _schema_contract() -> str:
+    return (
+        "DesignSpec required structure: top-level keys are `design`, `sections`, `responsive`, `interaction`. "
+        "`design` contains `concept`, `visual_direction`, `layout`, `color_system`, `typography`, `framework`, `motion`. "
+        "`color_system` contains `background`, `surface`, `text`, `muted_text`, `primary`, `accent`. "
+        "`typography` contains `heading`, `body`, `scale`, `weight`. "
+        "`framework` contains `css` and `js`, each with `name` and `reason`. "
+        "`motion` contains `level` (`none`, `low`, `mid`, or `high`) and `principles`. "
+        "Each section contains `id`, `purpose`, `layout`, and `components`; each component contains `type`, `purpose`, `content_source`. "
+        "`responsive` contains `strategy`, `breakpoints`, and `behavior`. "
+        "`interaction` contains `principles` and `components`; each interaction component contains `target` and `behavior`."
+    )
+
+
 def build_recovery_prompt(
     original_prompt: str,
     previous_response: str | None,
@@ -66,27 +80,27 @@ def build_recovery_prompt(
     details: list[str],
     revision_template: str,
 ) -> str:
-    if strategy_for(error) is RecoveryStrategy.REGENERATE:
+    strategy = strategy_for(error)
+    if strategy is RecoveryStrategy.REGENERATE:
         return original_prompt
 
     validation_errors = "\n".join(f"- {detail}" for detail in details) or "- unspecified validation failure"
+    previous = previous_response or "(no previous response)"
 
-    # The evaluator-driven revision template already contains the previous
-    # DesignSpec, HTML, and evaluation result in original_prompt. For recovery
-    # of that flow, append only the failure information and previous response.
-    if "{previous_design_spec}" in revision_template:
-        revision = (
+    # Do not append a potentially huge previous response to the full original
+    # prompt. The original prompt can already contain the Feature Model, HTML,
+    # and evaluation data. Recovery is intentionally compact so JSON/schema
+    # repair does not create a second context-limit failure.
+    if strategy is RecoveryStrategy.REVISE_RESPONSE:
+        return (
             "# WRA DesignSpec Recovery\n\n"
-            "Revise the previous response so that it is valid according to the DesignSpec schema.\n\n"
+            "Repair the previous Designer response. This is a repair task, not a new design task.\n"
+            "Preserve the useful design/content decisions already present in the previous response.\n"
+            "Return exactly one valid JSON object and nothing else. Do not output analysis, reasoning, Markdown, code fences, or HTML.\n\n"
+            f"{_schema_contract()}\n\n"
             f"Failure type: {error.value}\n\n"
             f"Validation errors:\n{validation_errors}\n\n"
-            f"Previous response:\n{previous_response or '(no previous response)'}\n"
-        )
-    else:
-        revision = revision_template.format(
-            failure_type=error.value,
-            validation_errors=validation_errors,
-            previous_response=previous_response or "(no previous response)",
+            f"Previous response:\n{previous}\n"
         )
 
-    return f"{original_prompt}\n\n{revision}"
+    return original_prompt

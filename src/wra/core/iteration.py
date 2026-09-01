@@ -71,7 +71,8 @@ class IterationEngine:
                 evaluator_model = ModelSelector.select(self._config.evaluation.model, "evaluator")
                 logger.info("Models selected: designer=%s generator=%s evaluator=%s", designer_model, generator_model, evaluator_model)
 
-                design_constraints = {"mode": self._config.design.mode, "available_presets": self._config.design.presets}
+                design_constraints = self._build_design_constraints(iteration)
+                logger.debug("Design constraints: %s", design_constraints)
                 if previous_result is None or previous_result.evaluation is None:
                     logger.info("Current task: design planning")
                     design_spec = self._designer.plan(features, design_constraints=design_constraints, model=designer_model)
@@ -114,6 +115,27 @@ class IterationEngine:
         finally:
             if browser_tmp.exists():
                 shutil.rmtree(browser_tmp, ignore_errors=True)
+
+    def _build_design_constraints(self, iteration: int) -> dict:
+        mode = self._config.design.mode
+        constraints = {"mode": mode}
+        if mode != "auto":
+            constraints["available_presets"] = self._config.design.presets
+
+        # This is deliberately a soft exploration hint. It must never prescribe
+        # a palette, layout, component set, or other fixed visual recipe.
+        exploration_axes = (
+            "Explore composition and information hierarchy; avoid defaulting to a conventional business landing-page structure.",
+            "Explore typography, density, and spatial rhythm; allow a substantially different reading flow when content supports it.",
+            "Explore color relationships, surfaces, contrast, and visual texture; do not assume a dark corporate palette.",
+            "Explore interaction and motion as appropriate; consider different interaction models without sacrificing clarity or accessibility.",
+        )
+        constraints["variation_policy"] = {
+            "type": "soft_guidance",
+            "instruction": exploration_axes[(iteration - 1) % len(exploration_axes)],
+            "do_not_force": True,
+        }
+        return constraints
 
     def _finalize(self, result, output_manager, browser_tmp):
         logger.info("Finalizing output from iteration %d", result.iteration)

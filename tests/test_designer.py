@@ -4,7 +4,7 @@ import pytest
 
 from wra.core.models import FeatureModel
 from wra.designer.planner import DesignPlanner
-from wra.designer.recovery import RecoveryPolicy
+from wra.designer.recovery import DesignRecoveryError, RecoveryPolicy, build_recovery_prompt
 from wra.validator.design import validate_design_spec
 
 
@@ -128,6 +128,23 @@ def test_invalid_json_revises_previous_response():
 
     assert "Previous response:\n{broken" in client.calls[1]["prompt"]
     assert "Failure type: json_structure" in client.calls[1]["prompt"]
+    assert "DesignSpec required structure:" in client.calls[1]["prompt"]
+
+
+def test_invalid_json_recovery_does_not_duplicate_original_prompt():
+    prompt = "Feature Model: " + ("x" * 30000)
+    previous = "{" + ("y" * 12000)
+    recovery = build_recovery_prompt(
+        prompt,
+        previous,
+        DesignRecoveryError.JSON_STRUCTURE,
+        ["Designer LLM returned invalid JSON"],
+        "",
+    )
+
+    assert len(recovery) < len(prompt) + len(previous)
+    assert prompt not in recovery
+    assert previous in recovery
 
 
 def test_unknown_error_regenerates_without_previous_response():

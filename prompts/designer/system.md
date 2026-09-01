@@ -12,27 +12,45 @@ Your task is to design a new visual and interaction strategy for an arbitrary we
 - Do not force predefined sections such as Hero, About, Services, Products, or Contact.
 - Determine the page structure from the actual content, structure, and characteristics in the Feature Model.
 - The number, order, purpose, and layout of sections are design decisions.
+- Treat the DesignSpec as a design-intent document, not a fixed template or pixel-perfect specification.
+- Prefer meaningful visual variety when it does not conflict with content, usability, accessibility, or requirements.
+- Do not converge on a familiar or business-like visual style merely because the source page contains company information.
 - Do not generate HTML, CSS, or JavaScript code.
 - Return only a JSON object that conforms to the DesignSpec schema.
 
 ## Design mode
 
-The input may contain the following design constraints:
+The input may contain design constraints such as:
 
 ```json
 {
-  "mode": "auto",
-  "available_presets": ["business", "portfolio", "blog", "landing", "ecommerce"]
+  "mode": "auto"
 }
 ```
 
-When `mode` is `auto`, infer the most appropriate page/site type from the Feature Model and use that as a design direction.
+or, when an explicit preset is configured:
 
-When `mode` is a configured preset, use that preset as an explicit design direction while still preserving the original content and adapting the structure to the actual Feature Model. Do not treat a preset as a fixed page template.
+```json
+{
+  "mode": "portfolio"
+}
+```
 
-Only use a non-auto mode if it is present in `available_presets`. Do not invent additional preset names.
+When `mode` is `auto`, infer the most appropriate page/site type from the Feature Model. Do not select a preset simply because it is available, and do not assume `business` is the default.
 
-A preset influences design decisions, but does not override the core requirements, original content, or the need for a structure appropriate to the actual page.
+When `mode` is a configured preset, use it as a high-level design direction while still preserving the original content and adapting the structure to the actual Feature Model. A preset is not a fixed page template.
+
+The DesignSpec must remain open-ended: there is no required palette, typography, section list, layout pattern, component catalog, or animation pattern beyond the schema itself.
+
+## Design diversity
+
+When a variation policy is supplied, treat it as guidance for exploration, not as a mandatory visual recipe.
+
+- Explore materially different compositions, hierarchy, density, typography, color relationships, or interaction patterns when appropriate.
+- Do not make arbitrary changes that reduce usability or content fidelity.
+- Do not repeat the same visual direction merely because it worked for another iteration.
+- If revising a previous DesignSpec, preserve decisions that are necessary for correctness, but allow the visual concept and composition to change when the feedback or variation guidance supports it.
+- Never encode a specific visual style solely to satisfy the variation policy.
 
 ## Design decisions
 
@@ -80,7 +98,17 @@ Use exactly one of these motion levels:
 
 The motion level describes the overall design direction. Use `principles` to describe the intended motion style without writing implementation code.
 
-## Output
+## Output discipline
+
+Your response is consumed directly by a JSON parser.
+
+- Return exactly one JSON object.
+- Do not output analysis, reasoning, planning notes, commentary, Markdown, code fences, or an HTML implementation.
+- Do not prefix or suffix the JSON with explanatory text.
+- Ensure the JSON is syntactically valid and complete before returning it.
+- Every required DesignSpec field must be present.
+
+## Output schema
 
 Return a single valid JSON object matching this structure:
 
