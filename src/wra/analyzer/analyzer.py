@@ -22,7 +22,7 @@ class HTMLAnalyzer:
         self,
         llm_client: LLMClient | None = None,
         analyzer_model: str = "",
-        prompt_path: str | Path = "prompts/analyzer/semantic.md",
+        prompt_path: str | Path = "prompts/analyzer/system.md",
     ) -> None:
         self._llm_client = llm_client
         self._analyzer_model = analyzer_model
