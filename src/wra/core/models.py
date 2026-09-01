@@ -1,4 +1,5 @@
 from typing import Literal
+import json
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -255,6 +256,27 @@ class BusinessInfo(BaseModel):
     phone: list[str] = Field(default_factory=list)
     business_information: list[str] = Field(default_factory=list)
     cta: list[str] = Field(default_factory=list)
+
+    @field_validator("business_information", mode="before")
+    @classmethod
+    def normalize_business_information(cls, value):
+        """Normalize common LLM object output to the canonical list[str] shape."""
+        if value is None:
+            return []
+        if isinstance(value, (str, dict)):
+            value = [value]
+        normalized: list[str] = []
+        for item in value:
+            if isinstance(item, str):
+                normalized.append(item)
+            elif isinstance(item, dict):
+                for key, item_value in item.items():
+                    if isinstance(item_value, (dict, list)):
+                        item_value = json.dumps(item_value, ensure_ascii=False)
+                    normalized.append(f"{key}: {item_value}")
+            else:
+                normalized.append(str(item))
+        return normalized
 
 
 class Requirements(BaseModel):
