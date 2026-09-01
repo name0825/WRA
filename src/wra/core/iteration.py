@@ -14,6 +14,7 @@ from wra.validator.html import HTMLValidationResult, validate_html
 @dataclass(frozen=True)
 class IterationResult:
     iteration: int
+    features: FeatureModel
     design_spec: DesignSpec
     html: str
     validation: HTMLValidationResult
@@ -60,13 +61,12 @@ class IterationEngine:
             features_path.write_text(features.model_dump_json(indent=2), encoding="utf-8")
 
         output_manager = OutputManager(output_dir, self._config.pipeline.output.save_mode)
-        return self._run_iterations(features, output_manager, output_dir, iteration)
+        return self._run_iterations(features, output_manager, iteration)
 
     def _run_iterations(
         self,
         features: FeatureModel,
         output_manager: OutputManager,
-        output_dir: Path,
         start_iteration: int,
     ) -> IterationResult:
         iteration = start_iteration
@@ -96,28 +96,41 @@ class IterationEngine:
                     score=evaluation.overall_score if evaluation else None,
                 )
 
-                final_path = output_manager.finalize(fallback_html=html)
                 last_result = IterationResult(
                     iteration=iteration,
+                    features=features,
                     design_spec=design_spec,
                     html=html,
                     validation=validation,
                     evaluation=evaluation,
                     html_path=saved.html_path,
                     validation_path=saved.validation_path,
-                    final_path=final_path,
+                    final_path=output_dir / "final.html",
                 )
 
                 if self._should_terminate(iteration, evaluation):
-                    return last_result
+                    return self._finalize(last_result, output_manager)
 
                 previous_evaluation = evaluation
                 iteration += 1
         except KeyboardInterrupt:
             if last_result is None:
                 raise
-            last_result = self._with_final_path(last_result, output_manager.finalize(fallback_html=last_result.html))
-            return last_result
+            return self._finalize(last_result, output_manager)
+
+    def _finalize(self, result: IterationResult, output_manager: OutputManager) -> IterationResult:
+        final_path = output_manager.finalize(fallback_html=result.html)
+        return IterationResult(
+            iteration=result.iteration,
+            features=result.features,
+            design_spec=result.design_spec,
+            html=result.html,
+            validation=result.validation,
+            evaluation=result.evaluation,
+            html_path=result.html_path,
+            validation_path=result.validation_path,
+            final_path=final_path,
+        )
 
     def _should_terminate(
         self,
@@ -148,16 +161,3 @@ class IterationEngine:
             for suggestion in evaluation.improvement_suggestions
         )
         return rules
-
-    @staticmethod
-    def _with_final_path(result: IterationResult, final_path: Path) -> IterationResult:
-        return IterationResult(
-            iteration=result.iteration,
-            design_spec=result.design_spec,
-            html=result.html,
-            validation=result.validation,
-            evaluation=result.evaluation,
-            html_path=result.html_path,
-            validation_path=result.validation_path,
-            final_path=final_path,
-        )
