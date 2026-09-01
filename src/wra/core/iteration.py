@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from pathlib import Path
+import logging
 import shutil
 
 from wra.browser.models import BrowserEvaluationResult
@@ -12,6 +13,8 @@ from wra.generator.generator import HTMLGenerator
 from wra.validator.html import HTMLValidationResult, validate_html
 from wra.analyzer.analyzer import HTMLAnalyzer
 from wra.llm.model_selector import ModelSelector
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -43,6 +46,7 @@ class IterationEngine:
         input_file = Path(input_path)
         output_dir = Path(run_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
+        logger.info("Pipeline started: input=%s run_dir=%s", input_file, output_dir)
         original_path = output_dir / "original.html"
         if not original_path.exists():
             original_path.write_text(input_file.read_text(encoding="utf-8"), encoding="utf-8")
@@ -50,6 +54,7 @@ class IterationEngine:
         features_path = output_dir / "features.json"
         if not features_path.exists():
             features_path.write_text(features.model_dump_json(indent=2), encoding="utf-8")
+        logger.info("Feature Model ready: path=%s", features_path)
         output_manager = OutputManager(output_dir, self._config.pipeline.output.save_mode)
         return self._run_iterations(features, output_manager, iteration)
 
@@ -60,93 +65,71 @@ class IterationEngine:
         browser_tmp = output_manager.run_dir / ".browser_tmp"
         try:
             while True:
-                # Select all role models once at the beginning of an iteration.
+                logger.info("Iteration %d started", iteration)
                 designer_model = ModelSelector.select(self._config.models.designer, "designer")
                 generator_model = ModelSelector.select(self._config.models.generator, "generator")
                 evaluator_model = ModelSelector.select(self._config.evaluation.model, "evaluator")
+                logger.info("Models selected: designer=%s generator=%s evaluator=%s", designer_model, generator_model, evaluator_model)
 
-                design_constraints = {
-                    "mode": self._config.design.mode,
-                    "available_presets": self._config.design.presets,
-                }
-
+                design_constraints = {"mode": self._config.design.mode, "available_presets": self._config.design.presets}
                 if previous_result is None or previous_result.evaluation is None:
-                    design_spec = self._designer.plan(
-                        features,
-                        design_constraints=design_constraints,
-                        model=designer_model,
-                    )
+                    logger.info("Current task: design planning")
+                    design_spec = self._designer.plan(features, design_constraints=design_constraints, model=designer_model)
                 else:
-                    design_spec = self._designer.revise(
-                        features=features,
-                        previous_design_spec=previous_result.design_spec,
-                        previous_html=previous_result.html,
-                        evaluation=previous_result.evaluation,
-                        design_constraints=design_constraints,
-                        model=designer_model,
-                    )
+                    logger.info("Current task: design revision based on score=%.2f", previous_result.evaluation.overall_score)
+                    design_spec = self._designer.revise(features=features, previous_design_spec=previous_result.design_spec, previous_html=previous_result.html, evaluation=previous_result.evaluation, design_constraints=design_constraints, model=designer_model)
 
+                logger.info("Current task: HTML generation")
                 html = self._generator.generate(features, design_spec, model=generator_model)
+                logger.info("Current task: HTML validation")
                 validation = validate_html(html, features)
                 browser_result = BrowserEvaluationResult(enabled=False)
                 evaluation = None
                 if validation.valid:
                     if self._browser_evaluator is not None and self._config.browser.enabled:
+                        logger.info("Current task: browser evaluation")
                         browser_result = self._browser_evaluator.evaluate(html=html, output_dir=browser_tmp, iteration=iteration)
+                    logger.info("Current task: LLM evaluation")
                     evaluation = self._evaluator.evaluate(features, design_spec, html, browser_result=browser_result, model=evaluator_model)
+                else:
+                    logger.warning("Skipping browser/evaluation because HTML validation failed")
 
-                saved = output_manager.save_iteration(
-                    iteration=iteration,
-                    html=html,
-                    design_spec=design_spec,
-                    validation=validation,
-                    evaluation=evaluation,
-                    browser=browser_result,
-                    score=evaluation.overall_score if evaluation else None,
-                )
-                last_result = IterationResult(
-                    iteration=iteration,
-                    features=features,
-                    design_spec=design_spec,
-                    html=html,
-                    validation=validation,
-                    browser=browser_result,
-                    evaluation=evaluation,
-                    html_path=saved.html_path,
-                    validation_path=saved.validation_path,
-                    final_path=output_manager.run_dir / "final.html",
-                )
+                logger.info("Current task: saving iteration %d", iteration)
+                saved = output_manager.save_iteration(iteration=iteration, html=html, design_spec=design_spec, validation=validation, evaluation=evaluation, browser=browser_result, score=evaluation.overall_score if evaluation else None)
+                last_result = IterationResult(iteration=iteration, features=features, design_spec=design_spec, html=html, validation=validation, browser=browser_result, evaluation=evaluation, html_path=saved.html_path, validation_path=saved.validation_path, final_path=output_manager.run_dir / "final.html")
+                logger.info("Iteration %d completed: validation=%s score=%s", iteration, validation.valid, f"{evaluation.overall_score:.2f}" if evaluation else "n/a")
                 if self._should_terminate(iteration, evaluation):
+                    logger.info("Pipeline termination condition met at iteration %d", iteration)
                     return self._finalize(last_result, output_manager, browser_tmp)
                 previous_result = last_result
                 iteration += 1
         except KeyboardInterrupt:
+            logger.warning("Pipeline interrupted by user")
             if last_result is None:
                 raise
             return self._finalize(last_result, output_manager, browser_tmp)
+        except Exception:
+            logger.exception("Pipeline failed")
+            raise
         finally:
             if browser_tmp.exists():
                 shutil.rmtree(browser_tmp, ignore_errors=True)
 
     def _finalize(self, result, output_manager, browser_tmp):
+        logger.info("Finalizing output from iteration %d", result.iteration)
         final_path = output_manager.finalize(fallback_html=result.html)
-        return IterationResult(
-            iteration=result.iteration,
-            features=result.features,
-            design_spec=result.design_spec,
-            html=result.html,
-            validation=result.validation,
-            browser=result.browser,
-            evaluation=result.evaluation,
-            html_path=result.html_path,
-            validation_path=result.validation_path,
-            final_path=final_path,
-        )
+        logger.info("Final output ready: %s", final_path)
+        return IterationResult(iteration=result.iteration, features=result.features, design_spec=result.design_spec, html=result.html, validation=result.validation, browser=result.browser, evaluation=result.evaluation, html_path=result.html_path, validation_path=result.validation_path, final_path=final_path)
 
     def _should_terminate(self, iteration, evaluation):
         termination = self._config.pipeline.termination
         if not termination.enabled:
+            logger.info("Termination disabled: continuing to next iteration")
             return False
         if evaluation is not None and evaluation.overall_score >= self._config.pipeline.evaluation_threshold:
+            logger.info("Evaluation threshold reached: %.2f >= %.2f", evaluation.overall_score, self._config.pipeline.evaluation_threshold)
             return True
-        return iteration >= self._config.pipeline.max_iterations
+        if iteration >= self._config.pipeline.max_iterations:
+            logger.info("Maximum iterations reached: %d", self._config.pipeline.max_iterations)
+            return True
+        return False
