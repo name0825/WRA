@@ -12,7 +12,7 @@ class LLMEvaluator:
     def __init__(self, llm_client: LLMClient, model: str) -> None:
         self._llm_client = llm_client
         self._model = model
-        self._system_prompt = Path("prompts/evaluator/system.md").read_text(encoding="utf-8")
+        self._system_prompt = Path("prompts/evaluator/llm.md").read_text(encoding="utf-8")
 
     def evaluate(
         self,
