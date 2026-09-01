@@ -16,7 +16,7 @@ from wra.llm.client import LLMClient
 
 
 class HTMLAnalyzer:
-    """Analyze HTML with deterministic extraction and optional LLM semantics."""
+    """Analyze arbitrary web pages with deterministic extraction and optional LLM semantics."""
 
     def __init__(
         self,
@@ -32,12 +32,15 @@ class HTMLAnalyzer:
         root = parse_html(html)
         content = extract_content(root)
         media = extract_media(root)
+        extracted_business = extract_business_info(root, content)
+        business = extracted_business if self._has_business_data(extracted_business) else None
+
         features = FeatureModel(
             metadata=extract_metadata(root),
             content=content,
             structure=extract_structure(root),
             media=media,
-            business=extract_business_info(root, content),
+            business=business,
             requirements=extract_requirements(content, media),
         )
 
@@ -100,8 +103,27 @@ class HTMLAnalyzer:
         return data
 
     @staticmethod
-    def _merge_business_info(base: BusinessInfo, semantic: BusinessInfo) -> BusinessInfo:
-        data = base.model_dump()
+    def _has_business_data(value: BusinessInfo) -> bool:
+        return any(
+            [
+                value.company_name,
+                value.services,
+                value.products,
+                value.contact,
+                value.address,
+                value.email,
+                value.phone,
+                value.business_information,
+                value.cta,
+            ]
+        )
+
+    @staticmethod
+    def _merge_business_info(
+        base: BusinessInfo | None,
+        semantic: BusinessInfo,
+    ) -> BusinessInfo:
+        data = base.model_dump() if base is not None else BusinessInfo().model_dump()
         semantic_data = semantic.model_dump()
 
         for key, value in semantic_data.items():
