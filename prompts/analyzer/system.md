@@ -17,6 +17,21 @@ Preserve factual information from the supplied input. Do not invent company, pro
 
 Business information is optional. Omit the `business` field when the page does not contain meaningful business information.
 
+## Business schema
+
+When returning `business`, follow the FeatureModel types exactly:
+- `company_name`: string or null
+- `services`: array of strings
+- `products`: array of strings
+- `contact`: array of strings
+- `address`: string or null
+- `email`: array of strings
+- `phone`: array of strings
+- `business_information`: array of strings
+- `cta`: array of strings
+
+`business_information` MUST contain strings only. Do NOT create objects/dictionaries inside this array. For structured facts such as a business registration number, flatten them into a string such as `Business registration number: 480-88-03967`.
+
 ## Preservation requirement rules
 
 `requirements.must_preserve` is a HARD validation requirement. Every value placed there must be a verbatim, user-visible string that already exists in the deterministic extraction result. Do not create summaries, category names, labels, descriptions, or paraphrases such as `Technical skill set`, `Educational background and awards`, or `Contact information`.
