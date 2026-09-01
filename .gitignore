@@ -4,6 +4,7 @@
 __pycache__/
 
 output/
+log/
 input/input.html
 
 *egg-info/
