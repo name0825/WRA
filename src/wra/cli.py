@@ -37,11 +37,20 @@ def load_config() -> WRAConfig:
 
 
 def main() -> None:
-    configure_logging()
+    # Config is loaded before logging so the configured file/console levels are applied.
+    config = load_config()
+    configure_logging(
+        level=config.logging.level,
+        console_level=config.logging.console_level,
+        log_dir=config.logging.directory,
+    )
+    logger.info("WRA starting")
+    logger.info("Input: %s", INPUT_PATH)
+    logger.info("Ollama endpoint: %s", config.ollama.base_url)
     if not INPUT_PATH.is_file():
+        logger.error("Input file not found: %s", INPUT_PATH)
         raise FileNotFoundError(f"Input file not found: {INPUT_PATH}")
 
-    config = load_config()
     llm_client = OllamaClient(config.ollama.base_url)
     design_recovery_policy = DesignRecoveryPolicy(
         max_retries=config.recovery.max_retries,
@@ -64,6 +73,7 @@ def main() -> None:
     browser_evaluator = BrowserEvaluator(config.browser) if config.browser.enabled else None
 
     run_dir = create_run_directory()
+    logger.info("Run directory: %s", run_dir)
     engine = IterationEngine(config=config, analyzer=analyzer, designer=designer, generator=generator, evaluator=evaluator, browser_evaluator=browser_evaluator)
     result = engine.run(INPUT_PATH, run_dir)
 
@@ -81,6 +91,7 @@ def main() -> None:
         logger.info("Evaluation summary: %s", result.evaluation.summary)
     logger.info("Validation result written to %s", result.validation_path or "memory")
     logger.info("Final HTML written to %s", result.final_path)
+    logger.info("WRA finished")
 
 
 if __name__ == "__main__":
