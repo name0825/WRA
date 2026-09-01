@@ -87,17 +87,55 @@ Recommend CSS/JS technologies only when they materially support the proposed des
 
 ## 10. Feature Model references
 
-`content_source` is always a dotted Feature Model path, never literal content. Use valid paths such as `metadata.title`, `content.text`, `content.links`, `business.contact`, `navigation.items`, `requirements.must_preserve`, etc.
-Do not put actual content after a colon.
+`content_source` is a Feature Model reference path, never literal content. The path MUST resolve against the supplied Feature Model.
+
+Use only paths that actually exist in the supplied Feature Model. Do not invent names, fields, indexes, or content.
+
+Nested object paths use dots, for example:
+- `metadata.title`
+- `business.contact`
+- `requirements.must_preserve`
+
+Array collections may be referenced as a whole, for example:
+- `content.headings`
+- `content.paragraphs`
+- `content.links`
+- `media.images`
+
+Specific existing array items may also be referenced with a zero-based index, for example:
+- `content.headings[0]`
+- `content.links[5]`
+- `media.images[2]`
+
+Array indexes are valid only when the indexed item actually exists. Never guess an index. If you do not need one specific item, prefer the collection-level path instead of indexing it.
+
+A `content_source` must never contain actual text after a colon and must not use invented semantic names such as `content.hero`, `content.services`, or `media.logo` unless that exact path exists in the supplied Feature Model.
+
+Content coverage rule: every populated collection in the supplied Feature Model must be represented by at least one component `content_source`. A collection-level reference covers the collection; an indexed reference such as `content.headings[0]` also covers its parent collection `content.headings`.
+
+Before returning, mentally check every `content_source` against the supplied Feature Model and remove or correct any path that does not resolve.
 
 ## 11. Output discipline
 
 Return exactly one syntactically valid JSON object matching the DesignSpec schema. No Markdown, commentary, reasoning, HTML, or code.
+
+The top-level object MUST contain exactly these required fields:
+- `design`
+- `sections`
+- `responsive`
+- `interaction`
+
+`sections` must be an array with at least one section, and every section must contain at least one component.
+
 Before returning, verify:
 
 - every required DesignSpec field exists
+- the top-level keys are present: `design`, `sections`, `responsive`, `interaction`
 - every `content_source` is a valid Feature Model path
+- every indexed `content_source` uses an existing zero-based array index
+- every populated Feature Model content/media collection has content coverage
 - every interaction `target` exactly equals a declared component `type`
+- every responsive breakpoint has both `name` and `width`
 - the design has a clear visual concept, hierarchy, system, responsive strategy, and motion language
 
 **Important schema typing rules:**

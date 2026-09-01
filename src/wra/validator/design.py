@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 import logging
+import re
 
 from wra.core.models import FeatureModel, FrameworkConfig
 from wra.designer.schema import DesignSpec
@@ -13,19 +14,41 @@ class DesignValidationResult:
     errors: list[str] = field(default_factory=list)
 
 
+_PATH_PART_RE = re.compile(r"^(?P<name>[^\[\]]+)(?P<indexes>(?:\[\d+\])*)$")
+_INDEX_RE = re.compile(r"\[(\d+)\]")
+
+
 def _resolve_path(value: object, path: str) -> object | None:
+    """Resolve dotted FeatureModel paths with optional list indexes."""
     current = value
     for part in path.split("."):
         if not part or current is None:
             return None
+
+        match = _PATH_PART_RE.fullmatch(part)
+        if not match:
+            return None
+
+        name = match.group("name")
+        indexes = _INDEX_RE.findall(match.group("indexes"))
+
         if isinstance(current, dict):
-            if part not in current:
+            if name not in current:
                 return None
-            current = current[part]
-        elif hasattr(current, part):
-            current = getattr(current, part)
+            current = current[name]
+        elif hasattr(current, name):
+            current = getattr(current, name)
         else:
             return None
+
+        for index_text in indexes:
+            if not isinstance(current, list):
+                return None
+            index = int(index_text)
+            if index < 0 or index >= len(current):
+                return None
+            current = current[index]
+
     return current
 
 
@@ -41,6 +64,15 @@ def _validate_frameworks(spec: DesignSpec, frameworks: FrameworkConfig, errors: 
     js_name = spec.design.framework.js.name.strip()
     if not _is_no_framework(js_name) and frameworks.find_js(js_name) is None:
         errors.append(f"JavaScript framework is not configured: {js_name}")
+
+
+def _source_covers_collection(source: str, collection_path: str) -> bool:
+    """Return whether a source references the collection or anything below it."""
+    return (
+        source == collection_path
+        or source.startswith(f"{collection_path}.")
+        or source.startswith(f"{collection_path}[")
+    )
 
 
 def _validate_content_coverage(spec: DesignSpec, features: FeatureModel, errors: list[str]) -> None:
@@ -72,7 +104,7 @@ def _validate_content_coverage(spec: DesignSpec, features: FeatureModel, errors:
         value = _resolve_path(feature_data, path)
         if not value:
             continue
-        if not any(source == path or source.startswith(f"{path}.") for source in sources):
+        if not any(_source_covers_collection(source, path) for source in sources):
             errors.append(f"missing content coverage: {path}")
 
 
