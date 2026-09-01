@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from wra.core.models import FeatureModel
+from wra.core.models import EvaluationResult, FeatureModel
 from wra.designer.recovery import (
     DesignRecoveryError,
     RecoveryPolicy,
@@ -17,7 +17,7 @@ from wra.validator.design import validate_design_spec
 
 
 class DesignPlanner:
-    """Create and recover a structured design plan from a generic web FeatureModel."""
+    """Create and revise structured design plans from a generic web FeatureModel."""
 
     def __init__(
         self,
@@ -40,17 +40,44 @@ class DesignPlanner:
         generation_rules: list[str] | None = None,
     ) -> DesignSpec:
         prompt_template = self._prompt_path.read_text(encoding="utf-8")
-        revision_template = self._revision_prompt_path.read_text(encoding="utf-8")
-        original_prompt = (
-            f"{prompt_template}\n\n"
-            "Feature Model:\n"
-            f"{features.model_dump_json(indent=2)}\n\n"
-            "Design Constraints:\n"
-            f"{json.dumps(design_constraints or {}, ensure_ascii=False, indent=2)}\n\n"
-            "Generation Rules:\n"
-            f"{json.dumps(generation_rules or [], ensure_ascii=False, indent=2)}"
+        original_prompt = self._build_plan_prompt(
+            prompt_template,
+            features,
+            design_constraints,
+            generation_rules,
+        )
+        return self._generate_and_validate(
+            original_prompt=original_prompt,
+            features=features,
+            revision_template=self._revision_prompt_path.read_text(encoding="utf-8"),
         )
 
+    def revise(
+        self,
+        features: FeatureModel,
+        previous_design_spec: DesignSpec,
+        previous_html: str,
+        evaluation: EvaluationResult,
+    ) -> DesignSpec:
+        """Revise the previous DesignSpec from evaluator feedback instead of redesigning from scratch."""
+        revision_template = self._revision_prompt_path.read_text(encoding="utf-8")
+        prompt = revision_template.format(
+            previous_design_spec=previous_design_spec.model_dump_json(indent=2),
+            previous_html=previous_html,
+            evaluation_result=evaluation.model_dump_json(indent=2),
+        )
+        return self._generate_and_validate(
+            original_prompt=prompt,
+            features=features,
+            revision_template=revision_template,
+        )
+
+    def _generate_and_validate(
+        self,
+        original_prompt: str,
+        features: FeatureModel,
+        revision_template: str,
+    ) -> DesignSpec:
         current_num_ctx = self._recovery_policy.initial_num_ctx
         previous_response: str | None = None
         prompt = original_prompt
@@ -114,6 +141,23 @@ class DesignPlanner:
         raise RuntimeError(
             f"Design planning failed after {self._recovery_policy.max_retries} retries: "
             f"{last_error.value}; {', '.join(last_details)}"
+        )
+
+    @staticmethod
+    def _build_plan_prompt(
+        prompt_template: str,
+        features: FeatureModel,
+        design_constraints: dict[str, Any] | None,
+        generation_rules: list[str] | None,
+    ) -> str:
+        return (
+            f"{prompt_template}\n\n"
+            "Feature Model:\n"
+            f"{features.model_dump_json(indent=2)}\n\n"
+            "Design Constraints:\n"
+            f"{json.dumps(design_constraints or {}, ensure_ascii=False, indent=2)}\n\n"
+            "Generation Rules:\n"
+            f"{json.dumps(generation_rules or [], ensure_ascii=False, indent=2)}"
         )
 
     @staticmethod
