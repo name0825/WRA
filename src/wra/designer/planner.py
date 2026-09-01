@@ -55,6 +55,7 @@ class DesignPlanner:
         previous_design_spec: DesignSpec,
         previous_html: str,
         evaluation: EvaluationResult,
+        design_constraints: dict[str, Any] | None = None,
         model: str | None = None,
     ) -> DesignSpec:
         revision_template = self._revision_prompt_path.read_text(encoding="utf-8")
@@ -63,6 +64,8 @@ class DesignPlanner:
             previous_html=previous_html,
             evaluation_result=evaluation.model_dump_json(indent=2),
         )
+        if design_constraints:
+            prompt = self._append_design_constraints(prompt, design_constraints)
         return self._generate_and_validate(
             original_prompt=prompt,
             features=features,
@@ -124,10 +127,18 @@ class DesignPlanner:
 
     @staticmethod
     def _build_plan_prompt(prompt_template, features, design_constraints, generation_rules):
-        return (
+        prompt = (
             f"{prompt_template}\n\nFeature Model:\n{features.model_dump_json(indent=2)}\n\n"
             f"Design Constraints:\n{json.dumps(design_constraints or {}, ensure_ascii=False, indent=2)}\n\n"
             f"Generation Rules:\n{json.dumps(generation_rules or [], ensure_ascii=False, indent=2)}"
+        )
+        return prompt
+
+    @staticmethod
+    def _append_design_constraints(prompt: str, design_constraints: dict[str, Any]) -> str:
+        return (
+            f"{prompt}\n\nDesign Constraints:\n"
+            f"{json.dumps(design_constraints, ensure_ascii=False, indent=2)}"
         )
 
     @staticmethod
