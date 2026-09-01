@@ -2,7 +2,6 @@ import logging
 from dataclasses import dataclass, field
 
 from wra.core.models import FeatureModel
-from wra.validator.content import validate_content
 from wra.validator.structure import validate_structure
 
 logger = logging.getLogger(__name__)
@@ -29,11 +28,8 @@ def validate_html(html: str, features: FeatureModel) -> HTMLValidationResult:
         errors.append("missing DOCTYPE")
 
     structure_errors, structure_warnings = validate_structure(html)
-    content_errors, content_warnings = validate_content(html, features)
     errors.extend(structure_errors)
-    errors.extend(content_errors)
     warnings.extend(structure_warnings)
-    warnings.extend(content_warnings)
 
     result = HTMLValidationResult(valid=not errors, errors=errors, warnings=warnings)
     if result.valid:
