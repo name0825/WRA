@@ -1,9 +1,10 @@
 .vscode/
+.DS_Store
 
 __pycache__/
-output/
 
-.DS_Store
+output/
+input/input.html
 
 *egg-info/
 
