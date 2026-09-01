@@ -41,6 +41,10 @@ def classify_exception(exc: Exception) -> DesignRecoveryError:
         "token limit",
         "too many tokens",
         "prompt is too long",
+        "output token",
+        "max tokens",
+        "maximum tokens",
+        "length limit",
     )
     if any(marker in message for marker in token_markers):
         return DesignRecoveryError.TOKEN_LIMIT
@@ -67,10 +71,11 @@ def _schema_contract() -> str:
         "`color_system` contains `background`, `surface`, `text`, `muted_text`, `primary`, `accent`. "
         "`typography` contains `heading`, `body`, `scale`, `weight`; `weight` must be a single string, not an object. "
         "`framework` contains `css` and `js`, each with `name` and `reason`. "
-        "`motion` contains `level` (`none`, `low`, `mid`, or `high`) and `principles`. "
+        "`motion` contains `level` (`none`, `low`, `mid`, or `high`) and `principles`; `principles` MUST be an array of strings. "
         "Each section contains `id`, `purpose`, `layout`, and `components`; each component contains `type`, `purpose`, `content_source`. "
-        "`responsive` contains `strategy`, `breakpoints`, and `behavior`; `behavior` must be an array of strings, not objects. "
-        "`interaction` contains `principles` and `components`; each interaction component contains `target` and `behavior`."
+        "`responsive` contains `strategy`, `breakpoints`, and `behavior`; `breakpoints` MUST be an array of objects, "
+        "and every breakpoint object MUST contain both `name` and `width`. `behavior` MUST be an array of strings, not objects. "
+        "`interaction` contains `principles` and `components`; `principles` MUST be an array of strings; each interaction component contains `target` and `behavior`."
     )
 
 
