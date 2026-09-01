@@ -1,5 +1,6 @@
 from wra.analyzer.analyzer import HTMLAnalyzer
 from wra.analyzer.html_parser import parse_html
+from wra.llm.client import LLMClient
 
 
 HTML = """
@@ -31,6 +32,16 @@ HTML = """
 </body>
 </html>
 """
+
+
+class FakeLLMClient(LLMClient):
+    def __init__(self, response: str) -> None:
+        self.response = response
+        self.calls: list[tuple[str, str, dict | None]] = []
+
+    def generate(self, prompt: str, model: str, options: dict | None = None) -> str:
+        self.calls.append((prompt, model, options))
+        return self.response
 
 
 def test_parser_builds_tree() -> None:
@@ -67,3 +78,54 @@ def test_analyzer_extracts_features() -> None:
     assert features.media.images[0].alt == "Example product"
     assert "contact@example.com" in features.business.email
     assert "Example Company" in features.requirements.must_preserve
+
+
+def test_analyzer_applies_llm_semantic_analysis() -> None:
+    llm = FakeLLMClient(
+        response='''{
+          "site": {
+            "type": "corporate",
+            "industry": "technology",
+            "brand": {"name": "Example Company", "tone": ["professional", "modern"]}
+          },
+          "business": {
+            "services": ["AI web service"],
+            "products": [],
+            "contact": [],
+            "address": null,
+            "email": [],
+            "phone": [],
+            "business_information": ["Technology company"],
+            "cta": ["Contact us"]
+          },
+          "navigation": {"primary_items": ["About", "Contact"]},
+          "requirements": {
+            "must_preserve": ["Example Company", "AI web service"],
+            "optional": ["Technology company"]
+          }
+        }'''
+    )
+
+    features = HTMLAnalyzer(llm_client=llm, analyzer_model="test-model").analyze(HTML)
+
+    assert features.site.type == "corporate"
+    assert features.site.industry == "technology"
+    assert features.site.brand["name"] == "Example Company"
+    assert "AI web service" in features.business.services
+    assert "Technology company" in features.business.business_information
+    assert "Example Company" in features.requirements.must_preserve
+    assert "AI web service" in features.requirements.must_preserve
+    assert features.navigation["primary_items"] == ["About", "Contact"]
+    assert llm.calls[0][1] == "test-model"
+    assert llm.calls[0][2] == {"format": "json"}
+
+
+def test_analyzer_rejects_invalid_llm_json() -> None:
+    llm = FakeLLMClient(response="not json")
+
+    try:
+        HTMLAnalyzer(llm_client=llm, analyzer_model="test-model").analyze(HTML)
+    except ValueError as exc:
+        assert str(exc) == "Analyzer LLM returned invalid JSON"
+    else:
+        raise AssertionError("Expected invalid JSON to raise ValueError")
