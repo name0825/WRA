@@ -32,6 +32,26 @@ class RecoveryConfig(BaseModel):
     context_multiplier: float = 2.0
 
 
+class Framework(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    name: str
+    cdn: str
+
+
+class FrameworkConfig(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    css: list[Framework] = Field(default_factory=list)
+    js: list[Framework] = Field(default_factory=list)
+
+    def find_css(self, name: str) -> Framework | None:
+        return next((framework for framework in self.css if framework.name == name), None)
+
+    def find_js(self, name: str) -> Framework | None:
+        return next((framework for framework in self.js if framework.name == name), None)
+
+
 class WRAConfig(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -39,6 +59,7 @@ class WRAConfig(BaseModel):
     models: ModelConfig
     pipeline: PipelineConfig
     recovery: RecoveryConfig = RecoveryConfig()
+    frameworks: FrameworkConfig = FrameworkConfig()
 
 
 class Metadata(BaseModel):
