@@ -8,6 +8,17 @@ models:
   designer: []
   generator: []
 
+design:
+  # auto: infer the page type from the FeatureModel.
+  # Otherwise, the value must be one of the configured presets below.
+  mode: "auto"
+  presets:
+    - "business"
+    - "portfolio"
+    - "blog"
+    - "landing"
+    - "ecommerce"
+
 evaluation:
   model: []
 
