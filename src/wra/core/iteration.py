@@ -77,16 +77,15 @@ class IterationEngine:
             while True:
                 if previous_result is None:
                     design_spec = self._designer.plan(features)
+                elif previous_result.evaluation is None:
+                    design_spec = self._designer.plan(features)
                 else:
-                    if previous_result.evaluation is None:
-                        design_spec = self._designer.plan(features)
-                    else:
-                        design_spec = self._designer.revise(
-                            features=features,
-                            previous_design_spec=previous_result.design_spec,
-                            previous_html=previous_result.html,
-                            evaluation=previous_result.evaluation,
-                        )
+                    design_spec = self._designer.revise(
+                        features=features,
+                        previous_design_spec=previous_result.design_spec,
+                        previous_html=previous_result.html,
+                        evaluation=previous_result.evaluation,
+                    )
 
                 html = self._generator.generate(features, design_spec)
                 validation = validate_html(html, features)
@@ -114,7 +113,7 @@ class IterationEngine:
                     evaluation=evaluation,
                     html_path=saved.html_path,
                     validation_path=saved.validation_path,
-                    final_path=output_manager.output_dir / "final.html",
+                    final_path=output_manager.run_dir / "final.html",
                 )
 
                 if self._should_terminate(iteration, evaluation):
