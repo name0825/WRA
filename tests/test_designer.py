@@ -107,8 +107,6 @@ def test_design_validator_rejects_unconfigured_frameworks():
 def test_design_validator_accepts_configured_frameworks():
     from wra.designer.schema import DesignSpec
 
-    spec = DesignSpec.model_validate(make_design_spec())
-    spec.design.framework.css.name = "TailwindCSS" if False else spec.design.framework.css.name
     data = make_design_spec()
     data["design"]["framework"]["css"]["name"] = "TailwindCSS"
     data["design"]["framework"]["js"]["name"] = "GSAP"
@@ -165,12 +163,7 @@ def test_token_limit_increases_num_ctx_and_does_not_reuse_large_previous_respons
     planner = DesignPlanner(
         client,
         "designer-model",
-        recovery_policy=RecoveryPolicy(
-            max_retries=1,
-            initial_num_ctx=4096,
-            max_num_ctx=8192,
-            context_multiplier=2,
-        ),
+        recovery_policy=RecoveryPolicy(max_retries=1, initial_num_ctx=4096, max_num_ctx=8192, context_multiplier=2),
     )
 
     result = planner.plan(FeatureModel())
@@ -188,12 +181,7 @@ def test_truncated_json_is_detected_as_token_limit():
     planner = DesignPlanner(
         client,
         "designer-model",
-        recovery_policy=RecoveryPolicy(
-            max_retries=1,
-            initial_num_ctx=4096,
-            max_num_ctx=8192,
-            context_multiplier=2,
-        ),
+        recovery_policy=RecoveryPolicy(max_retries=1, initial_num_ctx=4096, max_num_ctx=8192, context_multiplier=2),
     )
 
     result = planner.plan(FeatureModel())
@@ -221,11 +209,7 @@ def test_invalid_schema_includes_pydantic_field_details():
 def test_invalid_json_revises_previous_response():
     valid = json.dumps(make_design_spec())
     client = FakeLLMClient(["{broken", valid])
-    planner = DesignPlanner(
-        client,
-        "designer-model",
-        recovery_policy=RecoveryPolicy(max_retries=1),
-    )
+    planner = DesignPlanner(client, "designer-model", recovery_policy=RecoveryPolicy(max_retries=1))
 
     planner.plan(FeatureModel())
 
@@ -240,11 +224,7 @@ def test_invalid_design_recovery_reuses_previous_response():
     invalid = json.dumps({**make_design_spec(), "sections": []})
     valid = json.dumps(make_design_spec())
     client = FakeLLMClient([invalid, valid])
-    planner = DesignPlanner(
-        client,
-        "designer-model",
-        recovery_policy=RecoveryPolicy(max_retries=1),
-    )
+    planner = DesignPlanner(client, "designer-model", recovery_policy=RecoveryPolicy(max_retries=1))
 
     planner.plan(FeatureModel())
 
@@ -266,8 +246,6 @@ def test_plan_prompt_lists_existing_feature_model_paths():
 
 
 def test_revision_prompt_preserves_core_context_and_bounds_previous_html():
-    planner = DesignPlanner.__new__(DesignPlanner)
-    planner._frameworks = FrameworkConfig()
     from wra.core.models import EvaluationDimension, EvaluationResult
     from wra.designer.schema import DesignSpec
 
@@ -286,7 +264,7 @@ def test_revision_prompt_preserves_core_context_and_bounds_previous_html():
     )
     html = "<html>" + ("x" * 20000) + "</html>"
 
-    prompt = planner._build_revision_prompt("SYSTEM", "REVISION {previous_design_spec} {previous_html} {evaluation_result}", FeatureModel(), spec, html, evaluation, None, FrameworkConfig())
+    prompt = DesignPlanner._build_revision_prompt("SYSTEM", "REVISION {previous_design_spec} {previous_html} {evaluation_result}", FeatureModel(), spec, html, evaluation, None, FrameworkConfig())
 
     assert "Feature Model:" in prompt
     assert "Available Feature Model reference paths:" in prompt
@@ -316,13 +294,7 @@ def test_parse_response_accepts_prose_around_json():
 def test_invalid_json_recovery_does_not_duplicate_original_prompt():
     prompt = "Feature Model: " + ("x" * 30000)
     previous = "{" + ("y" * 12000)
-    recovery = build_recovery_prompt(
-        prompt,
-        previous,
-        DesignRecoveryError.JSON_STRUCTURE,
-        ["Designer LLM returned invalid JSON"],
-        "",
-    )
+    recovery = build_recovery_prompt(prompt, previous, DesignRecoveryError.JSON_STRUCTURE, ["Designer LLM returned invalid JSON"], "")
 
     assert len(recovery) < len(prompt) + len(previous)
     assert prompt not in recovery
@@ -332,13 +304,7 @@ def test_invalid_json_recovery_does_not_duplicate_original_prompt():
 def test_token_limit_recovery_uses_original_prompt_without_previous_response():
     prompt = "Feature Model: " + ("x" * 30000)
     previous = "{" + ("y" * 12000)
-    recovery = build_recovery_prompt(
-        prompt,
-        previous,
-        DesignRecoveryError.TOKEN_LIMIT,
-        ["Designer LLM response appears truncated"],
-        "",
-    )
+    recovery = build_recovery_prompt(prompt, previous, DesignRecoveryError.TOKEN_LIMIT, ["Designer LLM response appears truncated"], "")
 
     assert prompt in recovery
     assert previous not in recovery
@@ -348,11 +314,7 @@ def test_token_limit_recovery_uses_original_prompt_without_previous_response():
 def test_unknown_error_regenerates_without_previous_response():
     valid = json.dumps(make_design_spec())
     client = FakeLLMClient([RuntimeError("connection reset"), valid])
-    planner = DesignPlanner(
-        client,
-        "designer-model",
-        recovery_policy=RecoveryPolicy(max_retries=1),
-    )
+    planner = DesignPlanner(client, "designer-model", recovery_policy=RecoveryPolicy(max_retries=1))
 
     planner.plan(FeatureModel())
 
@@ -361,20 +323,11 @@ def test_unknown_error_regenerates_without_previous_response():
 
 def test_recovery_stops_at_max_num_ctx_and_regenerates():
     valid = json.dumps(make_design_spec())
-    client = FakeLLMClient([
-        RuntimeError("context length exceeded"),
-        RuntimeError("context length exceeded"),
-        valid,
-    ])
+    client = FakeLLMClient([RuntimeError("context length exceeded"), RuntimeError("context length exceeded"), valid])
     planner = DesignPlanner(
         client,
         "designer-model",
-        recovery_policy=RecoveryPolicy(
-            max_retries=2,
-            initial_num_ctx=8192,
-            max_num_ctx=8192,
-            context_multiplier=2,
-        ),
+        recovery_policy=RecoveryPolicy(max_retries=2, initial_num_ctx=8192, max_num_ctx=8192, context_multiplier=2),
     )
 
     planner.plan(FeatureModel())
@@ -385,11 +338,7 @@ def test_recovery_stops_at_max_num_ctx_and_regenerates():
 
 def test_recovery_raises_after_retry_limit():
     client = FakeLLMClient([RuntimeError("connection reset")] * 3)
-    planner = DesignPlanner(
-        client,
-        "designer-model",
-        recovery_policy=RecoveryPolicy(max_retries=2),
-    )
+    planner = DesignPlanner(client, "designer-model", recovery_policy=RecoveryPolicy(max_retries=2))
 
     with pytest.raises(RuntimeError, match="failed after 2 retries"):
         planner.plan(FeatureModel())
