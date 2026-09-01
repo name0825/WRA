@@ -54,6 +54,7 @@ def strategy_for(error: DesignRecoveryError) -> RecoveryStrategy:
         DesignRecoveryError.JSON_STRUCTURE,
         DesignRecoveryError.MISSING_CONTENT,
         DesignRecoveryError.INVALID_CONTENT,
+        DesignRecoveryError.INVALID_DESIGN,
     }:
         return RecoveryStrategy.REVISE_RESPONSE
     return RecoveryStrategy.REGENERATE
@@ -118,6 +119,7 @@ def build_recovery_prompt(
             "Repair the previous Designer response. This is a repair task, not a new design task.\n"
             "Preserve the useful design/content decisions already present in the previous response.\n"
             "Use the Feature Model and available reference paths below when repairing content_source values.\n"
+            "Use only configured framework names listed below; framework names are case-sensitive exact matches.\n"
             "Return exactly one valid JSON object and nothing else. Do not output analysis, reasoning, Markdown, code fences, or HTML.\n\n"
             f"{_schema_contract()}\n\n"
             f"{_reference_contract()}\n\n"
