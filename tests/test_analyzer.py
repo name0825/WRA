@@ -1,6 +1,7 @@
 from wra.analyzer.analyzer import HTMLAnalyzer
 from wra.analyzer.html_parser import parse_html
 from wra.llm.client import LLMClient
+from wra.core.models import BusinessInfo
 
 
 HTML = """
@@ -121,6 +122,40 @@ def test_analyzer_applies_llm_semantic_analysis() -> None:
     assert features.navigation["primary_items"] == ["About", "Contact"]
     assert llm.calls[0][1] == "test-model"
     assert llm.calls[0][2] == {"format": "json"}
+
+
+def test_business_information_normalizes_object_items() -> None:
+    business = BusinessInfo.model_validate({
+        "business_information": [
+            {"biz_reg_no": "480-88-03967"},
+            {"address_type": "headquarters", "status": "active"},
+            "Technology company",
+        ]
+    })
+
+    assert business.business_information == [
+        "biz_reg_no: 480-88-03967",
+        "address_type: headquarters",
+        "status: active",
+        "Technology company",
+    ]
+
+
+def test_analyzer_accepts_structured_business_information_from_llm() -> None:
+    llm = FakeLLMClient(
+        response='''{
+          "business": {
+            "business_information": [
+              {"biz_reg_no": "480-88-03967"}
+            ]
+          }
+        }'''
+    )
+
+    features = HTMLAnalyzer(llm_client=llm, analyzer_model="test-model").analyze(HTML)
+
+    assert features.business is not None
+    assert "biz_reg_no: 480-88-03967" in features.business.business_information
 
 
 def test_analyzer_rejects_invalid_llm_json() -> None:
