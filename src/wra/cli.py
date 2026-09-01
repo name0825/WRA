@@ -4,8 +4,8 @@ from pathlib import Path
 import yaml
 
 from wra.analyzer.analyzer import HTMLAnalyzer
+from wra.core.iteration import IterationEngine
 from wra.core.models import WRAConfig
-from wra.core.pipeline import WRAPipeline
 from wra.designer.planner import DesignPlanner
 from wra.designer.recovery import RecoveryPolicy as DesignRecoveryPolicy
 from wra.generator.generator import HTMLGenerator
@@ -76,25 +76,23 @@ def main() -> None:
     )
 
     run_dir = create_run_directory()
-    pipeline = WRAPipeline(
+    engine = IterationEngine(
         config=config,
         analyzer=analyzer,
         designer=designer,
         generator=generator,
     )
-    result = pipeline.run(INPUT_PATH, run_dir)
+    result = engine.run(INPUT_PATH, run_dir)
 
-    logger.info("Feature Model written to %s", result.features_path)
-    logger.info("DesignSpec written to %s", result.design_spec_path)
-    logger.info("Generated HTML written to %s", result.html_path)
+    logger.info("Generated HTML written to %s", result.html_path or "memory")
     logger.info("HTML validation: %s", "PASS" if result.validation.valid else "FAIL")
     if result.validation.errors:
         for error in result.validation.errors:
             logger.error("HTML validation error: %s", error)
     for warning in result.validation.warnings:
         logger.warning("HTML validation warning: %s", warning)
-    logger.info("Validation result written to %s", result.validation_path)
-    logger.info("Final HTML written to %s", run_dir / "final.html")
+    logger.info("Validation result written to %s", result.validation_path or "memory")
+    logger.info("Final HTML written to %s", result.final_path)
 
 
 if __name__ == "__main__":
