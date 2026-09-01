@@ -65,14 +65,24 @@ class IterationEngine:
                 generator_model = ModelSelector.select(self._config.models.generator, "generator")
                 evaluator_model = ModelSelector.select(self._config.evaluation.model, "evaluator")
 
+                design_constraints = {
+                    "mode": self._config.design.mode,
+                    "available_presets": self._config.design.presets,
+                }
+
                 if previous_result is None or previous_result.evaluation is None:
-                    design_spec = self._designer.plan(features, model=designer_model)
+                    design_spec = self._designer.plan(
+                        features,
+                        design_constraints=design_constraints,
+                        model=designer_model,
+                    )
                 else:
                     design_spec = self._designer.revise(
                         features=features,
                         previous_design_spec=previous_result.design_spec,
                         previous_html=previous_result.html,
                         evaluation=previous_result.evaluation,
+                        design_constraints=design_constraints,
                         model=designer_model,
                     )
 
