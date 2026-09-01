@@ -7,8 +7,9 @@ from wra.analyzer.analyzer import HTMLAnalyzer
 from wra.core.models import WRAConfig
 from wra.core.pipeline import WRAPipeline
 from wra.designer.planner import DesignPlanner
-from wra.designer.recovery import RecoveryPolicy
+from wra.designer.recovery import RecoveryPolicy as DesignRecoveryPolicy
 from wra.generator.generator import HTMLGenerator
+from wra.generator.recovery import RecoveryPolicy as GeneratorRecoveryPolicy
 from wra.llm.ollama import OllamaClient
 from wra.utils.logging import configure_logging, get_logger
 
@@ -45,7 +46,13 @@ def main() -> None:
 
     config = load_config()
     llm_client = OllamaClient(config.ollama.base_url)
-    recovery_policy = RecoveryPolicy(
+    design_recovery_policy = DesignRecoveryPolicy(
+        max_retries=config.recovery.max_retries,
+        initial_num_ctx=config.recovery.initial_num_ctx,
+        max_num_ctx=config.recovery.max_num_ctx,
+        context_multiplier=config.recovery.context_multiplier,
+    )
+    generator_recovery_policy = GeneratorRecoveryPolicy(
         max_retries=config.recovery.max_retries,
         initial_num_ctx=config.recovery.initial_num_ctx,
         max_num_ctx=config.recovery.max_num_ctx,
@@ -59,12 +66,13 @@ def main() -> None:
     designer = DesignPlanner(
         llm_client=llm_client,
         designer_model=config.models.designer,
-        recovery_policy=recovery_policy,
+        recovery_policy=design_recovery_policy,
     )
     generator = HTMLGenerator(
         llm_client=llm_client,
         generator_model=config.models.generator,
         frameworks=config.frameworks,
+        recovery_policy=generator_recovery_policy,
     )
 
     run_dir = create_run_directory()
