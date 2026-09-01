@@ -115,6 +115,28 @@ def test_token_limit_increases_num_ctx_and_reuses_previous_response():
     assert "Failure type: token_limit" in client.calls[1]["prompt"]
 
 
+def test_truncated_json_is_detected_as_token_limit():
+    valid = json.dumps(make_design_spec())
+    truncated = "Designer reasoning...\n" + valid[:-24]
+    client = FakeLLMClient([truncated, valid])
+    planner = DesignPlanner(
+        client,
+        "designer-model",
+        recovery_policy=RecoveryPolicy(
+            max_retries=1,
+            initial_num_ctx=4096,
+            max_num_ctx=8192,
+            context_multiplier=2,
+        ),
+    )
+
+    result = planner.plan(FeatureModel())
+
+    assert result.design.concept == "Editorial Minimal"
+    assert client.calls[1]["options"]["num_ctx"] == 8192
+    assert "Failure type: token_limit" in client.calls[1]["prompt"]
+
+
 def test_invalid_json_revises_previous_response():
     valid = json.dumps(make_design_spec())
     client = FakeLLMClient(["{broken", valid])
