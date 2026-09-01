@@ -3,6 +3,10 @@ ollama:
 
 models: {}
 
+frameworks:
+  css: []
+  js: []
+
 pipeline:
   max_iterations: 3
   evaluation_threshold: 8.0
