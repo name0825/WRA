@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from wra.core.models import FeatureModel
+from wra.core.models import FeatureModel, Framework, FrameworkConfig
 from wra.designer.planner import DesignPlanner
 from wra.designer.recovery import DesignRecoveryError, RecoveryPolicy, build_recovery_prompt
 from wra.validator.design import validate_design_spec
@@ -42,8 +42,8 @@ def make_design_spec() -> dict:
                 "weight": "mixed",
             },
             "framework": {
-                "css": {"name": "tailwind", "reason": "modular"},
-                "js": {"name": "vanilla-js", "reason": "simple"},
+                "css": {"name": "none", "reason": "not needed"},
+                "js": {"name": "none", "reason": "not needed"},
             },
             "motion": {"level": "mid", "principles": ["subtle reveal"]},
         },
@@ -82,12 +82,80 @@ def test_design_validator_rejects_duplicate_sections_and_bad_references():
 
     from wra.designer.schema import DesignSpec
 
-    result = validate_design_spec(DesignSpec.model_validate(data), FeatureModel())
+    result = validate_design_spec(DesignSpec.model_validate(data), FeatureModel(), FrameworkConfig())
 
     assert not result.valid
     assert "duplicate section id: featured" in result.errors
     assert "invalid content_source: content.unknown" in result.errors
     assert "invalid interaction target: missing" in result.errors
+
+
+def test_design_validator_rejects_unconfigured_frameworks():
+    from wra.designer.schema import DesignSpec
+
+    data = make_design_spec()
+    data["design"]["framework"]["css"]["name"] = "Tailwind"
+    data["design"]["framework"]["js"]["name"] = "UnknownJS"
+
+    result = validate_design_spec(DesignSpec.model_validate(data), FeatureModel(), FrameworkConfig())
+
+    assert not result.valid
+    assert "CSS framework is not configured: Tailwind" in result.errors
+    assert "JavaScript framework is not configured: UnknownJS" in result.errors
+
+
+def test_design_validator_accepts_configured_frameworks():
+    from wra.designer.schema import DesignSpec
+
+    spec = DesignSpec.model_validate(make_design_spec())
+    spec.design.framework.css.name = "TailwindCSS" if False else spec.design.framework.css.name
+    data = make_design_spec()
+    data["design"]["framework"]["css"]["name"] = "TailwindCSS"
+    data["design"]["framework"]["js"]["name"] = "GSAP"
+    spec = DesignSpec.model_validate(data)
+    frameworks = FrameworkConfig(
+        css=[Framework(name="TailwindCSS", cdn="https://example.com/tailwind.js", tag="script")],
+        js=[Framework(name="GSAP", cdn="https://example.com/gsap.js", tag="script")],
+    )
+
+    result = validate_design_spec(spec, FeatureModel(), frameworks)
+
+    assert result.valid
+
+
+def test_design_validator_rejects_empty_sections():
+    from wra.designer.schema import DesignSpec
+
+    data = make_design_spec()
+    data["sections"] = []
+
+    result = validate_design_spec(DesignSpec.model_validate(data), FeatureModel(), FrameworkConfig())
+
+    assert not result.valid
+    assert "sections must contain at least one section" in result.errors
+
+
+def test_design_validator_rejects_section_without_components():
+    from wra.designer.schema import DesignSpec
+
+    data = make_design_spec()
+    data["sections"][0]["components"] = []
+
+    result = validate_design_spec(DesignSpec.model_validate(data), FeatureModel(), FrameworkConfig())
+
+    assert not result.valid
+    assert "section has no components: featured" in result.errors
+
+
+def test_design_validator_rejects_missing_content_coverage():
+    from wra.designer.schema import DesignSpec
+    from wra.core.models import Heading
+
+    features = FeatureModel(content={"headings": [Heading(level=1, text="Title")]})
+    result = validate_design_spec(DesignSpec.model_validate(make_design_spec()), features, FrameworkConfig())
+
+    assert not result.valid
+    assert "missing content coverage: content.headings" in result.errors
 
 
 def test_token_limit_increases_num_ctx_and_does_not_reuse_large_previous_response():
@@ -142,6 +210,14 @@ def test_truncated_root_does_not_validate_inner_object_as_designspec():
         DesignPlanner._parse_response(truncated)
 
 
+def test_invalid_schema_includes_pydantic_field_details():
+    data = make_design_spec()
+    data["design"]["motion"]["level"] = "subtle"
+
+    with pytest.raises(ValueError, match=r"design\.motion\.level"):
+        DesignPlanner._parse_response(json.dumps(data))
+
+
 def test_invalid_json_revises_previous_response():
     valid = json.dumps(make_design_spec())
     client = FakeLLMClient(["{broken", valid])
@@ -160,6 +236,23 @@ def test_invalid_json_revises_previous_response():
     assert "interaction.components[].target` must exactly equal" in client.calls[1]["prompt"]
 
 
+def test_invalid_design_recovery_reuses_previous_response():
+    invalid = json.dumps({**make_design_spec(), "sections": []})
+    valid = json.dumps(make_design_spec())
+    client = FakeLLMClient([invalid, valid])
+    planner = DesignPlanner(
+        client,
+        "designer-model",
+        recovery_policy=RecoveryPolicy(max_retries=1),
+    )
+
+    planner.plan(FeatureModel())
+
+    assert "Failure type: invalid_design" in client.calls[1]["prompt"]
+    assert "sections must contain at least one section" in client.calls[1]["prompt"]
+    assert invalid in client.calls[1]["prompt"]
+
+
 def test_plan_prompt_lists_existing_feature_model_paths():
     planner = DesignPlanner.__new__(DesignPlanner)
     prompt = planner._build_plan_prompt("SYSTEM", FeatureModel(), None, None)
@@ -170,6 +263,36 @@ def test_plan_prompt_lists_existing_feature_model_paths():
     assert "`content.text`" in prompt
     assert "`navigation`" in prompt
     assert "`requirements.must_preserve`" in prompt
+
+
+def test_revision_prompt_preserves_core_context_and_bounds_previous_html():
+    planner = DesignPlanner.__new__(DesignPlanner)
+    planner._frameworks = FrameworkConfig()
+    from wra.core.models import EvaluationDimension, EvaluationResult
+    from wra.designer.schema import DesignSpec
+
+    spec = DesignSpec.model_validate(make_design_spec())
+    evaluation = EvaluationResult(
+        design_completeness=EvaluationDimension(score=8),
+        visual_hierarchy=EvaluationDimension(score=8),
+        design_consistency=EvaluationDimension(score=8),
+        content_preservation=EvaluationDimension(score=8),
+        ux=EvaluationDimension(score=8),
+        readability=EvaluationDimension(score=8),
+        responsive_design=EvaluationDimension(score=8),
+        originality=EvaluationDimension(score=8),
+        html_quality=EvaluationDimension(score=8),
+        overall_score=8,
+    )
+    html = "<html>" + ("x" * 20000) + "</html>"
+
+    prompt = planner._build_revision_prompt("SYSTEM", "REVISION {previous_design_spec} {previous_html} {evaluation_result}", FeatureModel(), spec, html, evaluation, None, FrameworkConfig())
+
+    assert "Feature Model:" in prompt
+    assert "Available Feature Model reference paths:" in prompt
+    assert "Available configured frameworks:" in prompt
+    assert "WRA: previous HTML excerpt truncated" in prompt
+    assert len(prompt) < 18000
 
 
 def test_parse_response_accepts_reasoning_and_markdown_wrappers():
