@@ -1,0 +1,7 @@
+.vscode/
+
+.DS_Store
+
+config.yaml
+
+__pycache__/
