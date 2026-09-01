@@ -53,6 +53,18 @@ class Motion(BaseModel):
     level: MotionLevel
     principles: list[str] = Field(default_factory=list)
 
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_principles(cls, value: Any) -> Any:
+        """Normalize a single LLM-generated principle into a one-item list."""
+        if isinstance(value, dict):
+            principles = value.get("principles")
+            if isinstance(principles, str):
+                result = dict(value)
+                result["principles"] = [principles]
+                return result
+        return value
+
 
 class Design(BaseModel):
     concept: str
@@ -139,6 +151,18 @@ class InteractionComponent(BaseModel):
 class InteractionSpec(BaseModel):
     principles: list[str] = Field(default_factory=list)
     components: list[InteractionComponent] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_principles(cls, value: Any) -> Any:
+        """Normalize a single LLM-generated principle into a one-item list."""
+        if isinstance(value, dict):
+            principles = value.get("principles")
+            if isinstance(principles, str):
+                result = dict(value)
+                result["principles"] = [principles]
+                return result
+        return value
 
 
 class DesignSpec(BaseModel):
