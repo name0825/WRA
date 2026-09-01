@@ -64,11 +64,11 @@ def _schema_contract() -> str:
         "DesignSpec required structure: top-level keys are `design`, `sections`, `responsive`, `interaction`. "
         "`design` contains `concept`, `visual_direction`, `layout`, `color_system`, `typography`, `framework`, `motion`. "
         "`color_system` contains `background`, `surface`, `text`, `muted_text`, `primary`, `accent`. "
-        "`typography` contains `heading`, `body`, `scale`, `weight`. "
+        "`typography` contains `heading`, `body`, `scale`, `weight`; `weight` must be a single string, not an object. "
         "`framework` contains `css` and `js`, each with `name` and `reason`. "
         "`motion` contains `level` (`none`, `low`, `mid`, or `high`) and `principles`. "
         "Each section contains `id`, `purpose`, `layout`, and `components`; each component contains `type`, `purpose`, `content_source`. "
-        "`responsive` contains `strategy`, `breakpoints`, and `behavior`. "
+        "`responsive` contains `strategy`, `breakpoints`, and `behavior`; `behavior` must be an array of strings, not objects. "
         "`interaction` contains `principles` and `components`; each interaction component contains `target` and `behavior`."
     )
 
@@ -99,10 +99,6 @@ def build_recovery_prompt(
 
     validation_errors = "\n".join(f"- {detail}" for detail in details) or "- unspecified validation failure"
 
-    # A token-limit failure is different from a schema failure. The previous
-    # response is usually the thing that consumed the remaining context, so do
-    # not feed it back into the next request. Re-run the original design prompt
-    # with the larger num_ctx and explicitly ask for a complete, compact object.
     if error is DesignRecoveryError.TOKEN_LIMIT:
         return (
             f"{original_prompt}\n\n"
@@ -115,10 +111,6 @@ def build_recovery_prompt(
 
     previous = previous_response or "(no previous response)"
 
-    # Do not append a potentially huge previous response to the full original
-    # prompt. The original prompt can already contain the Feature Model, HTML,
-    # and evaluation data. Recovery is intentionally compact so JSON/schema
-    # repair does not create a second context-limit failure.
     if strategy is RecoveryStrategy.REVISE_RESPONSE:
         return (
             "# WRA DesignSpec Recovery\n\n"

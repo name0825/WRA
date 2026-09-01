@@ -1,6 +1,6 @@
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 MotionLevel = Literal["none", "low", "mid", "high"]
@@ -20,6 +20,23 @@ class Typography(BaseModel):
     body: str
     scale: str
     weight: str
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_weight(cls, value: Any) -> Any:
+        """Accept concise structured weight output from LLMs and normalize it.
+
+        The public DesignSpec contract uses a string here, but models sometimes
+        naturally emit a mapping such as {"heading": 600, "body": 400}.
+        Converting that representation keeps the schema strict downstream
+        without forcing the planner to retry a semantically valid response.
+        """
+        if isinstance(value, dict):
+            parts = [f"{key}: {item}" for key, item in value.items()]
+            value = dict(value)
+            value["weight"] = ", ".join(parts)
+            return value
+        return value
 
 
 class FrameworkRecommendation(BaseModel):
@@ -69,6 +86,49 @@ class ResponsiveSpec(BaseModel):
     strategy: str
     breakpoints: list[ResponsiveBreakpoint] = Field(default_factory=list)
     behavior: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_behavior(cls, value: Any) -> Any:
+        """Normalize richer breakpoint behavior objects to schema strings.
+
+        Some LLMs emit [{"breakpoint": "mobile", "changes": [...]}]
+        even though the DesignSpec intentionally keeps behavior as strings.
+        Preserve all information in a compact, deterministic representation.
+        """
+        if not isinstance(value, dict):
+            return value
+
+        behavior = value.get("behavior")
+        if not isinstance(behavior, list):
+            return value
+
+        normalized: list[str] = []
+        for item in behavior:
+            if isinstance(item, str):
+                normalized.append(item)
+                continue
+            if isinstance(item, dict):
+                breakpoint = item.get("breakpoint") or item.get("name")
+                changes = item.get("changes")
+                if isinstance(changes, list):
+                    change_text = "; ".join(str(change) for change in changes)
+                elif changes is None:
+                    change_text = ""
+                else:
+                    change_text = str(changes)
+                if breakpoint and change_text:
+                    normalized.append(f"{breakpoint}: {change_text}")
+                elif breakpoint:
+                    normalized.append(str(breakpoint))
+                else:
+                    normalized.append(str(item))
+                continue
+            normalized.append(str(item))
+
+        result = dict(value)
+        result["behavior"] = normalized
+        return result
 
 
 class InteractionComponent(BaseModel):
