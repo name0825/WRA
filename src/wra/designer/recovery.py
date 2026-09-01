@@ -70,9 +70,23 @@ def build_recovery_prompt(
         return original_prompt
 
     validation_errors = "\n".join(f"- {detail}" for detail in details) or "- unspecified validation failure"
-    revision = revision_template.format(
-        failure_type=error.value,
-        validation_errors=validation_errors,
-        previous_response=previous_response or "(no previous response)",
-    )
+
+    # The evaluator-driven revision template already contains the previous
+    # DesignSpec, HTML, and evaluation result in original_prompt. For recovery
+    # of that flow, append only the failure information and previous response.
+    if "{previous_design_spec}" in revision_template:
+        revision = (
+            "# WRA DesignSpec Recovery\n\n"
+            "Revise the previous response so that it is valid according to the DesignSpec schema.\n\n"
+            f"Failure type: {error.value}\n\n"
+            f"Validation errors:\n{validation_errors}\n\n"
+            f"Previous response:\n{previous_response or '(no previous response)'}\n"
+        )
+    else:
+        revision = revision_template.format(
+            failure_type=error.value,
+            validation_errors=validation_errors,
+            previous_response=previous_response or "(no previous response)",
+        )
+
     return f"{original_prompt}\n\n{revision}"
