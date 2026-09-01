@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from wra.browser.models import BrowserConfig
 
@@ -41,6 +41,28 @@ class EvaluationConfig(BaseModel):
         if isinstance(value, str):
             return [value] if value.strip() else []
         return value
+
+
+class DesignConfig(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    mode: str = "auto"
+    presets: list[str] = Field(default_factory=lambda: [
+        "business",
+        "portfolio",
+        "blog",
+        "landing",
+        "ecommerce",
+    ])
+
+    @model_validator(mode="after")
+    def validate_mode(self):
+        if self.mode != "auto" and self.mode not in self.presets:
+            raise ValueError(
+                f"Invalid design mode '{self.mode}'. "
+                f"Mode must be 'auto' or one of the configured presets: {self.presets}"
+            )
+        return self
 
 
 class PipelineTerminationConfig(BaseModel):
@@ -98,6 +120,7 @@ class WRAConfig(BaseModel):
 
     ollama: OllamaConfig
     models: ModelConfig
+    design: DesignConfig = DesignConfig()
     evaluation: EvaluationConfig = EvaluationConfig()
     browser: BrowserConfig = BrowserConfig()
     pipeline: PipelineConfig
