@@ -1,18 +1,30 @@
 import json
 import re
 from pathlib import Path
+from typing import Any
 
 from wra.core.models import FeatureModel, FrameworkConfig
 from wra.designer.schema import DesignSpec
 from wra.llm.client import LLMClient
+from wra.validator.html import validate_html
+
+from .recovery import (
+    HTMLRecoveryError,
+    RecoveryPolicy,
+    RecoveryStrategy,
+    build_recovery_prompt,
+    classify_exception,
+    classify_validation_errors,
+    strategy_for,
+)
 
 
 class GeneratorError(ValueError):
-    """Raised when a DesignSpec cannot be converted into HTML."""
+    """Raised when a DesignSpec cannot be converted into valid HTML."""
 
 
 class HTMLGenerator:
-    """Generate a complete HTML document from a FeatureModel and DesignSpec."""
+    """Generate and recover a complete HTML document from a FeatureModel and DesignSpec."""
 
     def __init__(
         self,
@@ -20,11 +32,15 @@ class HTMLGenerator:
         generator_model: str,
         frameworks: FrameworkConfig,
         prompt_path: str | Path = "prompts/generator/system.md",
+        recovery_prompt_path: str | Path = "prompts/generator/recovery.md",
+        recovery_policy: RecoveryPolicy | None = None,
     ) -> None:
         self._llm_client = llm_client
         self._generator_model = generator_model
         self._frameworks = frameworks
         self._prompt_path = Path(prompt_path)
+        self._recovery_prompt_path = Path(recovery_prompt_path)
+        self._recovery_policy = recovery_policy or RecoveryPolicy()
 
     def generate(
         self,
@@ -34,7 +50,83 @@ class HTMLGenerator:
     ) -> str:
         cdn_tags = self._build_framework_tags(design_spec)
         prompt_template = self._prompt_path.read_text(encoding="utf-8")
-        prompt = (
+        revision_template = self._recovery_prompt_path.read_text(encoding="utf-8")
+        original_prompt = self._build_prompt(
+            prompt_template,
+            features,
+            design_spec,
+            generation_rules,
+            cdn_tags,
+        )
+
+        prompt = original_prompt
+        previous_response: str | None = None
+        num_ctx = self._recovery_policy.initial_num_ctx
+        last_error: str | None = None
+
+        for attempt in range(self._recovery_policy.max_retries + 1):
+            try:
+                response = self._llm_client.generate(
+                    prompt=prompt,
+                    model=self._generator_model,
+                    options={"num_ctx": num_ctx},
+                )
+                previous_response = response
+                html = self._extract_html(response)
+                html = self._inject_framework_tags(html, cdn_tags)
+
+                validation = validate_html(html, features)
+                if validation.valid:
+                    return html
+
+                error = classify_validation_errors(validation.errors)
+                last_error = "; ".join(validation.errors)
+                if attempt >= self._recovery_policy.max_retries:
+                    break
+
+                strategy = strategy_for(error)
+                prompt = build_recovery_prompt(
+                    original_prompt=original_prompt,
+                    previous_response=previous_response,
+                    error=error,
+                    details=validation.errors,
+                    revision_template=revision_template,
+                )
+                if strategy is RecoveryStrategy.INCREASE_CONTEXT:
+                    num_ctx = self._recovery_policy.next_num_ctx(num_ctx)
+                continue
+            except Exception as exc:
+                error = classify_exception(exc)
+                last_error = str(exc)
+                if attempt >= self._recovery_policy.max_retries:
+                    break
+
+                strategy = strategy_for(error)
+                if strategy is RecoveryStrategy.INCREASE_CONTEXT:
+                    num_ctx = self._recovery_policy.next_num_ctx(num_ctx)
+
+                prompt = build_recovery_prompt(
+                    original_prompt=original_prompt,
+                    previous_response=previous_response,
+                    error=error,
+                    details=[str(exc)],
+                    revision_template=revision_template,
+                )
+
+        raise GeneratorError(
+            f"HTML generation failed after {self._recovery_policy.max_retries + 1} attempts"
+            + (f": {last_error}" if last_error else "")
+        )
+
+    @staticmethod
+    def _build_prompt(
+        prompt_template: str,
+        features: FeatureModel,
+        design_spec: DesignSpec,
+        generation_rules: list[str] | None,
+        cdn_tags: str,
+    ) -> str:
+        return (
             f"{prompt_template}\n\n"
             "Feature Model:\n"
             f"{features.model_dump_json(indent=2)}\n\n"
@@ -45,14 +137,6 @@ class HTMLGenerator:
             "Framework CDN dependencies to include exactly:\n"
             f"{cdn_tags or '(none)'}"
         )
-
-        response = self._llm_client.generate(
-            prompt=prompt,
-            model=self._generator_model,
-            options={},
-        )
-        html = self._extract_html(response)
-        return self._inject_framework_tags(html, cdn_tags)
 
     def _build_framework_tags(self, design_spec: DesignSpec) -> str:
         tags: list[str] = []
