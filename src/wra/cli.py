@@ -8,6 +8,7 @@ from wra.core.iteration import IterationEngine
 from wra.core.models import WRAConfig
 from wra.designer.planner import DesignPlanner
 from wra.designer.recovery import RecoveryPolicy as DesignRecoveryPolicy
+from wra.evaluator.llm import LLMEvaluator
 from wra.generator.generator import HTMLGenerator
 from wra.generator.recovery import RecoveryPolicy as GeneratorRecoveryPolicy
 from wra.llm.ollama import OllamaClient
@@ -59,10 +60,7 @@ def main() -> None:
         context_multiplier=config.recovery.context_multiplier,
     )
 
-    analyzer = HTMLAnalyzer(
-        llm_client=llm_client,
-        analyzer_model=config.models.analyzer,
-    )
+    analyzer = HTMLAnalyzer(llm_client=llm_client, analyzer_model=config.models.analyzer)
     designer = DesignPlanner(
         llm_client=llm_client,
         designer_model=config.models.designer,
@@ -74,6 +72,7 @@ def main() -> None:
         frameworks=config.frameworks,
         recovery_policy=generator_recovery_policy,
     )
+    evaluator = LLMEvaluator(llm_client=llm_client, model=config.evaluation.model)
 
     run_dir = create_run_directory()
     engine = IterationEngine(
@@ -81,6 +80,7 @@ def main() -> None:
         analyzer=analyzer,
         designer=designer,
         generator=generator,
+        evaluator=evaluator,
     )
     result = engine.run(INPUT_PATH, run_dir)
 
@@ -91,6 +91,9 @@ def main() -> None:
             logger.error("HTML validation error: %s", error)
     for warning in result.validation.warnings:
         logger.warning("HTML validation warning: %s", warning)
+    if result.evaluation is not None:
+        logger.info("Evaluation score: %.1f", result.evaluation.overall_score)
+        logger.info("Evaluation summary: %s", result.evaluation.summary)
     logger.info("Validation result written to %s", result.validation_path or "memory")
     logger.info("Final HTML written to %s", result.final_path)
 
