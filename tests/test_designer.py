@@ -129,6 +129,20 @@ def test_invalid_json_revises_previous_response():
     assert "Previous response:\n{broken" in client.calls[1]["prompt"]
     assert "Failure type: json_structure" in client.calls[1]["prompt"]
     assert "DesignSpec required structure:" in client.calls[1]["prompt"]
+    assert "content_source` must be a Feature Model dotted path" in client.calls[1]["prompt"]
+    assert "interaction.components[].target` must exactly equal" in client.calls[1]["prompt"]
+
+
+def test_plan_prompt_lists_existing_feature_model_paths():
+    planner = DesignPlanner.__new__(DesignPlanner)
+    prompt = planner._build_plan_prompt("SYSTEM", FeatureModel(), None, None)
+
+    assert "Available Feature Model reference paths:" in prompt
+    assert "`metadata`" in prompt
+    assert "`content`" in prompt
+    assert "`content.text`" in prompt
+    assert "`navigation`" in prompt
+    assert "`requirements.must_preserve`" in prompt
 
 
 def test_parse_response_accepts_reasoning_and_markdown_wrappers():

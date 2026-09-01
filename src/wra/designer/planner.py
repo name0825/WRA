@@ -105,7 +105,32 @@ class DesignPlanner:
 
     @staticmethod
     def _build_plan_prompt(prompt_template, features, design_constraints, generation_rules):
-        return f"{prompt_template}\n\nFeature Model:\n{features.model_dump_json(indent=2)}\n\nDesign Constraints:\n{json.dumps(design_constraints or {}, ensure_ascii=False, indent=2)}\n\nGeneration Rules:\n{json.dumps(generation_rules or [], ensure_ascii=False, indent=2)}"
+        return (
+            f"{prompt_template}\n\n"
+            f"Feature Model:\n{features.model_dump_json(indent=2)}\n\n"
+            f"Available Feature Model reference paths:\n{DesignPlanner._feature_reference_paths(features)}\n\n"
+            f"Design Constraints:\n{json.dumps(design_constraints or {}, ensure_ascii=False, indent=2)}\n\n"
+            f"Generation Rules:\n{json.dumps(generation_rules or [], ensure_ascii=False, indent=2)}"
+        )
+
+    @staticmethod
+    def _feature_reference_paths(features: FeatureModel) -> str:
+        """Return only reference paths that exist in this Feature Model instance."""
+        paths: list[str] = []
+
+        def visit(value: Any, prefix: str) -> None:
+            if isinstance(value, dict):
+                for key, child in value.items():
+                    path = f"{prefix}.{key}" if prefix else key
+                    if child is not None:
+                        paths.append(path)
+                        if isinstance(child, dict):
+                            visit(child, path)
+            elif isinstance(value, list):
+                return
+
+        visit(features.model_dump(exclude_none=True), "")
+        return "\n".join(f"- `{path}`" for path in paths)
 
     @staticmethod
     def _append_design_constraints(prompt: str, design_constraints: dict[str, Any]) -> str:

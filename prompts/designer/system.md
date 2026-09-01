@@ -85,7 +85,60 @@ Every component must specify:
 - `purpose`: why it exists in the design
 - `content_source`: which content or information from the Feature Model it should use
 
+### Critical `content_source` rule
+
+`content_source` is a **path into the Feature Model**, never literal content and never a description of content.
+
+Use only a dotted path such as:
+
+- `metadata.title`
+- `metadata.description`
+- `content.headings`
+- `content.paragraphs`
+- `content.lists`
+- `content.tables`
+- `content.buttons`
+- `content.links`
+- `content.labels`
+- `content.text`
+- `structure.sections`
+- `structure.forms`
+- `media.images`
+- `media.videos`
+- `media.icons`
+- `media.urls`
+- `business.contact`
+- `business.email`
+- `business.phone`
+- `navigation.items`
+- `requirements.must_preserve`
+- `site.type`
+- `site.industry`
+
+Do **not** write values like these:
+
+- `text: 'Hello, Welcome to my portfolio'`
+- `metadata.title: 'MinJae Park'`
+- `content.text: 'Node.js, PHP, Python'`
+- `navigation.items: 'Contact'`
+
+The value after the colon is not part of the path. If the exact text exists in the Feature Model, reference the field containing it. Do not copy the text into `content_source`.
+
 Do not invent important content that does not exist in the Feature Model.
+
+### Critical interaction `target` rule
+
+`interaction.components[].target` must be the exact `type` value of a component declared in `sections[].components`.
+
+For example, if a section declares:
+
+```json
+{"type": "contact-link-item", "purpose": "...", "content_source": "content.links"}
+```
+
+then the interaction target must be exactly `contact-link-item`, not `contact-links`, `contact-items`, or another pluralized name.
+
+Do not invent interaction targets that are not component types.
 
 ## Motion
 
@@ -107,6 +160,7 @@ Your response is consumed directly by a JSON parser.
 - Do not prefix or suffix the JSON with explanatory text.
 - Ensure the JSON is syntactically valid and complete before returning it.
 - Every required DesignSpec field must be present.
+- Before returning, verify every `content_source` is a valid Feature Model path and every interaction `target` exactly matches a declared component `type`.
 
 ## Output schema
 

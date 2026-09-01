@@ -73,6 +73,19 @@ def _schema_contract() -> str:
     )
 
 
+def _reference_contract() -> str:
+    return (
+        "Critical reference rules: `content_source` must be a Feature Model dotted path, never literal content. "
+        "Valid field roots include `metadata.title`, `metadata.description`, `content.headings`, `content.paragraphs`, "
+        "`content.lists`, `content.tables`, `content.buttons`, `content.links`, `content.labels`, `content.text`, "
+        "`structure.sections`, `structure.forms`, `media.images`, `media.videos`, `media.icons`, `media.urls`, "
+        "`business.contact`, `business.email`, `business.phone`, `navigation.items`, `requirements.must_preserve`, "
+        "`site.type`, and `site.industry`. Never use forms such as `text: '...'`, `metadata.title: '...'`, or "
+        "`content.text: '...'` as content_source. `interaction.components[].target` must exactly equal one of the "
+        "component `type` values declared in `sections[].components`; do not invent pluralized or descriptive targets."
+    )
+
+
 def build_recovery_prompt(
     original_prompt: str,
     previous_response: str | None,
@@ -98,6 +111,7 @@ def build_recovery_prompt(
             "Preserve the useful design/content decisions already present in the previous response.\n"
             "Return exactly one valid JSON object and nothing else. Do not output analysis, reasoning, Markdown, code fences, or HTML.\n\n"
             f"{_schema_contract()}\n\n"
+            f"{_reference_contract()}\n\n"
             f"Failure type: {error.value}\n\n"
             f"Validation errors:\n{validation_errors}\n\n"
             f"Previous response:\n{previous}\n"
