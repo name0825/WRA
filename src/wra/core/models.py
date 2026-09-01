@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from wra.browser.models import BrowserConfig
 
@@ -14,16 +14,33 @@ class OllamaConfig(BaseModel):
 class ModelConfig(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    analyzer: str = ""
-    designer: str = ""
-    generator: str = ""
-    evaluator: str = ""
+    analyzer: list[str] = Field(default_factory=list)
+    designer: list[str] = Field(default_factory=list)
+    generator: list[str] = Field(default_factory=list)
+
+    @field_validator("analyzer", "designer", "generator", mode="before")
+    @classmethod
+    def normalize_models(cls, value):
+        if value is None:
+            return []
+        if isinstance(value, str):
+            return [value] if value.strip() else []
+        return value
 
 
 class EvaluationConfig(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    model: str = ""
+    model: list[str] = Field(default_factory=list)
+
+    @field_validator("model", mode="before")
+    @classmethod
+    def normalize_models(cls, value):
+        if value is None:
+            return []
+        if isinstance(value, str):
+            return [value] if value.strip() else []
+        return value
 
 
 class PipelineTerminationConfig(BaseModel):
