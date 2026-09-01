@@ -95,6 +95,14 @@ class RecoveryConfig(BaseModel):
     context_multiplier: float = 2.0
 
 
+class LoggingConfig(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
+    console_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
+    directory: str = "log"
+
+
 class Framework(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -126,6 +134,7 @@ class WRAConfig(BaseModel):
     pipeline: PipelineConfig
     recovery: RecoveryConfig = RecoveryConfig()
     frameworks: FrameworkConfig = FrameworkConfig()
+    logging: LoggingConfig = LoggingConfig()
 
 
 class Metadata(BaseModel):
