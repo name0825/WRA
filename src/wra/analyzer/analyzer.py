@@ -75,7 +75,7 @@ class HTMLAnalyzer:
             features.navigation = semantic["navigation"]
         if "requirements" in semantic:
             semantic_requirements = Requirements.model_validate(semantic["requirements"])
-            features.requirements = self._merge_requirements(features.requirements, semantic_requirements)
+            features.requirements = self._merge_requirements(features.requirements, semantic_requirements, features)
         return features
 
     @staticmethod
@@ -107,5 +107,49 @@ class HTMLAnalyzer:
         return BusinessInfo.model_validate(data)
 
     @staticmethod
-    def _merge_requirements(base: Requirements, semantic: Requirements) -> Requirements:
-        return Requirements(must_preserve=list(dict.fromkeys([*base.must_preserve, *semantic.must_preserve])), optional=list(dict.fromkeys([*base.optional, *semantic.optional])))
+    def _collect_feature_strings(value: Any) -> set[str]:
+        """Collect strings from deterministic features for verbatim requirement checks."""
+        if isinstance(value, str):
+            return {value}
+        if isinstance(value, dict):
+            result: set[str] = set()
+            for item in value.values():
+                result.update(HTMLAnalyzer._collect_feature_strings(item))
+            return result
+        if isinstance(value, (list, tuple, set)):
+            result: set[str] = set()
+            for item in value:
+                result.update(HTMLAnalyzer._collect_feature_strings(item))
+            return result
+        return set()
+
+    @staticmethod
+    def _merge_requirements(base: Requirements, semantic: Requirements, features: FeatureModel) -> Requirements:
+        """Keep only verbatim semantic requirements as hard requirements.
+
+        LLM semantic analysis can describe a requirement such as "Educational
+        background and awards" even when the source page never contains that
+        exact phrase. Such descriptions are useful hints, but treating them as
+        mandatory visible text makes HTML validation reject otherwise correct
+        redesigns. Only strings that actually occur as deterministic source
+        content remain in ``must_preserve``; the rest are retained as optional
+        semantic hints.
+        """
+        deterministic_strings = {
+            " ".join(value.split()).casefold()
+            for value in HTMLAnalyzer._collect_feature_strings(features.model_dump())
+            if value.strip()
+        }
+
+        must_preserve = list(base.must_preserve)
+        optional = list(base.optional)
+        for value in semantic.must_preserve:
+            normalised = " ".join(value.split()).casefold()
+            if normalised and normalised in deterministic_strings:
+                if value not in must_preserve:
+                    must_preserve.append(value)
+            elif value not in optional:
+                optional.append(value)
+
+        optional.extend(value for value in semantic.optional if value not in optional)
+        return Requirements(must_preserve=must_preserve, optional=list(dict.fromkeys(optional)))

@@ -17,6 +17,14 @@ Preserve factual information from the supplied input. Do not invent company, pro
 
 Business information is optional. Omit the `business` field when the page does not contain meaningful business information.
 
+## Preservation requirement rules
+
+`requirements.must_preserve` is a HARD validation requirement. Every value placed there must be a verbatim, user-visible string that already exists in the deterministic extraction result. Do not create summaries, category names, labels, descriptions, or paraphrases such as `Technical skill set`, `Educational background and awards`, or `Contact information`.
+
+If a useful semantic requirement cannot be expressed as an exact string from the deterministic extraction result, put it in `requirements.optional` instead. Optional requirements are semantic hints and are not required to appear verbatim in generated HTML.
+
+Prefer short, concrete source strings over long synthesized descriptions. Never combine multiple source facts into one new `must_preserve` string.
+
 Return a JSON object. Use only these top-level fields when applicable:
 - site
 - business

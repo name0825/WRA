@@ -100,7 +100,7 @@ def test_analyzer_applies_llm_semantic_analysis() -> None:
           },
           "navigation": {"primary_items": ["About", "Contact"]},
           "requirements": {
-            "must_preserve": ["Example Company", "AI web service"],
+            "must_preserve": ["Example Company", "AI web service", "Educational background and awards"],
             "optional": ["Technology company"]
           }
         }'''
@@ -114,7 +114,10 @@ def test_analyzer_applies_llm_semantic_analysis() -> None:
     assert "AI web service" in features.business.services
     assert "Technology company" in features.business.business_information
     assert "Example Company" in features.requirements.must_preserve
-    assert "AI web service" in features.requirements.must_preserve
+    assert "AI web service" in features.requirements.optional
+    assert "Educational background and awards" in features.requirements.optional
+    assert "AI web service" not in features.requirements.must_preserve
+    assert "Educational background and awards" not in features.requirements.must_preserve
     assert features.navigation["primary_items"] == ["About", "Contact"]
     assert llm.calls[0][1] == "test-model"
     assert llm.calls[0][2] == {"format": "json"}
