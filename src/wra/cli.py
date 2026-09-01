@@ -79,6 +79,13 @@ def main() -> None:
     logger.info("Feature Model written to %s", result.features_path)
     logger.info("DesignSpec written to %s", result.design_spec_path)
     logger.info("Generated HTML written to %s", result.html_path)
+    logger.info("HTML validation: %s", "PASS" if result.validation.valid else "FAIL")
+    if result.validation.errors:
+        for error in result.validation.errors:
+            logger.error("HTML validation error: %s", error)
+    for warning in result.validation.warnings:
+        logger.warning("HTML validation warning: %s", warning)
+    logger.info("Validation result written to %s", result.validation_path)
     logger.info("Final HTML written to %s", run_dir / "final.html")
 
 
