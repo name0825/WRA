@@ -48,29 +48,14 @@ class WRAPipeline:
     def run(self, input_path: str | Path, run_dir: str | Path) -> PipelineResult:
         result = self._engine.run(input_path, run_dir)
         output_dir = Path(run_dir)
-        features_path = output_dir / "features.json"
+        iteration_dir = result.html_path.parent if result.html_path is not None else output_dir
 
-        if result.html_path is None:
-            html_path = output_dir / "final.html"
-        else:
-            html_path = result.html_path
-
-        if result.validation_path is None:
-            validation_path = output_dir / "result.json"
-        else:
-            validation_path = result.validation_path
-
-        features = self._engine._analyzer.analyze_file(input_path)
         return PipelineResult(
-            features_path=features_path,
-            design_spec_path=(
-                result.html_path.parent / "design.json"
-                if result.html_path is not None
-                else output_dir / "final.html"
-            ),
-            html_path=html_path,
-            validation_path=validation_path,
-            features=features,
+            features_path=output_dir / "features.json",
+            design_spec_path=iteration_dir / "design.json",
+            html_path=result.html_path or result.final_path,
+            validation_path=result.validation_path or output_dir / "result.json",
+            features=result.features,
             design_spec=result.design_spec,
             html=result.html,
             validation=result.validation,
