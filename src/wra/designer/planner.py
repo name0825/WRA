@@ -38,18 +38,15 @@ class DesignPlanner:
         features: FeatureModel,
         design_constraints: dict[str, Any] | None = None,
         generation_rules: list[str] | None = None,
+        model: str | None = None,
     ) -> DesignSpec:
         prompt_template = self._prompt_path.read_text(encoding="utf-8")
-        original_prompt = self._build_plan_prompt(
-            prompt_template,
-            features,
-            design_constraints,
-            generation_rules,
-        )
+        original_prompt = self._build_plan_prompt(prompt_template, features, design_constraints, generation_rules)
         return self._generate_and_validate(
             original_prompt=original_prompt,
             features=features,
             revision_template=self._revision_prompt_path.read_text(encoding="utf-8"),
+            model=model or self._designer_model,
         )
 
     def revise(
@@ -58,8 +55,8 @@ class DesignPlanner:
         previous_design_spec: DesignSpec,
         previous_html: str,
         evaluation: EvaluationResult,
+        model: str | None = None,
     ) -> DesignSpec:
-        """Revise the previous DesignSpec from evaluator feedback instead of redesigning from scratch."""
         revision_template = self._revision_prompt_path.read_text(encoding="utf-8")
         prompt = revision_template.format(
             previous_design_spec=previous_design_spec.model_dump_json(indent=2),
@@ -70,16 +67,12 @@ class DesignPlanner:
             original_prompt=prompt,
             features=features,
             revision_template=revision_template,
+            model=model or self._designer_model,
         )
 
-    def _generate_and_validate(
-        self,
-        original_prompt: str,
-        features: FeatureModel,
-        revision_template: str,
-    ) -> DesignSpec:
+    def _generate_and_validate(self, original_prompt, features, revision_template, model):
         current_num_ctx = self._recovery_policy.initial_num_ctx
-        previous_response: str | None = None
+        previous_response = None
         prompt = original_prompt
         last_error = DesignRecoveryError.UNKNOWN
         last_details: list[str] = []
@@ -88,7 +81,7 @@ class DesignPlanner:
             try:
                 response = self._llm_client.generate(
                     prompt=prompt,
-                    model=self._designer_model,
+                    model=model,
                     options={"format": "json", "num_ctx": current_num_ctx},
                 )
                 previous_response = response
@@ -111,29 +104,15 @@ class DesignPlanner:
 
             if retry >= self._recovery_policy.max_retries:
                 break
-
             if strategy is RecoveryStrategy.INCREASE_CONTEXT:
                 next_num_ctx = self._recovery_policy.next_num_ctx(current_num_ctx)
                 if next_num_ctx != current_num_ctx:
                     current_num_ctx = next_num_ctx
-                    prompt = build_recovery_prompt(
-                        original_prompt,
-                        previous_response,
-                        last_error,
-                        last_details,
-                        revision_template,
-                    )
+                    prompt = build_recovery_prompt(original_prompt, previous_response, last_error, last_details, revision_template)
                     continue
                 strategy = RecoveryStrategy.REGENERATE
-
             if strategy is RecoveryStrategy.REVISE_RESPONSE:
-                prompt = build_recovery_prompt(
-                    original_prompt,
-                    previous_response,
-                    last_error,
-                    last_details,
-                    revision_template,
-                )
+                prompt = build_recovery_prompt(original_prompt, previous_response, last_error, last_details, revision_template)
             else:
                 prompt = original_prompt
                 previous_response = None
@@ -144,20 +123,11 @@ class DesignPlanner:
         )
 
     @staticmethod
-    def _build_plan_prompt(
-        prompt_template: str,
-        features: FeatureModel,
-        design_constraints: dict[str, Any] | None,
-        generation_rules: list[str] | None,
-    ) -> str:
+    def _build_plan_prompt(prompt_template, features, design_constraints, generation_rules):
         return (
-            f"{prompt_template}\n\n"
-            "Feature Model:\n"
-            f"{features.model_dump_json(indent=2)}\n\n"
-            "Design Constraints:\n"
-            f"{json.dumps(design_constraints or {}, ensure_ascii=False, indent=2)}\n\n"
-            "Generation Rules:\n"
-            f"{json.dumps(generation_rules or [], ensure_ascii=False, indent=2)}"
+            f"{prompt_template}\n\nFeature Model:\n{features.model_dump_json(indent=2)}\n\n"
+            f"Design Constraints:\n{json.dumps(design_constraints or {}, ensure_ascii=False, indent=2)}\n\n"
+            f"Generation Rules:\n{json.dumps(generation_rules or [], ensure_ascii=False, indent=2)}"
         )
 
     @staticmethod
@@ -175,10 +145,8 @@ class DesignPlanner:
             data = json.loads(response)
         except json.JSONDecodeError as exc:
             raise ValueError("Designer LLM returned invalid JSON") from exc
-
         if not isinstance(data, dict):
             raise ValueError("Designer LLM response must be a JSON object")
-
         try:
             return DesignSpec.model_validate(data)
         except Exception as exc:
