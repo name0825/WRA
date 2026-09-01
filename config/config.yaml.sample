@@ -1,10 +1,15 @@
 ollama:
   base_url: "http://localhost:11434"
 
-models: {}
+# Multiple models may be configured for each role.
+# One model is selected randomly at the beginning of each iteration.
+models:
+  analyzer: []
+  designer: []
+  generator: []
 
 evaluation:
-  model: ""
+  model: []
 
 browser:
   enabled: false
