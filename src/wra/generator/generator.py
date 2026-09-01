@@ -1,4 +1,5 @@
 import json
+import logging
 import re
 from pathlib import Path
 from typing import Any
@@ -8,6 +9,8 @@ from wra.designer.schema import DesignSpec
 from wra.llm.client import LLMClient
 from wra.validator.html import validate_html
 from .recovery import HTMLRecoveryError, RecoveryPolicy, RecoveryStrategy, build_recovery_prompt, classify_exception, classify_validation_errors, strategy_for
+
+logger = logging.getLogger(__name__)
 
 
 class GeneratorError(ValueError):
@@ -26,7 +29,10 @@ class HTMLGenerator:
         self._recovery_policy = recovery_policy or RecoveryPolicy()
 
     def generate(self, features: FeatureModel, design_spec: DesignSpec, generation_rules: list[str] | None = None, model: str | None = None) -> str:
+        selected_model = model or self._generator_model
         cdn_tags = self._build_framework_tags(design_spec)
+        logger.info("HTML generation started: model=%s sections=%d", selected_model, len(design_spec.sections))
+        logger.debug("Framework dependencies: %s", cdn_tags or "none")
         prompt_template = self._prompt_path.read_text(encoding="utf-8")
         revision_template = self._recovery_prompt_path.read_text(encoding="utf-8")
         original_prompt = self._build_prompt(prompt_template, features, design_spec, generation_rules, cdn_tags)
@@ -34,9 +40,9 @@ class HTMLGenerator:
         previous_response = None
         num_ctx = self._recovery_policy.initial_num_ctx
         last_error = None
-        selected_model = model or self._generator_model
 
         for attempt in range(self._recovery_policy.max_retries + 1):
+            logger.info("HTML Generator attempt %d/%d: model=%s num_ctx=%d", attempt + 1, self._recovery_policy.max_retries + 1, selected_model, num_ctx)
             try:
                 response = self._llm_client.generate(prompt=prompt, model=selected_model, options={"num_ctx": num_ctx})
                 previous_response = response
@@ -44,26 +50,38 @@ class HTMLGenerator:
                 html = self._inject_framework_tags(html, cdn_tags)
                 validation = validate_html(html, features)
                 if validation.valid:
+                    logger.info("HTML generation validated successfully: chars=%d", len(html))
                     return html
                 error = classify_validation_errors(validation.errors)
                 last_error = "; ".join(validation.errors)
+                logger.warning("Generated HTML validation failed: type=%s errors=%s", error.value, validation.errors)
                 if attempt >= self._recovery_policy.max_retries:
                     break
                 strategy = strategy_for(error)
                 prompt = build_recovery_prompt(original_prompt, previous_response, error, validation.errors, revision_template)
                 if strategy is RecoveryStrategy.INCREASE_CONTEXT:
-                    num_ctx = self._recovery_policy.next_num_ctx(num_ctx)
+                    next_num_ctx = self._recovery_policy.next_num_ctx(num_ctx)
+                    logger.info("HTML Generator recovery: increasing num_ctx %d -> %d", num_ctx, next_num_ctx)
+                    num_ctx = next_num_ctx
+                elif strategy is RecoveryStrategy.REGENERATE:
+                    logger.info("HTML Generator recovery: regenerating")
+                else:
+                    logger.info("HTML Generator recovery: reusing previous response")
                 continue
             except Exception as exc:
                 error = classify_exception(exc)
                 last_error = str(exc)
+                logger.exception("HTML Generator attempt failed: type=%s", error.value)
                 if attempt >= self._recovery_policy.max_retries:
                     break
                 strategy = strategy_for(error)
                 if strategy is RecoveryStrategy.INCREASE_CONTEXT:
-                    num_ctx = self._recovery_policy.next_num_ctx(num_ctx)
+                    next_num_ctx = self._recovery_policy.next_num_ctx(num_ctx)
+                    logger.info("HTML Generator recovery: increasing num_ctx %d -> %d", num_ctx, next_num_ctx)
+                    num_ctx = next_num_ctx
                 prompt = build_recovery_prompt(original_prompt, previous_response, error, [str(exc)], revision_template)
 
+        logger.error("HTML generation exhausted retries: %s", last_error or "unknown error")
         raise GeneratorError(f"HTML generation failed after {self._recovery_policy.max_retries + 1} attempts" + (f": {last_error}" if last_error else ""))
 
     @staticmethod
