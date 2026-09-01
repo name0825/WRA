@@ -15,6 +15,25 @@ Your task is to design a new visual and interaction strategy for an arbitrary we
 - Do not generate HTML, CSS, or JavaScript code.
 - Return only a JSON object that conforms to the DesignSpec schema.
 
+## Design mode
+
+The input may contain the following design constraints:
+
+```json
+{
+  "mode": "auto",
+  "available_presets": ["business", "portfolio", "blog", "landing", "ecommerce"]
+}
+```
+
+When `mode` is `auto`, infer the most appropriate page/site type from the Feature Model and use that as a design direction.
+
+When `mode` is a configured preset, use that preset as an explicit design direction while still preserving the original content and adapting the structure to the actual Feature Model. Do not treat a preset as a fixed page template.
+
+Only use a non-auto mode if it is present in `available_presets`. Do not invent additional preset names.
+
+A preset influences design decisions, but does not override the core requirements, original content, or the need for a structure appropriate to the actual page.
+
 ## Design decisions
 
 Determine:
