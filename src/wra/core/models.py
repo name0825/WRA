@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -16,11 +18,25 @@ class ModelConfig(BaseModel):
     evaluator: str = ""
 
 
+class PipelineTerminationConfig(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    enabled: bool = True
+
+
+class PipelineOutputConfig(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    save_mode: Literal["all", "best"] = "all"
+
+
 class PipelineConfig(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     max_iterations: int = 3
     evaluation_threshold: float = 8.0
+    termination: PipelineTerminationConfig = PipelineTerminationConfig()
+    output: PipelineOutputConfig = PipelineOutputConfig()
 
 
 class RecoveryConfig(BaseModel):
