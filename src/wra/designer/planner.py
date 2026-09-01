@@ -4,7 +4,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from wra.core.models import EvaluationResult, FeatureModel
+from wra.core.models import EvaluationResult, FeatureModel, FrameworkConfig
 from wra.designer.recovery import (
     DesignRecoveryError,
     RecoveryPolicy,
@@ -23,11 +23,12 @@ logger = logging.getLogger(__name__)
 class DesignPlanner:
     """Create and revise structured design plans from a generic web FeatureModel."""
 
-    def __init__(self, llm_client: LLMClient, designer_model: str, prompt_path: str | Path = "prompts/designer/system.md", revision_prompt_path: str | Path = "prompts/designer/revision.md", recovery_policy: RecoveryPolicy | None = None, designer_think: bool | None = None, designer_timeout: float | None = None) -> None:
+    def __init__(self, llm_client: LLMClient, designer_model: str, frameworks: FrameworkConfig | None = None, prompt_path: str | Path = "prompts/designer/system.md", revision_prompt_path: str | Path = "prompts/designer/revision.md", recovery_policy: RecoveryPolicy | None = None, designer_think: bool | None = None, designer_timeout: float | None = None) -> None:
         self._llm_client = llm_client
         self._designer_model = designer_model
         self._designer_think = designer_think
         self._designer_timeout = designer_timeout
+        self._frameworks = frameworks or FrameworkConfig()
         self._prompt_path = Path(prompt_path)
         self._revision_prompt_path = Path(revision_prompt_path)
         self._recovery_policy = recovery_policy or RecoveryPolicy()
@@ -38,11 +39,11 @@ class DesignPlanner:
         selected_timeout = self._designer_timeout if timeout is None else timeout
         logger.info("Design planning started: model=%s mode=%s", selected_model, (design_constraints or {}).get("mode", "unspecified"))
         prompt_template = self._prompt_path.read_text(encoding="utf-8")
-        original_prompt = self._build_plan_prompt(prompt_template, features, design_constraints, generation_rules)
+        original_prompt = self._build_plan_prompt(prompt_template, features, design_constraints, generation_rules, self._frameworks)
         return self._generate_and_validate(
             original_prompt=original_prompt,
             features=features,
-            recovery_context=self._build_recovery_context(features, design_constraints),
+            recovery_context=self._build_recovery_context(features, design_constraints, self._frameworks),
             model=selected_model,
             think=selected_think,
             timeout=selected_timeout,
@@ -64,11 +65,12 @@ class DesignPlanner:
             previous_html,
             evaluation,
             design_constraints,
+            self._frameworks,
         )
         return self._generate_and_validate(
             original_prompt=prompt,
             features=features,
-            recovery_context=self._build_recovery_context(features, design_constraints),
+            recovery_context=self._build_recovery_context(features, design_constraints, self._frameworks),
             model=selected_model,
             think=selected_think,
             timeout=selected_timeout,
@@ -132,22 +134,24 @@ class DesignPlanner:
         raise RuntimeError(f"Design planning failed after {self._recovery_policy.max_retries} retries: {last_error.value}; {', '.join(last_details)}")
 
     @staticmethod
-    def _build_design_context(prompt_template, features, design_constraints, generation_rules=None):
+    def _build_design_context(prompt_template, features, design_constraints, generation_rules=None, frameworks: FrameworkConfig | None = None):
+        framework_context = DesignPlanner._framework_catalog(frameworks or FrameworkConfig())
         return (
             f"{prompt_template}\n\n"
             f"Feature Model:\n{features.model_dump_json(indent=2)}\n\n"
             f"Available Feature Model reference paths:\n{DesignPlanner._feature_reference_paths(features)}\n\n"
+            f"Available configured frameworks:\n{framework_context}\n\n"
             f"Design Constraints:\n{json.dumps(design_constraints or {}, ensure_ascii=False, indent=2)}\n\n"
             f"Generation Rules:\n{json.dumps(generation_rules or [], ensure_ascii=False, indent=2)}"
         )
 
     @staticmethod
-    def _build_plan_prompt(prompt_template, features, design_constraints, generation_rules):
-        return DesignPlanner._build_design_context(prompt_template, features, design_constraints, generation_rules)
+    def _build_plan_prompt(prompt_template, features, design_constraints, generation_rules, frameworks=None):
+        return DesignPlanner._build_design_context(prompt_template, features, design_constraints, generation_rules, frameworks)
 
     @staticmethod
-    def _build_revision_prompt(system_template, revision_template, features, previous_design_spec, previous_html, evaluation, design_constraints):
-        design_context = DesignPlanner._build_design_context(system_template, features, design_constraints)
+    def _build_revision_prompt(system_template, revision_template, features, previous_design_spec, previous_html, evaluation, design_constraints, frameworks=None):
+        design_context = DesignPlanner._build_design_context(system_template, features, design_constraints, frameworks=frameworks)
         revision = revision_template.format(
             previous_design_spec=previous_design_spec.model_dump_json(indent=2),
             previous_html=previous_html,
@@ -156,12 +160,29 @@ class DesignPlanner:
         return f"{design_context}\n\n{revision}"
 
     @staticmethod
-    def _build_recovery_context(features: FeatureModel, design_constraints: dict[str, Any] | None) -> str:
+    def _build_recovery_context(features: FeatureModel, design_constraints: dict[str, Any] | None, frameworks: FrameworkConfig | None = None) -> str:
         return (
             f"Feature Model:\n{features.model_dump_json(indent=2)}\n\n"
             f"Available Feature Model reference paths:\n{DesignPlanner._feature_reference_paths(features)}\n\n"
+            f"Available configured frameworks:\n{DesignPlanner._framework_catalog(frameworks or FrameworkConfig())}\n\n"
             f"Design Constraints:\n{json.dumps(design_constraints or {}, ensure_ascii=False, indent=2)}"
         )
+
+    @staticmethod
+    def _framework_catalog(frameworks: FrameworkConfig) -> str:
+        lines: list[str] = []
+        if frameworks.css:
+            lines.append("CSS frameworks:")
+            lines.extend(f"- {framework.name} (HTML loading tag: <{framework.tag}>, CDN: {framework.cdn})" for framework in frameworks.css)
+        else:
+            lines.append("CSS frameworks: (none configured)")
+        if frameworks.js:
+            lines.append("JavaScript frameworks:")
+            lines.extend(f"- {framework.name} (HTML loading tag: <{framework.tag}>, CDN: {framework.cdn})" for framework in frameworks.js)
+        else:
+            lines.append("JavaScript frameworks: (none configured)")
+        lines.append("Framework selection rule: framework names MUST exactly match one of the configured names above. Do not invent framework names. If no framework is appropriate, use 'none'.")
+        return "\n".join(lines)
 
     @staticmethod
     def _feature_reference_paths(features: FeatureModel) -> str:
