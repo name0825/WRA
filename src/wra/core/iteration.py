@@ -11,6 +11,7 @@ from wra.evaluator.llm import LLMEvaluator
 from wra.generator.generator import HTMLGenerator
 from wra.validator.html import HTMLValidationResult, validate_html
 from wra.analyzer.analyzer import HTMLAnalyzer
+from wra.llm.model_selector import ModelSelector
 
 
 @dataclass(frozen=True)
@@ -30,15 +31,7 @@ class IterationResult:
 class IterationEngine:
     """Execute generation, validation, browser evaluation, scoring, and revision."""
 
-    def __init__(
-        self,
-        config: WRAConfig,
-        analyzer: HTMLAnalyzer,
-        designer: DesignPlanner,
-        generator: HTMLGenerator,
-        evaluator: LLMEvaluator,
-        browser_evaluator=None,
-    ) -> None:
+    def __init__(self, config, analyzer, designer, generator, evaluator, browser_evaluator=None):
         self._config = config
         self._analyzer = analyzer
         self._designer = designer
@@ -50,16 +43,13 @@ class IterationEngine:
         input_file = Path(input_path)
         output_dir = Path(run_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
-
         original_path = output_dir / "original.html"
         if not original_path.exists():
             original_path.write_text(input_file.read_text(encoding="utf-8"), encoding="utf-8")
-
         features = self._analyzer.analyze_file(input_file)
         features_path = output_dir / "features.json"
         if not features_path.exists():
             features_path.write_text(features.model_dump_json(indent=2), encoding="utf-8")
-
         output_manager = OutputManager(output_dir, self._config.pipeline.output.save_mode)
         return self._run_iterations(features, output_manager, iteration)
 
@@ -68,37 +58,32 @@ class IterationEngine:
         last_result = None
         previous_result = None
         browser_tmp = output_manager.run_dir / ".browser_tmp"
-
         try:
             while True:
+                # Select all role models once at the beginning of an iteration.
+                designer_model = ModelSelector.select(self._config.models.designer, "designer")
+                generator_model = ModelSelector.select(self._config.models.generator, "generator")
+                evaluator_model = ModelSelector.select(self._config.evaluation.model, "evaluator")
+
                 if previous_result is None or previous_result.evaluation is None:
-                    design_spec = self._designer.plan(features)
+                    design_spec = self._designer.plan(features, model=designer_model)
                 else:
                     design_spec = self._designer.revise(
                         features=features,
                         previous_design_spec=previous_result.design_spec,
                         previous_html=previous_result.html,
                         evaluation=previous_result.evaluation,
+                        model=designer_model,
                     )
 
-                html = self._generator.generate(features, design_spec)
+                html = self._generator.generate(features, design_spec, model=generator_model)
                 validation = validate_html(html, features)
                 browser_result = BrowserEvaluationResult(enabled=False)
                 evaluation = None
-
                 if validation.valid:
                     if self._browser_evaluator is not None and self._config.browser.enabled:
-                        browser_result = self._browser_evaluator.evaluate(
-                            html=html,
-                            output_dir=browser_tmp,
-                            iteration=iteration,
-                        )
-                    evaluation = self._evaluator.evaluate(
-                        features,
-                        design_spec,
-                        html,
-                        browser_result=browser_result,
-                    )
+                        browser_result = self._browser_evaluator.evaluate(html=html, output_dir=browser_tmp, iteration=iteration)
+                    evaluation = self._evaluator.evaluate(features, design_spec, html, browser_result=browser_result, model=evaluator_model)
 
                 saved = output_manager.save_iteration(
                     iteration=iteration,
@@ -109,7 +94,6 @@ class IterationEngine:
                     browser=browser_result,
                     score=evaluation.overall_score if evaluation else None,
                 )
-
                 last_result = IterationResult(
                     iteration=iteration,
                     features=features,
@@ -122,10 +106,8 @@ class IterationEngine:
                     validation_path=saved.validation_path,
                     final_path=output_manager.run_dir / "final.html",
                 )
-
                 if self._should_terminate(iteration, evaluation):
                     return self._finalize(last_result, output_manager, browser_tmp)
-
                 previous_result = last_result
                 iteration += 1
         except KeyboardInterrupt:
