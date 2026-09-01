@@ -1,6 +1,7 @@
 import pytest
 
 from wra.core.models import EvaluationResult
+from wra.evaluator.llm import LLMEvaluator
 
 
 DIMENSIONS = (
@@ -43,3 +44,25 @@ def test_evaluation_result_rejects_out_of_range_score():
 
     with pytest.raises(ValueError):
         EvaluationResult.model_validate(payload)
+
+
+def test_evaluator_normalizes_json_markdown_fence():
+    response = """```json
+{"overall_score": 8}
+```"""
+
+    assert LLMEvaluator._normalize_json_response(response) == '{"overall_score": 8}'
+
+
+def test_evaluator_normalizes_plain_json_without_changes():
+    response = '{"overall_score": 8}'
+
+    assert LLMEvaluator._normalize_json_response(response) == response
+
+
+def test_evaluator_normalizes_generic_markdown_fence():
+    response = """```
+{"overall_score": 8}
+```"""
+
+    assert LLMEvaluator._normalize_json_response(response) == '{"overall_score": 8}'
