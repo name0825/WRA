@@ -12,6 +12,7 @@ from wra.designer.recovery import RecoveryPolicy as DesignRecoveryPolicy
 from wra.evaluator.llm import LLMEvaluator
 from wra.generator.generator import HTMLGenerator
 from wra.generator.recovery import RecoveryPolicy as GeneratorRecoveryPolicy
+from wra.llm.model_selector import ModelSelector
 from wra.llm.ollama import OllamaClient
 from wra.utils.logging import configure_logging, get_logger
 
@@ -30,9 +31,7 @@ def create_run_directory() -> Path:
 
 def load_config() -> WRAConfig:
     if not CONFIG_PATH.is_file():
-        raise FileNotFoundError(
-            f"Config file not found: {CONFIG_PATH}. Copy config/config.yaml.sample to config/config.yaml first."
-        )
+        raise FileNotFoundError(f"Config file not found: {CONFIG_PATH}. Copy config/config.yaml.sample to config/config.yaml first.")
     data = yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8")) or {}
     return WRAConfig.model_validate(data)
 
@@ -57,30 +56,15 @@ def main() -> None:
         context_multiplier=config.recovery.context_multiplier,
     )
 
-    analyzer = HTMLAnalyzer(llm_client=llm_client, analyzer_model=config.models.analyzer)
-    designer = DesignPlanner(
-        llm_client=llm_client,
-        designer_model=config.models.designer,
-        recovery_policy=design_recovery_policy,
-    )
-    generator = HTMLGenerator(
-        llm_client=llm_client,
-        generator_model=config.models.generator,
-        frameworks=config.frameworks,
-        recovery_policy=generator_recovery_policy,
-    )
-    evaluator = LLMEvaluator(llm_client=llm_client, model=config.evaluation.model)
+    analyzer_model = ModelSelector.select(config.models.analyzer, "analyzer")
+    analyzer = HTMLAnalyzer(llm_client=llm_client, analyzer_model=analyzer_model)
+    designer = DesignPlanner(llm_client=llm_client, designer_model="", recovery_policy=design_recovery_policy)
+    generator = HTMLGenerator(llm_client=llm_client, generator_model="", frameworks=config.frameworks, recovery_policy=generator_recovery_policy)
+    evaluator = LLMEvaluator(llm_client=llm_client, model="")
     browser_evaluator = BrowserEvaluator(config.browser) if config.browser.enabled else None
 
     run_dir = create_run_directory()
-    engine = IterationEngine(
-        config=config,
-        analyzer=analyzer,
-        designer=designer,
-        generator=generator,
-        evaluator=evaluator,
-        browser_evaluator=browser_evaluator,
-    )
+    engine = IterationEngine(config=config, analyzer=analyzer, designer=designer, generator=generator, evaluator=evaluator, browser_evaluator=browser_evaluator)
     result = engine.run(INPUT_PATH, run_dir)
 
     logger.info("Generated HTML written to %s", result.html_path or "memory")
