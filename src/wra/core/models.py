@@ -141,6 +141,7 @@ class Framework(BaseModel):
 
     name: str
     cdn: str
+    tag: Literal["link", "script"] = "link"
 
 
 class FrameworkConfig(BaseModel):
@@ -322,8 +323,6 @@ class EvaluationResult(BaseModel):
             if isinstance(dimension, (int, float)) and not isinstance(dimension, bool):
                 normalized[name] = {"score": dimension}
 
-        # Older/looser evaluator prompts may return one top-level feedback field.
-        # Preserve it instead of rejecting an otherwise valid evaluation.
         feedback = normalized.pop("feedback", None)
         if feedback is not None and not normalized.get("summary"):
             normalized["summary"] = str(feedback)
