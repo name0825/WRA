@@ -39,20 +39,42 @@ class DesignPlanner:
         logger.info("Design planning started: model=%s mode=%s", selected_model, (design_constraints or {}).get("mode", "unspecified"))
         prompt_template = self._prompt_path.read_text(encoding="utf-8")
         original_prompt = self._build_plan_prompt(prompt_template, features, design_constraints, generation_rules)
-        return self._generate_and_validate(original_prompt=original_prompt, features=features, revision_template=self._revision_prompt_path.read_text(encoding="utf-8"), model=selected_model, think=selected_think, timeout=selected_timeout)
+        return self._generate_and_validate(
+            original_prompt=original_prompt,
+            features=features,
+            recovery_context=self._build_recovery_context(features, design_constraints),
+            model=selected_model,
+            think=selected_think,
+            timeout=selected_timeout,
+        )
 
     def revise(self, features: FeatureModel, previous_design_spec: DesignSpec, previous_html: str, evaluation: EvaluationResult, design_constraints: dict[str, Any] | None = None, model: str | None = None, think: bool | None = None, timeout: float | None = None) -> DesignSpec:
         selected_model = model or self._designer_model
         selected_think = self._designer_think if think is None else think
         selected_timeout = self._designer_timeout if timeout is None else timeout
         logger.info("Design revision started: model=%s previous_score=%.2f", selected_model, evaluation.overall_score)
-        revision_template = self._revision_prompt_path.read_text(encoding="utf-8")
-        prompt = revision_template.format(previous_design_spec=previous_design_spec.model_dump_json(indent=2), previous_html=previous_html, evaluation_result=evaluation.model_dump_json(indent=2))
-        if design_constraints:
-            prompt = self._append_design_constraints(prompt, design_constraints)
-        return self._generate_and_validate(original_prompt=prompt, features=features, revision_template=revision_template, model=selected_model, think=selected_think, timeout=selected_timeout)
 
-    def _generate_and_validate(self, original_prompt, features, revision_template, model, think=None, timeout=None):
+        system_template = self._prompt_path.read_text(encoding="utf-8")
+        revision_template = self._revision_prompt_path.read_text(encoding="utf-8")
+        prompt = self._build_revision_prompt(
+            system_template,
+            revision_template,
+            features,
+            previous_design_spec,
+            previous_html,
+            evaluation,
+            design_constraints,
+        )
+        return self._generate_and_validate(
+            original_prompt=prompt,
+            features=features,
+            recovery_context=self._build_recovery_context(features, design_constraints),
+            model=selected_model,
+            think=selected_think,
+            timeout=selected_timeout,
+        )
+
+    def _generate_and_validate(self, original_prompt, features, recovery_context, model, think=None, timeout=None):
         current_num_ctx = self._recovery_policy.initial_num_ctx
         previous_response = None
         prompt = original_prompt
@@ -95,12 +117,12 @@ class DesignPlanner:
                 if next_num_ctx != current_num_ctx:
                     logger.info("Design Planner recovery: increasing num_ctx %d -> %d", current_num_ctx, next_num_ctx)
                     current_num_ctx = next_num_ctx
-                    prompt = build_recovery_prompt(original_prompt, previous_response, last_error, last_details, revision_template)
+                    prompt = build_recovery_prompt(original_prompt, previous_response, last_error, last_details, recovery_context=recovery_context)
                     continue
                 strategy = RecoveryStrategy.REGENERATE
             if strategy is RecoveryStrategy.REVISE_RESPONSE:
                 logger.info("Design Planner recovery: reusing previous response")
-                prompt = build_recovery_prompt(original_prompt, previous_response, last_error, last_details, revision_template)
+                prompt = build_recovery_prompt(original_prompt, previous_response, last_error, last_details, recovery_context=recovery_context)
             else:
                 logger.info("Design Planner recovery: regenerating from original prompt")
                 prompt = original_prompt
@@ -110,13 +132,35 @@ class DesignPlanner:
         raise RuntimeError(f"Design planning failed after {self._recovery_policy.max_retries} retries: {last_error.value}; {', '.join(last_details)}")
 
     @staticmethod
-    def _build_plan_prompt(prompt_template, features, design_constraints, generation_rules):
+    def _build_design_context(prompt_template, features, design_constraints, generation_rules=None):
         return (
             f"{prompt_template}\n\n"
             f"Feature Model:\n{features.model_dump_json(indent=2)}\n\n"
             f"Available Feature Model reference paths:\n{DesignPlanner._feature_reference_paths(features)}\n\n"
             f"Design Constraints:\n{json.dumps(design_constraints or {}, ensure_ascii=False, indent=2)}\n\n"
             f"Generation Rules:\n{json.dumps(generation_rules or [], ensure_ascii=False, indent=2)}"
+        )
+
+    @staticmethod
+    def _build_plan_prompt(prompt_template, features, design_constraints, generation_rules):
+        return DesignPlanner._build_design_context(prompt_template, features, design_constraints, generation_rules)
+
+    @staticmethod
+    def _build_revision_prompt(system_template, revision_template, features, previous_design_spec, previous_html, evaluation, design_constraints):
+        design_context = DesignPlanner._build_design_context(system_template, features, design_constraints)
+        revision = revision_template.format(
+            previous_design_spec=previous_design_spec.model_dump_json(indent=2),
+            previous_html=previous_html,
+            evaluation_result=evaluation.model_dump_json(indent=2),
+        )
+        return f"{design_context}\n\n{revision}"
+
+    @staticmethod
+    def _build_recovery_context(features: FeatureModel, design_constraints: dict[str, Any] | None) -> str:
+        return (
+            f"Feature Model:\n{features.model_dump_json(indent=2)}\n\n"
+            f"Available Feature Model reference paths:\n{DesignPlanner._feature_reference_paths(features)}\n\n"
+            f"Design Constraints:\n{json.dumps(design_constraints or {}, ensure_ascii=False, indent=2)}"
         )
 
     @staticmethod
@@ -191,9 +235,6 @@ class DesignPlanner:
                 except Exception as exc:
                     raise ValueError("Designer LLM response does not match DesignSpec") from exc
 
-            # Decode only from the first opening brace. Scanning every `{` can
-            # accidentally accept a nested object from a truncated root object,
-            # causing TOKEN_LIMIT to be misclassified as INVALID_CONTENT.
             start = candidate.find("{")
             if start < 0:
                 continue

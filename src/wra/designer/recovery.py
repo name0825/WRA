@@ -91,7 +91,7 @@ def build_recovery_prompt(
     previous_response: str | None,
     error: DesignRecoveryError,
     details: list[str],
-    revision_template: str,
+    recovery_context: str | None = None,
 ) -> str:
     strategy = strategy_for(error)
     if strategy is RecoveryStrategy.REGENERATE:
@@ -110,15 +110,18 @@ def build_recovery_prompt(
         )
 
     previous = previous_response or "(no previous response)"
+    context = recovery_context or "(Feature Model context unavailable)"
 
     if strategy is RecoveryStrategy.REVISE_RESPONSE:
         return (
             "# WRA DesignSpec Recovery\n\n"
             "Repair the previous Designer response. This is a repair task, not a new design task.\n"
             "Preserve the useful design/content decisions already present in the previous response.\n"
+            "Use the Feature Model and available reference paths below when repairing content_source values.\n"
             "Return exactly one valid JSON object and nothing else. Do not output analysis, reasoning, Markdown, code fences, or HTML.\n\n"
             f"{_schema_contract()}\n\n"
             f"{_reference_contract()}\n\n"
+            f"{context}\n\n"
             f"Failure type: {error.value}\n\n"
             f"Validation errors:\n{validation_errors}\n\n"
             f"Previous response:\n{previous}\n"
