@@ -11,6 +11,12 @@ pipeline:
   max_iterations: 3
   evaluation_threshold: 8.0
 
+  termination:
+    enabled: true
+
+  output:
+    save_mode: "all"
+
 recovery:
   max_retries: 3
   initial_num_ctx: 8192
