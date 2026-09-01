@@ -49,5 +49,7 @@ Return a JSON object. Use only these top-level fields when applicable:
 - navigation
 - requirements
 
+## Output rules
+
 - Do not return reasoning, Markdown, code fences, or any text outside the JSON object.
-- **Must return exactly one complete JSON object**
+- **Must return exactly one complete JSON object, do not use block code**
