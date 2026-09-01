@@ -107,6 +107,45 @@ def test_generator_injects_configured_framework_cdn(tmp_path):
     assert '<script src="https://example.com/example.js"></script>' in html
 
 
+def test_generator_uses_configured_script_tag_for_css_framework(tmp_path):
+    prompt = tmp_path / "system.md"
+    prompt.write_text("Generate HTML.", encoding="utf-8")
+    client = FakeLLMClient("<!DOCTYPE html><html><head></head><body></body></html>")
+    frameworks = FrameworkConfig(
+        css=[Framework(name="TailwindCSS", cdn="https://cdn.example/tailwind.js", tag="script")],
+    )
+    generator = HTMLGenerator(client, "generator-model", frameworks, prompt)
+
+    html = generator.generate(FeatureModel(), make_spec("TailwindCSS"))
+
+    assert '<script src="https://cdn.example/tailwind.js"></script>' in html
+    assert '<link rel="stylesheet" href="https://cdn.example/tailwind.js">' not in html
+
+
+def test_generator_prompt_lists_configured_frameworks_and_loading_tags(tmp_path):
+    prompt = tmp_path / "system.md"
+    prompt.write_text("Generate HTML.", encoding="utf-8")
+    client = FakeLLMClient("<!DOCTYPE html><html><head></head><body></body></html>")
+    frameworks = FrameworkConfig(
+        css=[
+            Framework(name="Bootstrap", cdn="https://example.com/bootstrap.css"),
+            Framework(name="TailwindCSS", cdn="https://example.com/tailwind.js", tag="script"),
+        ],
+        js=[Framework(name="GSAP", cdn="https://example.com/gsap.js", tag="script")],
+    )
+    generator = HTMLGenerator(client, "generator-model", frameworks, prompt)
+
+    generator.generate(FeatureModel(), make_spec("TailwindCSS"))
+
+    generated_prompt = client.calls[0]["prompt"]
+    assert "Available configured frameworks:" in generated_prompt
+    assert "Bootstrap" in generated_prompt
+    assert "TailwindCSS" in generated_prompt
+    assert "HTML loading tag: <script>" in generated_prompt
+    assert "GSAP" in generated_prompt
+    assert "only configured framework names may be used" in generated_prompt
+
+
 def test_generator_rejects_unconfigured_framework(tmp_path):
     prompt = tmp_path / "system.md"
     prompt.write_text("Generate HTML.", encoding="utf-8")
