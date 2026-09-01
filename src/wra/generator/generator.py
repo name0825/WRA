@@ -39,7 +39,7 @@ class HTMLGenerator:
         logger.debug("Framework dependencies: %s", cdn_tags or "none")
         prompt_template = self._prompt_path.read_text(encoding="utf-8")
         revision_template = self._recovery_prompt_path.read_text(encoding="utf-8")
-        original_prompt = self._build_prompt(prompt_template, features, design_spec, generation_rules, cdn_tags)
+        original_prompt = self._build_prompt(prompt_template, features, design_spec, generation_rules, cdn_tags, self._frameworks)
         prompt = original_prompt
         previous_response = None
         num_ctx = self._recovery_policy.initial_num_ctx
@@ -89,8 +89,32 @@ class HTMLGenerator:
         raise GeneratorError(f"HTML generation failed after {self._recovery_policy.max_retries + 1} attempts" + (f": {last_error}" if last_error else ""))
 
     @staticmethod
-    def _build_prompt(prompt_template, features, design_spec, generation_rules, cdn_tags):
-        return f"{prompt_template}\n\nFeature Model:\n{features.model_dump_json(indent=2)}\n\nDesignSpec:\n{design_spec.model_dump_json(indent=2)}\n\nGeneration Rules:\n{json.dumps(generation_rules or [], ensure_ascii=False, indent=2)}\n\nFramework CDN dependencies to include exactly:\n{cdn_tags or '(none)'}"
+    def _build_prompt(prompt_template, features, design_spec, generation_rules, cdn_tags, frameworks=None):
+        framework_catalog = HTMLGenerator._framework_catalog(frameworks or FrameworkConfig())
+        return (
+            f"{prompt_template}\n\n"
+            f"Feature Model:\n{features.model_dump_json(indent=2)}\n\n"
+            f"DesignSpec:\n{design_spec.model_dump_json(indent=2)}\n\n"
+            f"Generation Rules:\n{json.dumps(generation_rules or [], ensure_ascii=False, indent=2)}\n\n"
+            f"Available configured frameworks:\n{framework_catalog}\n\n"
+            f"Framework CDN dependencies to include exactly:\n{cdn_tags or '(none)'}"
+        )
+
+    @staticmethod
+    def _framework_catalog(frameworks: FrameworkConfig) -> str:
+        lines: list[str] = []
+        if frameworks.css:
+            lines.append("CSS frameworks:")
+            lines.extend(f"- {framework.name} (HTML loading tag: <{framework.tag}>, CDN: {framework.cdn})" for framework in frameworks.css)
+        else:
+            lines.append("CSS frameworks: (none configured)")
+        if frameworks.js:
+            lines.append("JavaScript frameworks:")
+            lines.extend(f"- {framework.name} (HTML loading tag: <{framework.tag}>, CDN: {framework.cdn})" for framework in frameworks.js)
+        else:
+            lines.append("JavaScript frameworks: (none configured)")
+        lines.append("Framework selection rule: only configured framework names may be used. Do not add or invent CDN URLs. Use 'none' when no framework is specified by the DesignSpec.")
+        return "\n".join(lines)
 
     def _build_framework_tags(self, design_spec: DesignSpec) -> str:
         tags = []
@@ -99,14 +123,20 @@ class HTMLGenerator:
             framework = self._frameworks.find_css(css_name)
             if framework is None:
                 raise GeneratorError(f"CSS framework is not configured: {css_name}")
-            tags.append(f'<link rel="stylesheet" href="{framework.cdn}">')
+            tags.append(self._framework_tag(framework))
         js_name = design_spec.design.framework.js.name.strip()
         if js_name and js_name.lower() not in {"none", "vanilla javascript", "vanilla js", "vanilla"}:
             framework = self._frameworks.find_js(js_name)
             if framework is None:
                 raise GeneratorError(f"JavaScript framework is not configured: {js_name}")
-            tags.append(f'<script src="{framework.cdn}"></script>')
+            tags.append(self._framework_tag(framework))
         return "\n".join(tags)
+
+    @staticmethod
+    def _framework_tag(framework) -> str:
+        if framework.tag == "script":
+            return f'<script src="{framework.cdn}"></script>'
+        return f'<link rel="stylesheet" href="{framework.cdn}">'
 
     @staticmethod
     def _extract_html(response: str) -> str:
