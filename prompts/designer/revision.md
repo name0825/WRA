@@ -12,14 +12,17 @@ Revise the previous DesignSpec using the evaluator feedback below.
 - Do not invent important content that is absent from the Feature Model.
 - Treat any variation guidance as optional design exploration, never as a mandatory visual recipe.
 - Keep the result structurally valid according to the DesignSpec schema.
-- Return exactly one complete JSON object conforming to the DesignSpec schema.
 - Do not return reasoning, Markdown, code fences, or any text outside the JSON object.
+- **Must return exactly one complete JSON object conforming to the DesignSpec schema**.
 
 ## Previous DesignSpec
+
 {previous_design_spec}
 
 ## Previous Generated HTML
+
 {previous_html}
 
 ## Evaluation Result
+
 {evaluation_result}
