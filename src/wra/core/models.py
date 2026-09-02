@@ -350,3 +350,20 @@ class EvaluationResult(BaseModel):
             normalized["summary"] = str(feedback)
 
         return normalized
+
+    @model_validator(mode="after")
+    def enforce_overall_score_mean(self):
+        """Make overall_score a deterministic function of the nine dimension scores."""
+        dimensions = (
+            self.design_completeness,
+            self.visual_hierarchy,
+            self.design_consistency,
+            self.content_preservation,
+            self.ux,
+            self.readability,
+            self.responsive_design,
+            self.originality,
+            self.html_quality,
+        )
+        self.overall_score = sum(dimension.score for dimension in dimensions) / len(dimensions)
+        return self
