@@ -2,6 +2,9 @@ from pathlib import Path
 
 from wra.cli import main
 
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+SAMPLE_CONFIG = PROJECT_ROOT / "config" / "config.yaml.sample"
+
 
 def test_cli_creates_feature_model(tmp_path: Path, monkeypatch) -> None:
     input_dir = tmp_path / "input"
@@ -12,9 +15,10 @@ def test_cli_creates_feature_model(tmp_path: Path, monkeypatch) -> None:
         encoding="utf-8",
     )
 
-    monkeypatch.chdir(tmp_path)
+    monkeypatch.chdir(PROJECT_ROOT)
     monkeypatch.setattr("wra.cli.INPUT_PATH", input_dir / "input.html")
     monkeypatch.setattr("wra.cli.OUTPUT_ROOT", output_dir)
+    monkeypatch.setattr("wra.cli.CONFIG_PATH", SAMPLE_CONFIG)
 
     main()
 
