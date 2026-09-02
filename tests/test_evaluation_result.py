@@ -29,6 +29,16 @@ def test_evaluation_result_accepts_flat_scores():
     assert all(getattr(result, name).score == 8 for name in DIMENSIONS)
 
 
+def test_evaluation_result_recalculates_overall_score_from_dimensions():
+    payload = {name: {"score": 9, "feedback": f"{name} feedback"} for name in DIMENSIONS}
+    payload["design_completeness"]["score"] = 6
+    payload["overall_score"] = 10
+
+    result = EvaluationResult.model_validate(payload)
+
+    assert result.overall_score == pytest.approx(8.6666666667)
+
+
 def test_evaluation_result_preserves_dimension_feedback():
     payload = {name: {"score": 7, "feedback": f"{name} feedback"} for name in DIMENSIONS}
     payload["overall_score"] = 7
