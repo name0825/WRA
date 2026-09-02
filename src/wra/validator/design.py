@@ -17,6 +17,28 @@ class DesignValidationResult:
 _PATH_PART_RE = re.compile(r"^(?P<name>[^\[\]]+)(?P<indexes>(?:\[\d+\])*)$")
 _INDEX_RE = re.compile(r"\[(\d+)\]")
 
+# Collections a DesignSpec must reference when populated.
+#
+# `media.urls` and `media.icons` are intentionally excluded: `media.urls` is a
+# verbatim duplicate of the image/video `src` values already covered by
+# `media.images`/`media.videos`, and `media.icons` holds CSS class strings
+# rather than designable content. Requiring separate coverage for either forces
+# the planner to invent filler components.
+REQUIRED_COVERAGE_COLLECTIONS = (
+    "content.headings",
+    "content.paragraphs",
+    "content.lists",
+    "content.tables",
+    "content.buttons",
+    "content.links",
+    "content.labels",
+    "content.text",
+    "structure.sections",
+    "structure.forms",
+    "media.images",
+    "media.videos",
+)
+
 
 def _resolve_path(value: object, path: str) -> object | None:
     """Resolve dotted FeatureModel paths with optional list indexes."""
@@ -75,6 +97,12 @@ def _source_covers_collection(source: str, collection_path: str) -> bool:
     )
 
 
+def required_coverage_paths(features: FeatureModel) -> list[str]:
+    """Return the populated collections a DesignSpec must reference."""
+    feature_data = features.model_dump(exclude_none=True)
+    return [path for path in REQUIRED_COVERAGE_COLLECTIONS if _resolve_path(feature_data, path)]
+
+
 def _validate_content_coverage(spec: DesignSpec, features: FeatureModel, errors: list[str]) -> None:
     """Ensure populated FeatureModel collections are represented by a component source."""
     sources = {
@@ -84,25 +112,8 @@ def _validate_content_coverage(spec: DesignSpec, features: FeatureModel, errors:
         if component.content_source.strip()
     }
 
-    required_collections = (
-        "content.headings",
-        "content.paragraphs",
-        "content.lists",
-        "content.tables",
-        "content.buttons",
-        "content.links",
-        "content.labels",
-        "content.text",
-        "structure.sections",
-        "structure.forms",
-        "media.images",
-        "media.videos",
-        "media.icons",
-        "media.urls",
-    )
-
     feature_data = features.model_dump(exclude_none=True)
-    for path in required_collections:
+    for path in REQUIRED_COVERAGE_COLLECTIONS:
         value = _resolve_path(feature_data, path)
         if not value:
             continue

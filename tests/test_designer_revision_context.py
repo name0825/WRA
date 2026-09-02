@@ -35,8 +35,8 @@ def make_design_spec():
             },
             "typography": {"heading": "Inter", "body": "Inter", "scale": "large", "weight": "mixed"},
             "framework": {
-                "css": {"name": "tailwind", "reason": "modular"},
-                "js": {"name": "vanilla-js", "reason": "simple"},
+                "css": {"name": "none", "reason": "not needed"},
+                "js": {"name": "none", "reason": "not needed"},
             },
             "motion": {"level": "mid", "principles": ["subtle reveal"]},
         },
@@ -51,14 +51,25 @@ def make_design_spec():
     }
 
 
+DIMENSIONS = (
+    "design_completeness",
+    "visual_hierarchy",
+    "design_consistency",
+    "content_preservation",
+    "ux",
+    "readability",
+    "responsive_design",
+    "originality",
+    "html_quality",
+)
+
+
 def make_evaluation():
-    return EvaluationResult(
-        overall_score=7.0,
-        scores={"content": 7.0},
-        strengths=[],
-        weaknesses=["Hierarchy is too flat"],
-        suggestions=["Increase focal hierarchy"],
-    )
+    payload = {name: {"score": 7.0, "feedback": f"{name} feedback"} for name in DIMENSIONS}
+    payload["overall_score"] = 7.0
+    payload["summary"] = "Hierarchy is too flat"
+    payload["improvement_suggestions"] = ["Increase focal hierarchy"]
+    return EvaluationResult.model_validate(payload)
 
 
 def test_revise_prompt_preserves_full_design_context():
@@ -74,10 +85,14 @@ def test_revise_prompt_preserves_full_design_context():
     assert "Available Feature Model reference paths:" in prompt
     assert "`metadata`" in prompt
     assert "`content.text`" in prompt
+    assert "Coverage required:" in prompt
     assert "Previous DesignSpec" in prompt
-    assert "Previous Generated HTML" in prompt
+    assert "Previous HTML evidence" in prompt
     assert "Evaluation Result" in prompt
-    assert "Important schema typing rules" in prompt
+    assert "WRA DesignSpec Revision" in prompt
+    # The revision rules must land after the evidence so prompt truncation,
+    # which drops the front of the prompt, cannot remove them.
+    assert prompt.index("Previous DesignSpec") < prompt.index("## Revision depth")
 
 
 def test_revise_prompt_uses_actual_feature_model_reference_paths():

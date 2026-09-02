@@ -142,7 +142,15 @@ class Framework(BaseModel):
 
     name: str
     cdn: str
-    tag: Literal["link", "script"] = "link"
+    tag: Literal["link", "script"] | None = None
+
+    def loading_tag(self, default: Literal["link", "script"]) -> str:
+        """Resolve the HTML loading tag, falling back to the catalog's kind.
+
+        An unset tag previously defaulted to `link`, which injected JavaScript
+        frameworks as stylesheets.
+        """
+        return self.tag or default
 
 
 class FrameworkConfig(BaseModel):

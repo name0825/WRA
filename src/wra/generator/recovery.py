@@ -51,7 +51,9 @@ def _looks_truncated_html(response: str | None) -> bool:
         score += 1
     if len(text) >= 1500:
         score += 1
-    return score >= 4
+    # An unclosed <body> alone is an ordinary structural failure. Require a
+    # second truncation signal before spending a retry on a larger context.
+    return score >= 5
 
 
 def classify_response(response: str | None) -> HTMLRecoveryError:
@@ -135,6 +137,7 @@ def build_recovery_prompt(
         return (
             f"{original_prompt}\n\n"
             "# WRA HTML Generator Recovery\n"
+            f"Failure type: {error.value}\n"
             "The previous HTML generation attempt appears to have exhausted its output token budget. "
             "Regenerate the complete HTML document using the larger context window. "
             "Do not reuse or reproduce the previous response. It may be truncated and would waste context. "

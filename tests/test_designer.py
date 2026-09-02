@@ -321,7 +321,7 @@ def test_unknown_error_regenerates_without_previous_response():
     assert client.calls[1]["prompt"] == client.calls[0]["prompt"]
 
 
-def test_recovery_stops_at_max_num_ctx_and_regenerates():
+def test_recovery_stops_at_max_num_ctx_but_keeps_concision_guidance():
     valid = json.dumps(make_design_spec())
     client = FakeLLMClient([RuntimeError("context length exceeded"), RuntimeError("context length exceeded"), valid])
     planner = DesignPlanner(
@@ -333,7 +333,11 @@ def test_recovery_stops_at_max_num_ctx_and_regenerates():
     planner.plan(FeatureModel())
 
     assert client.calls[1]["options"]["num_ctx"] == 8192
-    assert client.calls[2]["prompt"] == client.calls[0]["prompt"]
+    assert client.calls[2]["options"]["num_ctx"] == 8192
+    # The window cannot grow, so the retry must at least ask for a shorter
+    # response instead of resending the prompt that overran unchanged.
+    assert client.calls[0]["prompt"] in client.calls[2]["prompt"]
+    assert "Failure type: token_limit" in client.calls[2]["prompt"]
 
 
 def test_recovery_raises_after_retry_limit():

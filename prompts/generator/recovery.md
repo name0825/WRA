@@ -14,6 +14,8 @@ Validation or generation errors:
 Previous response:
 {previous_response}
 
+Apply only the section below that matches the failure type above. Ignore the other sections.
+
 ## `token_limit`
 
 The previous response may be truncated.
@@ -22,7 +24,7 @@ Do not reuse or reproduce it.
 
 Regenerate the complete standalone HTML from the FeatureModel and DesignSpec using the larger context window.
 
-Keep CSS and JavaScript concise enough to finish the document and close all HTML, CSS, and JavaScript structures.
+For this attempt only, keep CSS and JavaScript concise enough to finish the document and close all HTML, CSS, and JavaScript structures. Reach that budget by tightening declarations and removing redundant rules, not by dropping DesignSpec sections or source content.
 
 ## `structure`
 
