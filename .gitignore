@@ -10,3 +10,5 @@ input/*
 *egg-info/
 
 config.yaml
+
+claude.md
