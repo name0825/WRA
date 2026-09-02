@@ -28,6 +28,15 @@ design:
     - "landing"
     - "ecommerce"
 
+# How far the pipeline may depart from the source content.
+#   low    : keep the source content as-is
+#   medium : minor additions/deletions/rewording, meaning preserved
+#   high   : rewrite, drop, and add content on the source basis
+#   ultra  : free authoring; source content is reference material
+# low and medium require every populated content collection to be placed.
+content:
+  freedom: "low"
+
 evaluation:
   model:
     - name: "gemma4:26b"

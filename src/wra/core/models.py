@@ -99,6 +99,49 @@ class DesignConfig(BaseModel):
         return self
 
 
+ContentFreedom = Literal["low", "medium", "high", "ultra"]
+
+CONTENT_FREEDOM_POLICIES: dict[str, dict[str, str]] = {
+    "low": {
+        "authoring": "Keep the source content as the Feature Model supplies it. Do not add, remove, merge, split, or reword source strings, links, or media.",
+        "planning": "Place the existing content. Do not plan sections that require content the Feature Model does not supply.",
+        "evaluation": "Judge content_preservation as strict fidelity: any added, removed, or reworded source content is a defect.",
+    },
+    "medium": {
+        "authoring": "Keep the source content as the substance of the page. Minor additions, deletions, and rewording are allowed where they improve clarity or fit the layout. Do not change the meaning of a source string or drop a link or media reference.",
+        "planning": "Place the existing content. Small supporting elements are allowed, but the plan must stay grounded in the supplied content.",
+        "evaluation": "Judge content_preservation as meaning-level fidelity: minor edits are acceptable, changed meaning or dropped links and media are defects.",
+    },
+    "high": {
+        "authoring": "Use the source content as the basis of the page. You may rewrite, reorder, drop weak content, and add new content that fits the site's purpose. Keep the site's subject, identity, and factual claims intact, and do not invent external URLs or assets.",
+        "planning": "Use the Feature Model as the basis. Not every supplied collection has to be placed, and sections may be added when the site's purpose calls for them.",
+        "evaluation": "Judge content_preservation as intent-level fidelity: rewriting, dropping, and adding content are expected; only a lost subject, a contradicted fact, or invented external assets are defects.",
+    },
+    "ultra": {
+        "authoring": "Treat the source content as reference material. Add, remove, and rewrite freely to produce the strongest page for this subject. Do not invent external URLs or assets, and do not contradict facts the Feature Model states.",
+        "planning": "Treat the Feature Model as reference material. Structure the page however best serves the subject.",
+        "evaluation": "Judge content_preservation as subject-level fidelity only: the page must still be about the same subject and must not contradict stated facts or invent external assets.",
+    },
+}
+
+_COVERAGE_ENFORCED_LEVELS = frozenset({"low", "medium"})
+
+
+def content_freedom_policy(level: ContentFreedom) -> dict[str, str]:
+    return CONTENT_FREEDOM_POLICIES[level]
+
+
+def coverage_is_enforced(level: ContentFreedom) -> bool:
+    """Whether a DesignSpec must place every populated Feature Model collection."""
+    return level in _COVERAGE_ENFORCED_LEVELS
+
+
+class ContentConfig(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    freedom: ContentFreedom = "low"
+
+
 class PipelineTerminationConfig(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -172,6 +215,7 @@ class WRAConfig(BaseModel):
     ollama: OllamaConfig
     models: ModelConfig
     design: DesignConfig = DesignConfig()
+    content: ContentConfig = ContentConfig()
     evaluation: EvaluationConfig = EvaluationConfig()
     browser: BrowserConfig = BrowserConfig()
     pipeline: PipelineConfig

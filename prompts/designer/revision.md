@@ -56,7 +56,7 @@ For every actionable `improvement_suggestions` item:
 
 Do not blindly follow evaluator feedback.
 
-Preserve all required FeatureModel coverage and valid `content_source` paths.
+Preserve FeatureModel coverage where the `content_freedom` entry in `Design Constraints` requires it, and always keep `content_source` paths valid.
 
 Apply supplied `Design Constraints` when they do not conflict with fidelity, usability, or schema validity.
 

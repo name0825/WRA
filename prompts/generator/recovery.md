@@ -52,9 +52,9 @@ Use the previous response only as evidence of missing or invalid content.
 
 Fix the reported content problem using the authoritative FeatureModel and DesignSpec.
 
-Preserve source wording, meaning, required links, and media.
+Preserve source wording, meaning, required links, and media, to the extent the `Generation Rules` content freedom entry allows.
 
-Do not fabricate missing content.
+Do not fabricate missing content unless that entry allows new content.
 
 ## Other failures
 

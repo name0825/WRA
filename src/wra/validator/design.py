@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 import logging
 import re
 
-from wra.core.models import FeatureModel, FrameworkConfig
+from wra.core.models import ContentFreedom, FeatureModel, FrameworkConfig, coverage_is_enforced
 from wra.designer.schema import DesignSpec
 
 logger = logging.getLogger(__name__)
@@ -121,7 +121,7 @@ def _validate_content_coverage(spec: DesignSpec, features: FeatureModel, errors:
             errors.append(f"missing content coverage: {path}")
 
 
-def validate_design_spec(spec: DesignSpec, features: FeatureModel, frameworks: FrameworkConfig) -> DesignValidationResult:
+def validate_design_spec(spec: DesignSpec, features: FeatureModel, frameworks: FrameworkConfig, content_freedom: ContentFreedom = "low") -> DesignValidationResult:
     logger.debug("DesignSpec validation started: sections=%d", len(spec.sections))
     errors: list[str] = []
 
@@ -154,7 +154,10 @@ def validate_design_spec(spec: DesignSpec, features: FeatureModel, frameworks: F
             errors.append(f"empty breakpoint width: {breakpoint.name}")
 
     _validate_frameworks(spec, frameworks, errors)
-    _validate_content_coverage(spec, features, errors)
+    if coverage_is_enforced(content_freedom):
+        _validate_content_coverage(spec, features, errors)
+    else:
+        logger.debug("Content coverage not enforced at freedom level: %s", content_freedom)
 
     result = DesignValidationResult(valid=not errors, errors=errors)
     if result.valid:

@@ -35,3 +35,22 @@ def test_design_validator_accepts_structure_collection_references():
     result = validate_design_spec(spec, features, FrameworkConfig())
 
     assert result.valid
+
+
+def test_design_validator_enforces_coverage_at_low_and_medium_freedom():
+    features = FeatureModel(structure={"sections": [Section(tag="section", text="Source section")]})
+
+    for freedom in ("low", "medium"):
+        result = validate_design_spec(make_spec(), features, FrameworkConfig(), freedom)
+
+        assert not result.valid
+        assert "missing content coverage: structure.sections" in result.errors
+
+
+def test_design_validator_skips_coverage_at_high_and_ultra_freedom():
+    features = FeatureModel(structure={"sections": [Section(tag="section", text="Source section")]})
+
+    for freedom in ("high", "ultra"):
+        result = validate_design_spec(make_spec(), features, FrameworkConfig(), freedom)
+
+        assert result.valid
