@@ -101,6 +101,11 @@ Field rules:
 
 ## Output rules
 
-- Return exactly one complete JSON object.
-- Return JSON only. No reasoning, Markdown, code fences, explanations, or text outside the JSON object.
-- Do not put HTML, CSS, JavaScript, or implementation details in any field.
+- Return exactly one complete JSON object and nothing else.
+- Output MUST be valid JSON that can be parsed directly without preprocessing.
+- Do not return reasoning, Markdown, code fences, explanations, headings, comments, or any text before or after the JSON object.
+- Do not generate HTML, CSS, JavaScript, JSX/TSX, or implementation details in any field.
+- Include only fields allowed by the schema. If an optional field has no useful value, omit it rather than inventing a placeholder.
+- Arrays MUST contain values of their declared type; use arrays of strings where specified and never substitute objects for strings.
+- Use `null` only where the schema explicitly permits null. Do not use `null` as a substitute for a missing array or object; omit optional fields instead.
+- Before returning, internally verify that the JSON parses, contains no unsupported top-level fields, and conforms to the field/type rules above.
