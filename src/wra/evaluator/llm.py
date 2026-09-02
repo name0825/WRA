@@ -41,10 +41,13 @@ class LLMEvaluator:
             f"This page was authored at content freedom `{self._content_freedom}`. "
             f"{content_freedom_policy(self._content_freedom)['evaluation']} "
             "This replaces the default `content_preservation` definition above.\n\n"
-            f"{FACTUAL_ACCURACY_CAP}"
+            f"{FACTUAL_ACCURACY_CAP}\n\n"
+            "`deterministic_content_findings` in the input lists corruptions already confirmed by deterministic "
+            "checking. Treat every entry as a defect you have observed, apply the cap above, and name it in the "
+            "`content_preservation` feedback."
         )
 
-    def evaluate(self, features: FeatureModel, design_spec: DesignSpec, html: str, browser_result: BrowserEvaluationResult | None = None, model: str | None = None, think: bool | None = None, timeout: float | None = None) -> EvaluationResult:
+    def evaluate(self, features: FeatureModel, design_spec: DesignSpec, html: str, browser_result: BrowserEvaluationResult | None = None, content_findings: list[str] | None = None, model: str | None = None, think: bool | None = None, timeout: float | None = None) -> EvaluationResult:
         selected_model = model or self._model
         selected_think = self._think if think is None else think
         selected_timeout = self._timeout if timeout is None else timeout
@@ -57,6 +60,7 @@ class LLMEvaluator:
             "design_spec": design_spec.model_dump(mode="json"),
             "generated_html": html,
             "browser_evaluation": browser_result.model_dump(mode="json") if browser_result is not None else None,
+            "deterministic_content_findings": content_findings or [],
         }
         screenshot_paths = []
         if browser_result is not None and browser_result.enabled:

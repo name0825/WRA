@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 
 from wra.core.models import FeatureModel
 from wra.validator.structure import validate_structure
+from wra.validator.tokens import find_corrupted_tokens
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +31,7 @@ def validate_html(html: str, features: FeatureModel) -> HTMLValidationResult:
     structure_errors, structure_warnings = validate_structure(html)
     errors.extend(structure_errors)
     warnings.extend(structure_warnings)
+    warnings.extend(find_corrupted_tokens(html, features))
 
     result = HTMLValidationResult(valid=not errors, errors=errors, warnings=warnings)
     if result.valid:

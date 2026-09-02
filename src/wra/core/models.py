@@ -108,6 +108,12 @@ FACTUAL_ACCURACY_RULE = (
     "Every date, number, proper noun, and the pairing between them must match the Feature Model "
     "wherever it appears. Freedom to rewrite is never freedom to restate a fact incorrectly."
 )
+# Freedom to write new content is not freedom to switch the page's language:
+# an audience that reads the source reads the replacement.
+SOURCE_LANGUAGE_RULE = (
+    "Write in the language the Feature Model's content uses. Content you add or rewrite must be in that "
+    "same language, and source strings keep their original language character for character."
+)
 FACTUAL_ACCURACY_CAP = (
     "Cap this dimension at 4 when a date, number, proper noun, or the pairing between them "
     "differs from the Feature Model, at any freedom level."

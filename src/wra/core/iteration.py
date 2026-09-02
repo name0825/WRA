@@ -4,13 +4,14 @@ import logging
 import shutil
 
 from wra.browser.models import BrowserEvaluationResult
-from wra.core.models import FACTUAL_ACCURACY_RULE, EvaluationResult, FeatureModel, WRAConfig, content_freedom_policy, coverage_is_enforced
+from wra.core.models import FACTUAL_ACCURACY_RULE, SOURCE_LANGUAGE_RULE, EvaluationResult, FeatureModel, WRAConfig, content_freedom_policy, coverage_is_enforced
 from wra.core.output import OutputManager
 from wra.designer.planner import DesignPlanner
 from wra.designer.schema import DesignSpec
 from wra.evaluator.llm import LLMEvaluator
 from wra.generator.generator import HTMLGenerator
 from wra.validator.html import HTMLValidationResult, validate_html
+from wra.validator.tokens import find_corrupted_tokens
 from wra.analyzer.analyzer import HTMLAnalyzer
 from wra.llm.model_selector import ModelSelector
 
@@ -91,7 +92,7 @@ class IterationEngine:
                         logger.info("Current task: browser evaluation")
                         browser_result = self._browser_evaluator.evaluate(html=html, output_dir=browser_tmp, iteration=iteration)
                     logger.info("Current task: LLM evaluation")
-                    evaluation = self._evaluator.evaluate(features, design_spec, html, browser_result=browser_result, model=evaluator_model.name, think=evaluator_model.think, timeout=evaluator_model.timeout)
+                    evaluation = self._evaluator.evaluate(features, design_spec, html, browser_result=browser_result, content_findings=find_corrupted_tokens(html, features), model=evaluator_model.name, think=evaluator_model.think, timeout=evaluator_model.timeout)
                 else:
                     logger.warning("Skipping browser/evaluation because HTML validation failed")
 
@@ -130,7 +131,7 @@ class IterationEngine:
         constraints["variation_policy"] = {"type": "soft_guidance", "instruction": exploration_axes[(iteration - 1) % len(exploration_axes)], "do_not_force": True}
         freedom = self._config.content.freedom
         policy = content_freedom_policy(freedom)
-        constraints["content_freedom"] = {"level": freedom, "instruction": policy["planning"], "coverage_required": coverage_is_enforced(freedom), "factual_accuracy": FACTUAL_ACCURACY_RULE}
+        constraints["content_freedom"] = {"level": freedom, "instruction": policy["planning"], "coverage_required": coverage_is_enforced(freedom), "factual_accuracy": FACTUAL_ACCURACY_RULE, "source_language": SOURCE_LANGUAGE_RULE}
         return constraints
 
     def _build_generation_rules(self) -> list[str]:
@@ -138,6 +139,7 @@ class IterationEngine:
         return [
             f"Content freedom `{freedom}`: {content_freedom_policy(freedom)['authoring']}",
             f"Factual accuracy: {FACTUAL_ACCURACY_RULE}",
+            f"Source language: {SOURCE_LANGUAGE_RULE}",
         ]
 
     def _finalize(self, result, output_manager, browser_tmp):
