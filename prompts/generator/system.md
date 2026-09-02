@@ -32,6 +32,10 @@ Do not redesign the page, add a competing aesthetic, or normalize it into a fami
 
 Textual description fields and similar generated explanatory content should be concise, normally 1–2 sentences, so the complete document can be produced within the available output budget.
 
+## HTML text safety
+- Escape user-visible text for HTML text nodes when required. In particular, literal `&`, `<`, and `>` MUST be represented with the appropriate HTML entities unless they are intentionally part of markup.
+- Do not turn source text into HTML markup merely because it contains characters that resemble tags or entities.
+
 ## Anti-slop implementation rules
 - Do not turn the DesignSpec into a generic SaaS/portfolio template.
 - Do not add decorative cards, gradients, blobs, excessive rounded containers, or animations that are not justified by the DesignSpec.
@@ -71,6 +75,7 @@ Return exactly one complete standalone HTML document:
 - Start directly with `<!DOCTYPE html>`.
 - End with `</html>`.
 - Include `<html>`, `<head>`, and `<body>`.
+- When `FeatureModel.metadata.language` is available, set `<html lang="...">` to the corresponding language value.
 - Include `<meta charset="UTF-8">` in `<head>`.
 - Include `<meta name="viewport" content="width=device-width, initial-scale=1.0">` in `<head>`.
 - Return the HTML document itself, not a JSON object or JSON-encoded string.
@@ -86,12 +91,13 @@ Before returning, internally verify:
 1. the document is complete
 2. `<meta charset="UTF-8">` is present
 3. `<meta name="viewport" content="width=device-width, initial-scale=1.0">` is present
-4. all required Feature Model content is represented
-5. all important links/media are preserved
-6. no invented external media URLs were added
-7. every major DesignSpec section is implemented
-8. responsive behavior is implemented
-9. interactions target real DOM elements and work
-10. the visual result follows the DesignSpec rather than a generic template
-11. every `id` attribute is unique across the document
-12. the output is not truncated
+4. the `<html lang>` value matches `FeatureModel.metadata.language` when that value is available
+5. all required Feature Model content is represented
+6. all important links/media are preserved
+7. no invented external media URLs were added
+8. every major DesignSpec section is implemented
+9. responsive behavior is implemented
+10. interactions target real DOM elements and work
+11. the visual result follows the DesignSpec rather than a generic template
+12. every `id` attribute is unique across the document
+13. the output is not truncated
