@@ -36,13 +36,15 @@ HTML = """
 
 
 class FakeLLMClient(LLMClient):
-    def __init__(self, response: str) -> None:
-        self.response = response
+    def __init__(self, response: str | list[str]) -> None:
+        self.responses = [response] if isinstance(response, str) else list(response)
         self.calls: list[tuple[str, str, dict | None]] = []
 
-    def generate(self, prompt: str, model: str, options: dict | None = None) -> str:
+    def generate(self, prompt: str, model: str, options: dict | None = None, **kwargs) -> str:
         self.calls.append((prompt, model, options))
-        return self.response
+        if len(self.responses) > 1:
+            return self.responses.pop(0)
+        return self.responses[0]
 
 
 def test_parser_builds_tree() -> None:
@@ -124,6 +126,16 @@ def test_analyzer_applies_llm_semantic_analysis() -> None:
     assert llm.calls[0][2] == {"format": "json"}
 
 
+def test_analyzer_recovers_from_invalid_semantic_json() -> None:
+    llm = FakeLLMClient(["not json", '{"site": {"type": "portfolio"}}'])
+
+    features = HTMLAnalyzer(llm_client=llm, analyzer_model="test-model", semantic_max_retries=1).analyze(HTML)
+
+    assert features.site.type == "portfolio"
+    assert len(llm.calls) == 2
+    assert "WRA Semantic Analyzer Recovery" in llm.calls[1][0]
+
+
 def test_business_information_normalizes_object_items() -> None:
     business = BusinessInfo.model_validate({
         "business_information": [
@@ -162,7 +174,7 @@ def test_analyzer_rejects_invalid_llm_json() -> None:
     llm = FakeLLMClient(response="not json")
 
     try:
-        HTMLAnalyzer(llm_client=llm, analyzer_model="test-model").analyze(HTML)
+        HTMLAnalyzer(llm_client=llm, analyzer_model="test-model", semantic_max_retries=0).analyze(HTML)
     except ValueError as exc:
         assert str(exc) == "Analyzer LLM returned invalid JSON"
     else:

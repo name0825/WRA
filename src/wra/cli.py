@@ -51,7 +51,7 @@ def main() -> None:
     generator_recovery_policy = GeneratorRecoveryPolicy(max_retries=config.recovery.max_retries, initial_num_ctx=config.recovery.initial_num_ctx, max_num_ctx=config.recovery.max_num_ctx, context_multiplier=config.recovery.context_multiplier)
 
     analyzer_model = ModelSelector.select(config.models.analyzer, "analyzer")
-    analyzer = HTMLAnalyzer(llm_client=llm_client, analyzer_model=analyzer_model.name, analyzer_think=analyzer_model.think, analyzer_timeout=analyzer_model.timeout)
+    analyzer = HTMLAnalyzer(llm_client=llm_client, analyzer_model=analyzer_model.name, analyzer_think=analyzer_model.think, analyzer_timeout=analyzer_model.timeout, semantic_max_retries=config.recovery.max_retries)
     designer = DesignPlanner(llm_client=llm_client, designer_model="", frameworks=config.frameworks, recovery_policy=design_recovery_policy)
     generator = HTMLGenerator(llm_client=llm_client, generator_model="", frameworks=config.frameworks, recovery_policy=generator_recovery_policy)
     evaluator = LLMEvaluator(llm_client=llm_client, model="")
