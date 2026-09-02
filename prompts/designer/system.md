@@ -57,6 +57,7 @@ Do not expose this reasoning. Encode the decisions in the DesignSpec JSON.
 - Prefer fewer, stronger components over many decorative components.
 - Use asymmetry, editorial composition, controlled density, unusual but usable hierarchy, or other deliberate choices when appropriate.
 - Do not force novelty when it harms readability or content fidelity.
+- Keep the number of sections and components proportional to the source content. Prefer a compact structure and avoid splitting content into many small sections solely for visual variety or decoration.
 
 ## 4. Three design dials
 
@@ -203,12 +204,3 @@ Return:
   "responsive": {"strategy":"...","breakpoints":[{"name":"...","width":"..."}],"behavior":[]},
   "interaction": {"principles":[],"components":[{"target":"...","behavior":"..."}]}
 }
-
-## Final checklist
-
-Before returning the JSON, verify:
-
-- I am returning a DesignSpec, not a webpage.
-- The result is exactly one complete JSON object conforming to the schema.
-- No HTML, CSS, JavaScript, JSX/TSX, implementation code, reasoning, or repository exploration appears anywhere in the output.
-- Design Constraints, when provided, were applied according to the `variation_policy` rules.
