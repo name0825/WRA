@@ -137,7 +137,9 @@ frameworks:
 
 ### Recovery
 
-Design Planner와 HTML Generator는 오류 유형에 따라 복구 전략을 구분한다. Analyzer semantic analysis도 JSON/스키마 적용 실패 시 설정된 retry 횟수만큼 compact repair prompt로 재시도한다.
+Design Planner와 HTML Generator는 오류 유형에 따라 복구 전략을 구분한다. Analyzer semantic analysis와 LLM Evaluator도 JSON/스키마 적용 실패 시 설정된 retry 횟수만큼 compact repair prompt로 재시도한다.
+
+첫 시도의 `num_ctx`는 조립된 프롬프트 길이에서 산출해 `initial_num_ctx`와 `max_num_ctx`(첫 시도는 32768 상한) 사이로 정한다. Ollama는 `num_ctx`를 넘는 프롬프트의 **앞부분**을 버리므로, 모든 단계의 프롬프트는 `데이터 → 지시/출력 계약` 순서로 조립해 role·schema·output contract가 잘려나가지 않게 한다.
 
 ```text
 Token limit
@@ -147,7 +149,7 @@ Token limit
 JSON / 구조 / 콘텐츠 오류
     → 이전 응답을 활용한 수정 재시도
 
-Analyzer semantic JSON 오류
+Analyzer / Evaluator JSON 오류
     → repair guidance를 포함한 재시도
 
 그 외 오류

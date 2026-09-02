@@ -1,7 +1,7 @@
 import pytest
 
 from wra.core.models import EvaluationResult
-from wra.evaluator.llm import LLMEvaluator
+from wra.llm.response import normalize_json_response
 
 
 DIMENSIONS = (
@@ -61,13 +61,13 @@ def test_evaluator_normalizes_json_markdown_fence():
 {"overall_score": 8}
 ```"""
 
-    assert LLMEvaluator._normalize_json_response(response) == '{"overall_score": 8}'
+    assert normalize_json_response(response) == '{"overall_score": 8}'
 
 
 def test_evaluator_normalizes_plain_json_without_changes():
     response = '{"overall_score": 8}'
 
-    assert LLMEvaluator._normalize_json_response(response) == response
+    assert normalize_json_response(response) == response
 
 
 def test_evaluator_normalizes_generic_markdown_fence():
@@ -75,4 +75,4 @@ def test_evaluator_normalizes_generic_markdown_fence():
 {"overall_score": 8}
 ```"""
 
-    assert LLMEvaluator._normalize_json_response(response) == '{"overall_score": 8}'
+    assert normalize_json_response(response) == '{"overall_score": 8}'

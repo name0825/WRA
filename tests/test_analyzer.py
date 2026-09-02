@@ -123,7 +123,8 @@ def test_analyzer_applies_llm_semantic_analysis() -> None:
     assert "Educational background and awards" not in features.requirements.must_preserve
     assert features.navigation["primary_items"] == ["About", "Contact"]
     assert llm.calls[0][1] == "test-model"
-    assert llm.calls[0][2] == {"format": "json"}
+    assert llm.calls[0][2]["format"] == "json"
+    assert llm.calls[0][2]["num_ctx"] > 0
 
 
 def test_analyzer_recovers_from_invalid_semantic_json() -> None:

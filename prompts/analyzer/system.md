@@ -21,7 +21,14 @@ You may provide only these top-level fields:
 - `navigation`: semantic navigation characteristics.
 - `requirements`: preservation requirements and optional semantic hints.
 
-Do not copy arbitrary page text into `navigation`.
+### Navigation shape
+
+`navigation` must use exactly these keys, and no others:
+
+- `type`: string or null. A short semantic label for the navigation model, such as `product-category-driven` or `single-page-anchor`.
+- `items`: string[]. The navigation labels actually present in the deterministic extraction result, in source wording and source language. Use an empty array when the page has no navigation.
+
+Do not copy arbitrary page text into `navigation`. Only real navigation labels belong in `items`.
 
 ### Business types
 
@@ -45,12 +52,23 @@ Match the `FeatureModel.business` shape exactly:
 
 ## Output
 
-Return exactly one complete JSON object and nothing else.
+Return exactly one complete JSON object matching this structure, and nothing else.
 
-Allowed top-level fields:
+```
+{
+  "site": {"type": "string|null", "industry": "string|null", "brand": {}},
+  "business": {
+    "company_name": "string|null",
+    "services": ["string"], "products": ["string"], "contact": ["string"],
+    "email": ["string"], "phone": ["string"],
+    "business_information": ["string"], "cta": ["string"],
+    "address": "string|null"
+  },
+  "navigation": {"type": "string|null", "items": ["string"]},
+  "requirements": {"must_preserve": ["string"], "optional": ["string"]}
+}
+```
 
-`site`, `business`, `navigation`, `requirements`
-
-When present, `requirements.must_preserve` and `requirements.optional` are arrays of strings.
+Omit any top-level field you have nothing to add to. Never output a field outside these four.
 
 Do not output unsupported fields, HTML/CSS/JS, reasoning, Markdown, or prose.
