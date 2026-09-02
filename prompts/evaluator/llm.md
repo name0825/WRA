@@ -31,6 +31,8 @@ A score must reflect the supplied evidence, not an assumed quality level. If evi
 
 Browser evidence is especially important for UX, readability, responsive_design, and visual_hierarchy. Consider horizontal overflow, JavaScript errors, page errors, and differences between desktop, tablet, and mobile screenshots.
 
+When browser evaluation is unavailable, disabled, or `browser_evaluation` is null, do not assume that screenshots exist and do not penalize the page merely because visual browser evidence is unavailable. For `responsive_design`, use the DesignSpec's declared responsive strategy, breakpoints, and behavior together with the generated HTML structure. For `ux`, `readability`, and `visual_hierarchy`, judge only what can be established from the DesignSpec and generated HTML structure. In the relevant feedback, state that no browser-rendered visual confirmation was available when that limitation materially affects the assessment.
+
 ## Content preservation scope
 
 For `content_preservation`, evaluate semantic fidelity: whether the generated page retains the original information, meaning, emphasis, important links/media, and required user-visible content while allowing layout and visual expression to change.
