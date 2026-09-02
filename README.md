@@ -60,7 +60,7 @@ Python으로 처리할 수 있는 정보는 deterministic extraction으로 먼�
 - site type, industry, brand 특성
 - navigation 특성
 
-LLM semantic analysis는 deterministic extraction 결과를 입력으로 사용하고 결과를 FeatureModel에 merge한다.
+LLM semantic analysis는 deterministic extraction 결과를 입력으로 사용하고 결과를 FeatureModel에 merge한다. Semantic classification은 안정적인 downstream 처리를 위해 영어를 사용하며, source-derived user-visible content는 원문 언어를 유지한다.
 
 ### Design Planner
 
@@ -98,12 +98,19 @@ LLM이 생성한 DesignSpec은 Pydantic schema와 deterministic validator를 통
 - FeatureModel에 존재하지 않는 `content_source`
 - 존재하지 않는 interaction target
 - 비어 있는 responsive breakpoint width
+- populated content/media/structure collection의 content coverage
+
+특히 `structure.sections`와 `structure.forms`도 populated 상태이면 DesignSpec에서 `content_source`로 참조되어야 한다.
 
 검증 실패 시 Design Recovery 정책에 따라 재시도한다.
 
 ### HTML Generator
 
 HTML Generator는 FeatureModel과 DesignSpec을 받아 완전한 HTML 문서를 생성한다. Generator는 DesignSpec을 임의로 재설계하지 않고 구현하는 역할을 담당한다.
+
+Generator는 모든 문서에 UTF-8 charset 및 responsive viewport meta를 포함해야 한다.
+
+Feature Model에 존재하지 않는 장식용 이미지는 외부 URL을 임의로 생성하지 않고 CSS 또는 inline SVG 등으로 구현한다.
 
 DesignSpec에서 선택한 CSS/JavaScript framework가 YAML에 등록되어 있으면 등록된 CDN URL을 HTML에 삽입한다.
 
@@ -135,7 +142,7 @@ Design Planner와 HTML Generator는 오류 유형에 따라 복구 전략을 구
 ```text
 Token limit
     → num_ctx 증가
-    → 이전 응답을 활용한 재시도
+    → 이전 응답을 재사용하지 않고 전체 문서 재생성
 
 JSON / 구조 / 콘텐츠 오류
     → 이전 응답을 활용한 수정 재시도
@@ -143,6 +150,8 @@ JSON / 구조 / 콘텐츠 오류
 그 외 오류
     → 재생성
 ```
+
+Token limit recovery에서는 이전 응답이 잘린 HTML일 수 있으므로 recovery prompt에 이전 응답을 넣지 않는다.
 
 기본 설정:
 
@@ -170,7 +179,9 @@ recovery:
 | 독창성 | 0~10 |
 | HTML 품질 | 0~10 |
 
-각 항목에 점수와 feedback을 생성하며 `overall_score`는 9개 점수의 산술 평균이다.
+각 항목에 점수와 feedback을 생성하며 `overall_score`는 9개 점수의 산술 평균이다. 평가 모델은 0~2, 5~6, 8~10 등의 명시적인 score anchor를 사용해 점수 인플레이션을 방지한다.
+
+`content_preservation`은 deterministic validator의 exact-match 검사만 반복하는 것이 아니라 의미, 중요도, 맥락, 링크/미디어 및 필수 정보의 보존 정도를 평가한다.
 
 Browser Evaluation이 활성화되어 있으면 screenshot, overflow, console/page error 등의 browser evidence도 평가 모델에 전달한다.
 
@@ -441,8 +452,7 @@ WRA/
 │   │   ├── system.md
 │   │   └── revision.md
 │   ├── evaluator/
-│   │   ├── llm.md
-│   │   └── system.md
+│   │   └── llm.md
 │   └── generator/
 │       ├── system.md
 │       └── recovery.md

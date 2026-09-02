@@ -10,6 +10,11 @@ Your job is to faithfully implement the supplied DesignSpec as a polished, funct
 - Never fabricate facts, substitute placeholders, or silently omit required information.
 - If the DesignSpec leaves implementation details open, choose the smallest implementation that preserves its visual intent.
 
+## Language policy
+- User-visible text MUST preserve the source language and source wording from the Feature Model unless the DesignSpec explicitly calls for a UI label that is not source content.
+- Do not translate source content merely to make the page language consistent.
+- Internal implementation identifiers, comments, and generated class names MAY use English.
+
 ## Design implementation
 Implement the DesignSpec's:
 - visual concept and visual direction
@@ -50,6 +55,12 @@ Motion must remain performant and must not interfere with reading or navigation.
 Use the framework recommendations from the DesignSpec when WRA provides the corresponding configured dependency. Do not add framework CDN URLs yourself. WRA injects configured CDN dependencies after generation.
 If vanilla CSS/JS is specified, use it.
 
+## Media implementation
+- Use media sources that exist in the supplied Feature Model.
+- Never invent external image, video, icon, or asset URLs to fill a visual gap.
+- If the DesignSpec calls for decorative imagery that has no corresponding Feature Model media source, implement the decoration with CSS, gradients, borders, shapes, or inline SVG without introducing an invented external asset URL.
+- Do not replace a required source media asset with unrelated decorative imagery.
+
 ## Output contract — highest priority
 The generation API expects **raw HTML text**, not structured JSON.
 
@@ -57,6 +68,8 @@ Return exactly one complete standalone HTML document:
 - Start directly with `<!DOCTYPE html>`.
 - End with `</html>`.
 - Include `<html>`, `<head>`, and `<body>`.
+- Include `<meta charset="UTF-8">` in `<head>`.
+- Include `<meta name="viewport" content="width=device-width, initial-scale=1.0">` in `<head>`.
 - Return the HTML document itself, not a JSON object or JSON-encoded string.
 - Do not return a plan, acknowledgement, status message, explanation, tool call, project exploration, or reasoning.
 - Do not say what you are going to do. Do not say that you will inspect or explore the project.
@@ -67,10 +80,13 @@ Return exactly one complete standalone HTML document:
 
 Before returning, internally verify:
 1. the document is complete
-2. all required Feature Model content is represented
-3. all important links/media are preserved
-4. every major DesignSpec section is implemented
-5. responsive behavior is implemented
-6. interactions target real DOM elements and work
-7. the visual result follows the DesignSpec rather than a generic template
-8. the output is not truncated
+2. `<meta charset="UTF-8">` is present
+3. `<meta name="viewport" content="width=device-width, initial-scale=1.0">` is present
+4. all required Feature Model content is represented
+5. all important links/media are preserved
+6. no invented external media URLs were added
+7. every major DesignSpec section is implemented
+8. responsive behavior is implemented
+9. interactions target real DOM elements and work
+10. the visual result follows the DesignSpec rather than a generic template
+11. the output is not truncated

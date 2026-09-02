@@ -12,10 +12,14 @@ Previous response:
 {previous_response}
 ```
 
-Recover according to the failure type.
+## Recovery rules
 
 - Preserve the Feature Model and DesignSpec requirements.
 - Preserve required content, links, media, and the requested design.
 - Fix only the identified problems unless another change is required for a valid document.
+- Preserve the source language and wording of user-visible content.
+- Never invent external media URLs. If a decorative asset is not present in the Feature Model, use CSS or inline SVG instead.
 - Return only one complete HTML document.
 - Do not return Markdown fences or explanations.
+
+For `token_limit`, do not reuse the previous response. The previous response may be truncated and must not be included in the recovery prompt; regenerate the complete document using the increased context window.

@@ -76,7 +76,7 @@ def _source_covers_collection(source: str, collection_path: str) -> bool:
 
 
 def _validate_content_coverage(spec: DesignSpec, features: FeatureModel, errors: list[str]) -> None:
-    """Ensure populated content/media collections are represented by a component source."""
+    """Ensure populated FeatureModel collections are represented by a component source."""
     sources = {
         component.content_source.strip()
         for section in spec.sections
@@ -93,6 +93,8 @@ def _validate_content_coverage(spec: DesignSpec, features: FeatureModel, errors:
         "content.links",
         "content.labels",
         "content.text",
+        "structure.sections",
+        "structure.forms",
         "media.images",
         "media.videos",
         "media.icons",

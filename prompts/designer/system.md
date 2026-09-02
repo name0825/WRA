@@ -143,21 +143,32 @@ Array collections may be referenced as a whole, for example:
 - `content.paragraphs`
 - `content.links`
 - `media.images`
+- `structure.sections`
+- `structure.forms`
 
 Specific existing array items may also be referenced with a zero-based index, for example:
 - `content.headings[0]`
 - `content.links[5]`
 - `media.images[2]`
+- `structure.forms[0]`
 
 Array indexes are valid only when the indexed item actually exists. Never guess an index. If you do not need one specific item, prefer the collection-level path instead of indexing it.
 
 A `content_source` must never contain actual text after a colon and must not use invented semantic names such as `content.hero`, `content.services`, or `media.logo` unless that exact path exists in the supplied Feature Model.
 
-Content coverage rule: every populated collection in the supplied Feature Model must be represented by at least one component `content_source`. A collection-level reference covers the collection; an indexed reference such as `content.headings[0]` also covers its parent collection `content.headings`.
+Content coverage rule: every populated source collection in the supplied Feature Model must be represented by at least one component `content_source`. This includes content, media, and structural collections such as `structure.sections` and `structure.forms`. A collection-level reference covers the collection; an indexed reference such as `content.headings[0]` also covers its parent collection `content.headings`.
 
 Before returning, mentally check every `content_source` against the supplied Feature Model and remove or correct any path that does not resolve.
 
-## 11. Output discipline
+## 11. Language policy
+
+- JSON field names and schema structure MUST remain exactly as specified.
+- User-visible source content referenced by `content_source` MUST remain in its original language and wording.
+- Semantic design/classification descriptions such as `concept`, `visual_direction`, `layout`, and `responsive.strategy` SHOULD be written in concise English for stable downstream interpretation.
+- Do not translate source content into English merely because the DesignSpec itself uses English semantic descriptions.
+- Do not invent English labels to replace source-language content.
+
+## 12. Output discipline
 
 Return exactly one syntactically valid JSON object matching the DesignSpec schema. No Markdown, commentary, reasoning, HTML, or code.
 
@@ -175,7 +186,7 @@ Before returning, verify:
 - the top-level keys are present: `design`, `sections`, `responsive`, `interaction`
 - every `content_source` is a valid Feature Model path
 - every indexed `content_source` uses an existing zero-based array index
-- every populated Feature Model content/media collection has content coverage
+- every populated Feature Model content/media/structure collection has content coverage
 - every interaction `target` exactly equals a declared component `type`
 - every responsive breakpoint has both `name` and `width`
 - the design has a clear visual concept, hierarchy, system, responsive strategy, and motion language

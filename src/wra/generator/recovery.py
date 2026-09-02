@@ -38,26 +38,19 @@ def _looks_truncated_html(response: str | None) -> bool:
     if "<html" not in text or "</html>" in text:
         return False
 
-    score = 2  # An HTML document without </html> is already a strong signal.
-
-    # A response cut inside one of the document's major containers is stronger evidence.
+    score = 2
     if "<head" in text and "</head>" not in text:
         score += 2
     if "<body" in text and "</body>" not in text:
         score += 2
-
-    # LLM output commonly ends mid-CSS/JS/attribute when the output budget is exhausted.
     if text.count("{") > text.count("}"):
         score += 2
     if text.count("<script") > text.count("</script>"):
         score += 1
     if text.count("<style") > text.count("</style>"):
         score += 1
-
-    # Very short malformed documents are more likely a model/structure failure than truncation.
     if len(text) >= 1500:
         score += 1
-
     return score >= 4
 
 
@@ -87,16 +80,12 @@ def classify_exception(exc: Exception, response: str | None = None) -> HTMLRecov
     if any(marker in message for marker in token_markers):
         return HTMLRecoveryError.TOKEN_LIMIT
 
-    # Ollama can return HTTP 200 even when generation stops because the output
-    # budget is exhausted. In that case there is no exception to classify, so
-    # use the actual response shape as a secondary signal.
     response_error = classify_response(response)
     if response_error is HTMLRecoveryError.TOKEN_LIMIT:
         return response_error
 
     if "complete html document" in message or "doctype" in message or "</head>" in message:
         return HTMLRecoveryError.STRUCTURE
-
     return HTMLRecoveryError.UNKNOWN
 
 
@@ -138,8 +127,20 @@ def build_recovery_prompt(
     details: list[str],
     revision_template: str,
 ) -> str:
-    if strategy_for(error) is RecoveryStrategy.REGENERATE:
+    strategy = strategy_for(error)
+    if strategy is RecoveryStrategy.REGENERATE:
         return original_prompt
+
+    if error is HTMLRecoveryError.TOKEN_LIMIT:
+        return (
+            f"{original_prompt}\n\n"
+            "# WRA HTML Generator Recovery\n"
+            "The previous HTML generation attempt appears to have exhausted its output token budget. "
+            "Regenerate the complete HTML document using the larger context window. "
+            "Do not reuse or reproduce the previous response. It may be truncated and would waste context. "
+            "Return exactly one complete HTML document, with no reasoning, Markdown, code fences, or prose. "
+            "Keep CSS and JavaScript concise enough to finish the document and close every HTML/CSS/JS structure."
+        )
 
     validation_errors = "\n".join(f"- {detail}" for detail in details) or "- unspecified validation failure"
     revision = revision_template.format(
