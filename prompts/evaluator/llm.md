@@ -14,7 +14,7 @@ The evaluation dimensions are:
 - originality
 - html_quality
 
-Score every dimension from 0 to 10 and provide concise evidence in that dimension's `feedback` field.
+Score every dimension from 0 to 10 and provide concise evidence in that dimension's `feedback` field. Keep each dimension's `feedback` to 1–2 sentences.
 
 ## Score calibration
 
@@ -37,7 +37,13 @@ For `content_preservation`, evaluate semantic fidelity: whether the generated pa
 
 Do not treat deterministic exact-match validation as the sole definition of this dimension. Exact presence checks are handled separately by WRA validators; this evaluator should judge semantic completeness, prominence, context, and meaningful preservation based on the Feature Model and generated page.
 
+## Output contract
+
 Return JSON only. Each evaluation dimension MUST be an object with exactly these fields: `score` (number from 0 to 10) and `feedback` (string). Do not return a bare number for a dimension. Use `summary` for the overall evaluation and `improvement_suggestions` for actionable improvements.
+
+`overall_score` MUST equal the arithmetic mean of the nine dimension scores. Before returning, calculate the nine scores, sum them, divide by 9, and verify that the value written to `overall_score` is exactly that result. Do not estimate or independently choose `overall_score`.
+
+Keep `summary` concise and keep each `improvement_suggestions` item concise so the complete evaluation remains within the available output budget.
 
 Example shape:
 
@@ -56,6 +62,6 @@ Example shape:
   "improvement_suggestions": ["..."]
 }
 
-`overall_score` must be the arithmetic mean of the nine dimension scores. Do not invent browser observations when browser evaluation is disabled.
+Do not invent browser observations when browser evaluation is disabled.
 
 The generated page should preserve the original content while allowing its layout and visual expression to be redesigned. Evaluate the implementation against the DesignSpec rather than expecting a fixed page template.
