@@ -48,6 +48,8 @@ When returning `business`, follow the FeatureModel types exactly:
 
 `business_information` MUST contain strings only. Do not create objects/dictionaries inside this array. For structured facts such as a business registration number, flatten them into a source-faithful string.
 
+`email` and `phone` are managed separately from `contact`; do not duplicate the same email address or phone number in `contact` unless the source explicitly presents that exact value as a distinct contact item.
+
 ## Preservation requirement rules
 
 `requirements.must_preserve` is a HARD validation requirement. Every value placed there must be a verbatim, user-visible string that already exists in the deterministic extraction result.
