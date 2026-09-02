@@ -10,10 +10,20 @@ Revise the previous DesignSpec using the evaluator feedback below.
 - When feedback permits, explore a materially different visual direction, composition, hierarchy, density, typography, color relationship, or interaction pattern.
 - Do not change the design arbitrarily when the current decision is already appropriate.
 - Do not invent important content that is absent from the Feature Model.
-- Treat any variation guidance as optional design exploration, never as a mandatory visual recipe.
 - Keep the result structurally valid according to the DesignSpec schema.
-- Do not return reasoning, Markdown, code fences, or any text outside the JSON object.
-- **Must return exactly one complete JSON object conforming to the DesignSpec schema.**
+- Return exactly one complete JSON object conforming to the DesignSpec schema. No reasoning, Markdown, code fences, or text outside the JSON object.
+
+## Design Constraints
+
+When `Design Constraints` are provided, use them as active iteration guidance:
+
+- Prioritize `variation_policy.instruction` as this revision's exploration direction.
+- Treat the instruction as a design direction, not as literal implementation instructions or a fixed visual recipe.
+- If `variation_policy.do_not_force` is `true`, content suitability, readability, usability, evaluator feedback, and Feature Model fidelity take precedence over the requested variation.
+- Do not ignore the variation instruction merely because the previous DesignSpec already works; seek an appropriate, materially distinct direction when the instruction calls for exploration.
+- If no Design Constraints are provided, use the normal revision rules above.
+
+Keep textual DesignSpec description fields concise, normally 1–2 sentences, so the complete specification remains within the available output budget.
 
 ## Previous DesignSpec
 
