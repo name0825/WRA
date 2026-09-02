@@ -11,6 +11,7 @@ Revise the previous DesignSpec using the evaluator feedback below.
 - Do not change the design arbitrarily when the current decision is already appropriate.
 - Do not invent important content that is absent from the Feature Model.
 - Keep the result structurally valid according to the DesignSpec schema.
+- Keep the number of sections and components proportional to the source content. Prefer a compact structure and avoid splitting content into many small sections solely for visual variety or decoration.
 - Return exactly one complete JSON object conforming to the DesignSpec schema. No reasoning, Markdown, code fences, or text outside the JSON object.
 
 ## Design Constraints
