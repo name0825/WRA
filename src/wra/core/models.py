@@ -111,8 +111,10 @@ FACTUAL_ACCURACY_RULE = (
 # Freedom to write new content is not freedom to switch the page's language:
 # an audience that reads the source reads the replacement.
 SOURCE_LANGUAGE_RULE = (
-    "Write in the language the Feature Model's content uses. Content you add or rewrite must be in that "
-    "same language, and source strings keep their original language character for character."
+    "Write in the language the Feature Model's content uses, and where it mixes languages, keep each part in "
+    "the language the source used rather than unifying them. Content you add or rewrite must be in the language "
+    "of the content it accompanies, and source strings keep their original language character for character. "
+    "No freedom level permits translating a source string."
 )
 FACTUAL_ACCURACY_CAP = (
     "Cap this dimension at 4 when a date, number, proper noun, or the pairing between them "
@@ -141,7 +143,7 @@ CONTENT_FREEDOM_POLICIES: dict[str, dict[str, str]] = {
         "evaluation": "Judge content_preservation as subject-level fidelity only: the page must still be about the same subject and must not contradict stated facts or invent external assets.",
     },
     "madmax": {
-        "authoring": "Write this page as an author, not as a transcriber. Rewrite every heading and every line of prose in your own words, cut whatever is weak, and write substantial copy the source never contained: an opening statement, section introductions, explanatory text that makes the subject legible to a first-time reader, and calls to action the source lacks. Reproducing the source's wording or echoing its section order is a failure at this level. At this level only, these defaults are lifted: `requirements.must_preserve` is advisory rather than required, source strings need not be reproduced, and writing content the Feature Model does not contain is expected rather than fabrication. The fixed points are the subject's identity and its factual record: dates, numbers, proper names, contact values, and URLs must appear exactly as the Feature Model states them wherever you use them, and no external URL or asset may be invented.",
+        "authoring": "Write this page as an author, not as a transcriber. Rewrite every heading and every line of prose in your own words, cut whatever is weak, and write substantial copy the source never contained: an opening statement, section introductions, explanatory text that makes the subject legible to a first-time reader, and calls to action the source lacks. Reproducing the source's wording or echoing its section order is a failure at this level. At this level only, these defaults are lifted: `requirements.must_preserve` is advisory rather than required, source strings need not be reproduced, and writing content the Feature Model does not contain is expected rather than fabrication. Rewriting is never translating: a string the Feature Model gives in one language must not reappear in another, and where the source mixes languages, keep each part in the language the source used and write your new copy in the language of the content it accompanies. The fixed points are the subject's identity and its factual record: dates, numbers, proper names, contact values, and URLs must appear exactly as the Feature Model states them wherever you use them, and no external URL or asset may be invented.",
         "planning": "Plan the page an author would want for this subject, not a rearrangement of the Feature Model. Plan sections the source does not contain, and do not mirror its section order. The Feature Model is one input among your own ideas, and `requirements.must_preserve` does not bind the plan.",
         "evaluation": "Judge content_preservation as identity-level fidelity only: invented sections and wholly new copy are the point and are not defects, and closely reproduced source wording earns no credit here. Only a lost subject identity, a misstated fact, or an invented external asset is a defect.",
     },
