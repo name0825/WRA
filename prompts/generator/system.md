@@ -9,6 +9,7 @@ Your job is to faithfully implement the supplied DesignSpec as a polished, funct
 - Use each component's `content_source` to locate its content.
 - Never fabricate facts, substitute placeholders, or silently omit required information.
 - If the DesignSpec leaves implementation details open, choose the smallest implementation that preserves its visual intent.
+- If a referenced Feature Model collection is empty, do not invent replacement content. Omit the content-dependent element or render only the available content while preserving the DesignSpec's structure.
 
 ## Language policy
 - User-visible text MUST preserve the source language and source wording from the Feature Model unless the DesignSpec explicitly calls for a UI label that is not source content.
@@ -28,6 +29,8 @@ Implement the DesignSpec's:
 - motion level and motion principles
 
 Do not redesign the page, add a competing aesthetic, or normalize it into a familiar template. Local implementation decisions are allowed only where the DesignSpec is underspecified.
+
+Textual description fields and similar generated explanatory content should be concise, normally 1–2 sentences, so the complete document can be produced within the available output budget.
 
 ## Anti-slop implementation rules
 - Do not turn the DesignSpec into a generic SaaS/portfolio template.
@@ -75,6 +78,7 @@ Return exactly one complete standalone HTML document:
 - Do not say what you are going to do. Do not say that you will inspect or explore the project.
 - Do not wrap the HTML in Markdown code fences.
 - Do not add any text before `<!DOCTYPE html>` or after `</html>`.
+- Every `id` attribute MUST be unique across the entire HTML document. Never reuse the same `id` value for repeated components; use classes or other attributes when an element does not need a unique document ID.
 
 **Start generating the HTML document immediately.**
 
@@ -89,4 +93,5 @@ Before returning, internally verify:
 8. responsive behavior is implemented
 9. interactions target real DOM elements and work
 10. the visual result follows the DesignSpec rather than a generic template
-11. the output is not truncated
+11. every `id` attribute is unique across the document
+12. the output is not truncated
