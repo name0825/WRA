@@ -116,3 +116,13 @@ logging:
   level: "INFO"
   console_level: "INFO"
   directory: "log"
+
+viewer:
+  # Result viewer server (show-pages)
+  host: "0.0.0.0"
+  port: 5002
+  debug: true
+  output_root: "output"
+  # Score badge thresholds (out of 10)
+  score_high_threshold: 8.0
+  score_mid_threshold: 6.0

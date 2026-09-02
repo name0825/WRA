@@ -203,6 +203,17 @@ class LoggingConfig(BaseModel):
     directory: str = "log"
 
 
+class ViewerConfig(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    host: str = "0.0.0.0"
+    port: int = 5002
+    debug: bool = True
+    output_root: str = "output"
+    score_high_threshold: float = 8.0
+    score_mid_threshold: float = 6.0
+
+
 class Framework(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -245,6 +256,7 @@ class WRAConfig(BaseModel):
     recovery: RecoveryConfig = RecoveryConfig()
     frameworks: FrameworkConfig = FrameworkConfig()
     logging: LoggingConfig = LoggingConfig()
+    viewer: ViewerConfig = ViewerConfig()
 
 
 class Metadata(BaseModel):

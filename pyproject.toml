@@ -20,9 +20,13 @@ test = [
 browser = [
     "playwright",
 ]
+viewer = [
+    "flask",
+]
 
 [project.scripts]
 redesign = "wra.cli:main"
+show-pages = "wra.viewer.server:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
