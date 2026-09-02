@@ -42,6 +42,7 @@ def main() -> None:
     logger.info("WRA starting")
     logger.info("Input: %s", INPUT_PATH)
     logger.info("Ollama endpoint: %s", config.ollama.base_url)
+    logger.info("Content freedom: %s", config.content.freedom)
     if not INPUT_PATH.is_file():
         logger.error("Input file not found: %s", INPUT_PATH)
         raise FileNotFoundError(f"Input file not found: {INPUT_PATH}")
@@ -52,9 +53,9 @@ def main() -> None:
 
     analyzer_model = ModelSelector.select(config.models.analyzer, "analyzer")
     analyzer = HTMLAnalyzer(llm_client=llm_client, analyzer_model=analyzer_model.name, analyzer_think=analyzer_model.think, analyzer_timeout=analyzer_model.timeout, semantic_max_retries=config.recovery.max_retries, min_num_ctx=config.recovery.initial_num_ctx, max_num_ctx=config.recovery.max_num_ctx)
-    designer = DesignPlanner(llm_client=llm_client, designer_model="", frameworks=config.frameworks, recovery_policy=design_recovery_policy)
+    designer = DesignPlanner(llm_client=llm_client, designer_model="", frameworks=config.frameworks, recovery_policy=design_recovery_policy, content_freedom=config.content.freedom)
     generator = HTMLGenerator(llm_client=llm_client, generator_model="", frameworks=config.frameworks, recovery_policy=generator_recovery_policy)
-    evaluator = LLMEvaluator(llm_client=llm_client, model="", min_num_ctx=config.recovery.initial_num_ctx, max_num_ctx=config.recovery.max_num_ctx, max_retries=config.recovery.max_retries)
+    evaluator = LLMEvaluator(llm_client=llm_client, model="", min_num_ctx=config.recovery.initial_num_ctx, max_num_ctx=config.recovery.max_num_ctx, max_retries=config.recovery.max_retries, content_freedom=config.content.freedom)
     browser_evaluator = BrowserEvaluator(config.browser) if config.browser.enabled else None
 
     run_dir = create_run_directory()

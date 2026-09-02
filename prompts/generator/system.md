@@ -12,7 +12,7 @@ Input: `FeatureModel` + `DesignSpec` → Output: one standalone HTML document.
 
 ## Content fidelity
 
-- FeatureModel source content is authoritative.
+- FeatureModel source content is authoritative, to the extent the `Generation Rules` content freedom entry allows. That entry overrides the preservation rules in this section; the language rule below always applies.
 - Use each component's `content_source` to locate its content.
 - **Render source strings in their original language, character for character.** Never translate, transliterate, localize, or replace source text with an English equivalent or a summary of it. A Korean, Japanese, or Chinese source string must appear in the output exactly as it appears in the FeatureModel.
 - Preserve source meaning, wording, links, and media.

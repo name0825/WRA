@@ -4,7 +4,7 @@ import logging
 import shutil
 
 from wra.browser.models import BrowserEvaluationResult
-from wra.core.models import EvaluationResult, FeatureModel, WRAConfig
+from wra.core.models import EvaluationResult, FeatureModel, WRAConfig, content_freedom_policy, coverage_is_enforced
 from wra.core.output import OutputManager
 from wra.designer.planner import DesignPlanner
 from wra.designer.schema import DesignSpec
@@ -81,7 +81,7 @@ class IterationEngine:
                     design_spec = self._designer.revise(features=features, previous_design_spec=previous_result.design_spec, previous_html=previous_result.html, evaluation=previous_result.evaluation, design_constraints=design_constraints, model=designer_model.name, think=designer_model.think, timeout=designer_model.timeout)
 
                 logger.info("Current task: HTML generation")
-                html = self._generator.generate(features, design_spec, model=generator_model.name, think=generator_model.think, timeout=generator_model.timeout)
+                html = self._generator.generate(features, design_spec, generation_rules=self._build_generation_rules(), model=generator_model.name, think=generator_model.think, timeout=generator_model.timeout)
                 logger.info("Current task: HTML validation")
                 validation = validate_html(html, features)
                 browser_result = BrowserEvaluationResult(enabled=False)
@@ -128,7 +128,14 @@ class IterationEngine:
             "Explore interaction and motion as appropriate; consider different interaction models without sacrificing clarity or accessibility.",
         )
         constraints["variation_policy"] = {"type": "soft_guidance", "instruction": exploration_axes[(iteration - 1) % len(exploration_axes)], "do_not_force": True}
+        freedom = self._config.content.freedom
+        policy = content_freedom_policy(freedom)
+        constraints["content_freedom"] = {"level": freedom, "instruction": policy["planning"], "coverage_required": coverage_is_enforced(freedom)}
         return constraints
+
+    def _build_generation_rules(self) -> list[str]:
+        freedom = self._config.content.freedom
+        return [f"Content freedom `{freedom}`: {content_freedom_policy(freedom)['authoring']}"]
 
     def _finalize(self, result, output_manager, browser_tmp):
         logger.info("Finalizing output from iteration %d", result.iteration)

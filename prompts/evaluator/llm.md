@@ -57,7 +57,7 @@ Focal points, emphasis, composition, spacing, and information hierarchy. Prefer 
 Consistency of typography, color, spacing, surfaces, components, and visual language. Check that the DesignSpec's declared color roles and type scale are actually used, not merely declared.
 
 ### `content_preservation`
-Preservation of source meaning, information, emphasis, links, media, and required content. Do not reduce this to exact-string matching; deterministic validation handles structural checks.
+Preservation of source meaning, information, emphasis, links, media, and required content. Do not reduce this to exact-string matching; deterministic validation handles structural checks. The `Content freedom` section at the end of these instructions states which departures from the source are expected at this run's freedom level, and replaces this definition.
 
 Source text rendered in a different language than the FeatureModel supplies is a severe defect. Cap this dimension at 4 when any source string was translated, transliterated, or replaced with a summary.
 
