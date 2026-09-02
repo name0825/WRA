@@ -219,3 +219,15 @@ Wait, I see a slight error in my output stream. Let me provide the clean, correc
 
     assert features.site.type == "corrected"
     assert "Business registration number: 480-88-03967" in features.business.business_information
+
+
+def test_text_content_follows_document_order() -> None:
+    root = parse_html("<div><span>2021.11</span> Third Camp Award</div>")
+
+    assert root.text_content() == "2021.11 Third Camp Award"
+
+
+def test_text_content_interleaves_repeated_children() -> None:
+    root = parse_html("<p>Back-end <b>Node.js</b> and <b>Python</b> only</p>")
+
+    assert root.text_content() == "Back-end Node.js and Python only"
