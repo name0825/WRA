@@ -90,7 +90,7 @@ Return raw HTML only.
 - Include `<meta charset="UTF-8">`.
 - Include `<meta name="viewport" content="width=device-width, initial-scale=1.0">`.
 - If `FeatureModel.metadata.language` exists, use it as `<html lang>`.
-- If `FeatureModel.metadata.title` exists, preserve its source wording in `<title>`.
+- If `FeatureModel.metadata.title` exists, preserve its source wording in `<title>` unless the content freedom entry lifts source reproduction; the subject it names must survive either way.
 - Implement all DesignSpec sections and required FeatureModel content/media.
 - Implement declared responsive and interaction behavior.
 
