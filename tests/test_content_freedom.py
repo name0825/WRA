@@ -1,8 +1,9 @@
 import pytest
 
 from wra.core.iteration import IterationEngine
-from wra.core.models import ContentConfig, FeatureModel, FrameworkConfig, Section, WRAConfig
+from wra.core.models import FACTUAL_ACCURACY_CAP, FACTUAL_ACCURACY_RULE, ContentConfig, FeatureModel, FrameworkConfig, Section, WRAConfig, content_freedom_policy
 from wra.designer.planner import DesignPlanner
+from wra.evaluator.llm import LLMEvaluator
 
 
 def make_config(freedom: str) -> WRAConfig:
@@ -29,7 +30,7 @@ def test_invalid_freedom_is_rejected() -> None:
         ContentConfig(freedom="unlimited")
 
 
-@pytest.mark.parametrize("freedom,coverage_required", [("low", True), ("medium", True), ("high", False), ("ultra", False)])
+@pytest.mark.parametrize("freedom,coverage_required", [("low", True), ("medium", True), ("high", False), ("ultra", False), ("madmax", False)])
 def test_design_constraints_carry_content_freedom(freedom: str, coverage_required: bool) -> None:
     constraints = make_engine(freedom)._build_design_constraints(1)
 
@@ -38,12 +39,12 @@ def test_design_constraints_carry_content_freedom(freedom: str, coverage_require
     assert constraints["content_freedom"]["instruction"]
 
 
-@pytest.mark.parametrize("freedom", ["low", "medium", "high", "ultra"])
+@pytest.mark.parametrize("freedom", ["low", "medium", "high", "ultra", "madmax"])
 def test_generation_rules_carry_content_freedom(freedom: str) -> None:
     rules = make_engine(freedom)._build_generation_rules()
 
-    assert len(rules) == 1
     assert f"Content freedom `{freedom}`" in rules[0]
+    assert content_freedom_policy(freedom)["authoring"] in rules[0]
 
 
 def test_planner_prompt_labels_coverage_by_freedom() -> None:
@@ -55,3 +56,29 @@ def test_planner_prompt_labels_coverage_by_freedom() -> None:
     assert "Coverage required:" in strict
     assert "Coverage required:" not in free
     assert "Content available to place:" in free
+
+
+@pytest.mark.parametrize("freedom", ["low", "medium", "high", "ultra", "madmax"])
+def test_factual_accuracy_rule_reaches_designer_and_generator(freedom: str) -> None:
+    engine = make_engine(freedom)
+
+    assert engine._build_design_constraints(1)["content_freedom"]["factual_accuracy"] == FACTUAL_ACCURACY_RULE
+    assert any(FACTUAL_ACCURACY_RULE in rule for rule in engine._build_generation_rules())
+
+
+@pytest.mark.parametrize("freedom", ["low", "medium", "high", "ultra", "madmax"])
+def test_evaluator_instruction_carries_level_and_factual_cap(freedom: str) -> None:
+    evaluator = LLMEvaluator(llm_client=None, model="m", content_freedom=freedom)
+    instruction = evaluator._content_freedom_instruction()
+
+    assert f"`{freedom}`" in instruction
+    assert content_freedom_policy(freedom)["evaluation"] in instruction
+    assert FACTUAL_ACCURACY_CAP in instruction
+
+
+def test_every_freedom_level_has_a_complete_policy() -> None:
+    for level in ("low", "medium", "high", "ultra", "madmax"):
+        policy = content_freedom_policy(level)
+
+        assert set(policy) == {"authoring", "planning", "evaluation"}
+        assert all(policy.values())

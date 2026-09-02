@@ -47,10 +47,10 @@ def test_design_validator_enforces_coverage_at_low_and_medium_freedom():
         assert "missing content coverage: structure.sections" in result.errors
 
 
-def test_design_validator_skips_coverage_at_high_and_ultra_freedom():
+def test_design_validator_skips_coverage_above_medium_freedom():
     features = FeatureModel(structure={"sections": [Section(tag="section", text="Source section")]})
 
-    for freedom in ("high", "ultra"):
+    for freedom in ("high", "ultra", "madmax"):
         result = validate_design_spec(make_spec(), features, FrameworkConfig(), freedom)
 
         assert result.valid

@@ -33,7 +33,10 @@ design:
 #   medium : minor additions/deletions/rewording, meaning preserved
 #   high   : rewrite, drop, and add content on the source basis
 #   ultra  : free authoring; source content is reference material
+#   madmax : the page is written from scratch for the subject; only its
+#            identity and factual record are fixed
 # low and medium require every populated content collection to be placed.
+# Dates, numbers, names, and their pairings must stay accurate at every level.
 content:
   freedom: "low"
 

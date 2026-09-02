@@ -4,7 +4,7 @@ import logging
 import shutil
 
 from wra.browser.models import BrowserEvaluationResult
-from wra.core.models import EvaluationResult, FeatureModel, WRAConfig, content_freedom_policy, coverage_is_enforced
+from wra.core.models import FACTUAL_ACCURACY_RULE, EvaluationResult, FeatureModel, WRAConfig, content_freedom_policy, coverage_is_enforced
 from wra.core.output import OutputManager
 from wra.designer.planner import DesignPlanner
 from wra.designer.schema import DesignSpec
@@ -130,12 +130,15 @@ class IterationEngine:
         constraints["variation_policy"] = {"type": "soft_guidance", "instruction": exploration_axes[(iteration - 1) % len(exploration_axes)], "do_not_force": True}
         freedom = self._config.content.freedom
         policy = content_freedom_policy(freedom)
-        constraints["content_freedom"] = {"level": freedom, "instruction": policy["planning"], "coverage_required": coverage_is_enforced(freedom)}
+        constraints["content_freedom"] = {"level": freedom, "instruction": policy["planning"], "coverage_required": coverage_is_enforced(freedom), "factual_accuracy": FACTUAL_ACCURACY_RULE}
         return constraints
 
     def _build_generation_rules(self) -> list[str]:
         freedom = self._config.content.freedom
-        return [f"Content freedom `{freedom}`: {content_freedom_policy(freedom)['authoring']}"]
+        return [
+            f"Content freedom `{freedom}`: {content_freedom_policy(freedom)['authoring']}",
+            f"Factual accuracy: {FACTUAL_ACCURACY_RULE}",
+        ]
 
     def _finalize(self, result, output_manager, browser_tmp):
         logger.info("Finalizing output from iteration %d", result.iteration)

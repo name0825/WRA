@@ -12,3 +12,4 @@ input/*
 config.yaml
 
 claude.md
+uv.lock

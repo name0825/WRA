@@ -99,7 +99,19 @@ class DesignConfig(BaseModel):
         return self
 
 
-ContentFreedom = Literal["low", "medium", "high", "ultra"]
+ContentFreedom = Literal["low", "medium", "high", "ultra", "madmax"]
+
+# Applies at every freedom level, including madmax. Freedom governs how much
+# content may be rewritten or invented, never whether a stated fact may be
+# restated incorrectly.
+FACTUAL_ACCURACY_RULE = (
+    "Every date, number, proper noun, and the pairing between them must match the Feature Model "
+    "wherever it appears. Freedom to rewrite is never freedom to restate a fact incorrectly."
+)
+FACTUAL_ACCURACY_CAP = (
+    "Cap this dimension at 4 when a date, number, proper noun, or the pairing between them "
+    "differs from the Feature Model, at any freedom level."
+)
 
 CONTENT_FREEDOM_POLICIES: dict[str, dict[str, str]] = {
     "low": {
@@ -121,6 +133,11 @@ CONTENT_FREEDOM_POLICIES: dict[str, dict[str, str]] = {
         "authoring": "Treat the source content as reference material. Add, remove, and rewrite freely to produce the strongest page for this subject. Do not invent external URLs or assets, and do not contradict facts the Feature Model states.",
         "planning": "Treat the Feature Model as reference material. Structure the page however best serves the subject.",
         "evaluation": "Judge content_preservation as subject-level fidelity only: the page must still be about the same subject and must not contradict stated facts or invent external assets.",
+    },
+    "madmax": {
+        "authoring": "Author the page you think this subject deserves. Rewrite everything, drop whatever is weak, and write substantial new content the source never contained. The only fixed points are the subject's identity and its factual record: dates, numbers, names, contact values, and URLs must stay exactly as the Feature Model states them wherever you use them, and no external URL or asset may be invented.",
+        "planning": "Plan the page from scratch for this subject. The Feature Model is one input among your own ideas; add whatever sections serve the page.",
+        "evaluation": "Judge content_preservation as identity-level fidelity only: invented sections and wholly new copy are the point and are not defects. Only a lost subject identity, a misstated fact, or an invented external asset is a defect.",
     },
 }
 

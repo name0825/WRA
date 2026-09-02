@@ -3,7 +3,7 @@ import logging
 from pathlib import Path
 
 from wra.browser.models import BrowserEvaluationResult
-from wra.core.models import ContentFreedom, EvaluationResult, FeatureModel, content_freedom_policy
+from wra.core.models import FACTUAL_ACCURACY_CAP, ContentFreedom, EvaluationResult, FeatureModel, content_freedom_policy
 from wra.designer.schema import DesignSpec
 from wra.llm.client import LLMClient
 from wra.llm.context import estimate_num_ctx
@@ -40,7 +40,8 @@ class LLMEvaluator:
             "## Content freedom\n\n"
             f"This page was authored at content freedom `{self._content_freedom}`. "
             f"{content_freedom_policy(self._content_freedom)['evaluation']} "
-            "This replaces the default `content_preservation` definition above."
+            "This replaces the default `content_preservation` definition above.\n\n"
+            f"{FACTUAL_ACCURACY_CAP}"
         )
 
     def evaluate(self, features: FeatureModel, design_spec: DesignSpec, html: str, browser_result: BrowserEvaluationResult | None = None, model: str | None = None, think: bool | None = None, timeout: float | None = None) -> EvaluationResult:
