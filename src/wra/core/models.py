@@ -196,6 +196,7 @@ class RecoveryConfig(BaseModel):
     max_num_ctx: int = 32768
     initial_ceiling_num_ctx: int = 32768
     growth_power: float = 2.0
+    designer_output_headroom_tokens: int = 2048
     generator_output_headroom_tokens: int = 2048
 
 

@@ -48,7 +48,7 @@ def main() -> None:
         raise FileNotFoundError(f"Input file not found: {INPUT_PATH}")
 
     llm_client = OllamaClient(config.ollama.base_url)
-    design_recovery_policy = DesignRecoveryPolicy(max_retries=config.recovery.max_retries, initial_num_ctx=config.recovery.initial_num_ctx, max_num_ctx=config.recovery.max_num_ctx, ceiling_num_ctx=config.recovery.initial_ceiling_num_ctx, growth_power=config.recovery.growth_power)
+    design_recovery_policy = DesignRecoveryPolicy(max_retries=config.recovery.max_retries, initial_num_ctx=config.recovery.initial_num_ctx, max_num_ctx=config.recovery.max_num_ctx, ceiling_num_ctx=config.recovery.initial_ceiling_num_ctx, growth_power=config.recovery.growth_power, output_headroom_tokens=config.recovery.designer_output_headroom_tokens)
     generator_recovery_policy = GeneratorRecoveryPolicy(max_retries=config.recovery.max_retries, initial_num_ctx=config.recovery.initial_num_ctx, max_num_ctx=config.recovery.max_num_ctx, ceiling_num_ctx=config.recovery.initial_ceiling_num_ctx, growth_power=config.recovery.growth_power, output_headroom_tokens=config.recovery.generator_output_headroom_tokens)
 
     analyzer_model = ModelSelector.select(config.models.analyzer, "analyzer")

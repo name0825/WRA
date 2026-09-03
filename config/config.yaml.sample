@@ -119,6 +119,10 @@ recovery:
   # the growth is deferred to it. Above 1.0 keeps the early retries small and
   # cheap, 1.0 is linear, below 1.0 jumps large immediately.
   growth_power: 2.0
+  # The designer's revision prompt carries the previous spec, an HTML
+  # excerpt and the evaluation on top of the Feature Model, and its own
+  # DesignSpec output runs long, so it needs more room than a first plan.
+  designer_output_headroom_tokens: 8192
   # The generator emits a whole HTML document, so its context estimate must
   # reserve far more output room than the JSON-producing roles.
   generator_output_headroom_tokens: 16384

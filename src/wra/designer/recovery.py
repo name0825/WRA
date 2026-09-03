@@ -24,6 +24,7 @@ class RecoveryPolicy:
     initial_num_ctx: int = 8192
     max_num_ctx: int = 32768
     ceiling_num_ctx: int = 32768
+    output_headroom_tokens: int = 2048
     growth_power: float = 2.0
 
     def num_ctx_for_attempt(self, attempt: int, base: int) -> int:
@@ -91,7 +92,8 @@ def _reference_contract() -> str:
         "Critical reference rules: `content_source` must be a Feature Model dotted path, never literal content. "
         "Use only paths listed in the `Available Feature Model reference paths` block above; any path missing from "
         "that block is invalid, and paths listed as empty must never be referenced. Prefer the plain collection path; "
-        "append an index only when that block states the index exists. Never use forms such as `text: '...'`, "
+        "append an index in bracket form (`content.paragraphs[2]`) only when that block states the index exists. "
+        "Never use forms such as `text: '...'`, "
         "`metadata.title: '...'`, or `content.text: '...'` as content_source. "
         "`interaction.components[].target` must exactly equal one of the component `type` values declared in "
         "`sections[].components`; do not invent pluralized, hyphenated, or CSS-selector-style targets, and leave "
