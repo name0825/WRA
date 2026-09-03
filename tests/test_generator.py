@@ -231,3 +231,33 @@ def test_recovery_classifies_content_and_structure_failures():
     assert strategy_for(HTMLRecoveryError.TOKEN_LIMIT).value == "increase_context"
     assert strategy_for(HTMLRecoveryError.CONTENT).value == "revise_response"
     assert strategy_for(HTMLRecoveryError.UNKNOWN).value == "regenerate"
+
+
+def test_prune_features_drops_unreferenced_branches():
+    features = FeatureModel(**{
+        "metadata": {"title": "Title"},
+        "content": {"text": ["x" * 5000], "headings": [{"level": 1, "text": "H1"}, {"level": 2, "text": "H2"}]},
+        "structure": {"header": True},
+    })
+    spec = make_spec()
+    spec.sections[0].components = [
+        ComponentSpec(type="heading", purpose="Title", content_source="content.headings[1]"),
+    ]
+
+    pruned = HTMLGenerator._prune_features(features, spec)
+
+    # An indexed reference keeps the whole collection so the index still resolves.
+    assert [h["text"] for h in pruned["content"]["headings"]] == ["H1", "H2"]
+    assert "text" not in pruned["content"]
+    # metadata survives because the output contract reads it directly.
+    assert pruned["metadata"]["title"] == "Title"
+    assert "structure" not in pruned
+
+
+def test_prune_features_keeps_referenced_branch_whole():
+    features = FeatureModel(**{"content": {"text": ["body copy"], "headings": [{"level": 1, "text": "H1"}]}})
+    spec = make_spec()
+
+    pruned = HTMLGenerator._prune_features(features, spec)
+
+    assert pruned["content"] == {"text": ["body copy"]}
