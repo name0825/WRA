@@ -87,7 +87,7 @@ def test_design_validator_rejects_duplicate_sections_and_bad_references():
     assert not result.valid
     assert "duplicate section id: featured" in result.errors
     assert "invalid content_source: content.unknown" in result.errors
-    assert "invalid interaction target: missing" in result.errors
+    assert any(error.startswith("invalid interaction target: missing") for error in result.errors)
 
 
 def test_design_validator_rejects_unconfigured_frameworks():

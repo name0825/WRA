@@ -54,6 +54,15 @@ def _resolve_path(value: object, path: str) -> object | None:
         name = match.group("name")
         indexes = _INDEX_RE.findall(match.group("indexes"))
 
+        if isinstance(current, list) and name.isdigit() and not indexes:
+            # Planners write list indexes as `media.images.0` as often as
+            # `media.images[0]`; both name the same item.
+            index = int(name)
+            if index >= len(current):
+                return None
+            current = current[index]
+            continue
+
         if isinstance(current, dict):
             if name not in current:
                 return None
@@ -148,7 +157,8 @@ def validate_design_spec(spec: DesignSpec, features: FeatureModel, frameworks: F
 
     for interaction in spec.interaction.components:
         if interaction.target not in component_types:
-            errors.append(f"invalid interaction target: {interaction.target}")
+            declared = ", ".join(sorted(component_types)) or "(none declared)"
+            errors.append(f"invalid interaction target: {interaction.target}; declared component types are: {declared}")
     for breakpoint in spec.responsive.breakpoints:
         if not breakpoint.width.strip():
             errors.append(f"empty breakpoint width: {breakpoint.name}")
