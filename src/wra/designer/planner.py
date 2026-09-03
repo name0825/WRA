@@ -83,7 +83,8 @@ class DesignPlanner:
         )
 
     def _generate_and_validate(self, original_prompt, features, recovery_context, model, think=None, timeout=None):
-        current_num_ctx = estimate_num_ctx(original_prompt, self._recovery_policy.initial_num_ctx, self._recovery_policy.max_num_ctx)
+        base_num_ctx = estimate_num_ctx(original_prompt, self._recovery_policy.initial_num_ctx, self._recovery_policy.max_num_ctx, ceiling=self._recovery_policy.ceiling_num_ctx)
+        current_num_ctx = base_num_ctx
         previous_response = None
         prompt = original_prompt
         last_error = DesignRecoveryError.UNKNOWN
@@ -121,7 +122,7 @@ class DesignPlanner:
             if retry >= self._recovery_policy.max_retries:
                 break
             if strategy is RecoveryStrategy.INCREASE_CONTEXT:
-                next_num_ctx = self._recovery_policy.next_num_ctx(current_num_ctx)
+                next_num_ctx = max(current_num_ctx, self._recovery_policy.num_ctx_for_attempt(attempt + 1, base_num_ctx))
                 if next_num_ctx != current_num_ctx:
                     logger.info("Design Planner recovery: increasing num_ctx %d -> %d", current_num_ctx, next_num_ctx)
                     current_num_ctx = next_num_ctx

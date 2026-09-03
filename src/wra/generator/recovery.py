@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from enum import Enum
+from wra.llm.context import growth_num_ctx
 
 
 class HTMLRecoveryError(str, Enum):
@@ -20,13 +21,20 @@ class RecoveryPolicy:
     max_retries: int = 3
     initial_num_ctx: int = 8192
     max_num_ctx: int = 32768
-    context_multiplier: float = 2.0
+    ceiling_num_ctx: int = 32768
+    growth_power: float = 2.0
+    output_headroom_tokens: int = 2048
 
-    def next_num_ctx(self, current: int) -> int:
-        if current >= self.max_num_ctx:
-            return current
-        next_value = max(current + 1, int(current * self.context_multiplier))
-        return min(next_value, self.max_num_ctx)
+    def num_ctx_for_attempt(self, attempt: int, base: int) -> int:
+        """Return the window for ``attempt``, growing from ``base`` to ``max_num_ctx``.
+
+        ``base`` is the first attempt's estimated window, so the curve never
+        starts below what the prompt already needs.
+        """
+        total_attempts = self.max_retries + 1
+        if attempt > total_attempts:
+            return min(base, self.max_num_ctx)
+        return growth_num_ctx(attempt, total_attempts, base, self.max_num_ctx, self.growth_power)
 
 
 def _looks_truncated_html(response: str | None) -> bool:

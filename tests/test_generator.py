@@ -185,7 +185,7 @@ def test_generator_increases_context_on_token_error_without_previous_response(tm
             return "<!DOCTYPE html><html><head><meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\"></head><body></body></html>"
 
     client = TokenThenSuccess([])
-    generator = HTMLGenerator(client, "generator-model", FrameworkConfig(), prompt, recovery, RecoveryPolicy(max_retries=2, initial_num_ctx=100, max_num_ctx=400, context_multiplier=2))
+    generator = HTMLGenerator(client, "generator-model", FrameworkConfig(), prompt, recovery, RecoveryPolicy(max_retries=2, initial_num_ctx=100, max_num_ctx=400, growth_power=2.0))
 
     generator.generate(FeatureModel(), make_spec())
 
@@ -203,7 +203,7 @@ def test_generator_increases_context_when_html_response_is_truncated(tmp_path):
     truncated = "<!DOCTYPE html><html><head><style>body { background: #111; color: #fff; } .panel { padding: 20px;"
     complete = "<!DOCTYPE html><html><head><meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\"></head><body></body></html>"
     client = FakeLLMClient([truncated, complete])
-    generator = HTMLGenerator(client, "generator-model", FrameworkConfig(), prompt, recovery, RecoveryPolicy(max_retries=2, initial_num_ctx=100, max_num_ctx=400, context_multiplier=2))
+    generator = HTMLGenerator(client, "generator-model", FrameworkConfig(), prompt, recovery, RecoveryPolicy(max_retries=2, initial_num_ctx=100, max_num_ctx=400, growth_power=2.0))
 
     generator.generate(FeatureModel(), make_spec())
 

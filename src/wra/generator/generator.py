@@ -43,7 +43,8 @@ class HTMLGenerator:
         original_prompt = self._build_prompt(prompt_template, features, design_spec, generation_rules, cdn_tags, self._frameworks)
         prompt = original_prompt
         previous_response = None
-        num_ctx = estimate_num_ctx(original_prompt, self._recovery_policy.initial_num_ctx, self._recovery_policy.max_num_ctx)
+        base_num_ctx = estimate_num_ctx(original_prompt, self._recovery_policy.initial_num_ctx, self._recovery_policy.max_num_ctx, ceiling=self._recovery_policy.ceiling_num_ctx, headroom_tokens=self._recovery_policy.output_headroom_tokens)
+        num_ctx = base_num_ctx
         last_error = None
 
         for attempt in range(self._recovery_policy.max_retries + 1):
@@ -68,7 +69,7 @@ class HTMLGenerator:
                 strategy = strategy_for(error)
                 prompt = build_recovery_prompt(original_prompt, previous_response, error, validation.errors, revision_template)
                 if strategy is RecoveryStrategy.INCREASE_CONTEXT:
-                    next_num_ctx = self._recovery_policy.next_num_ctx(num_ctx)
+                    next_num_ctx = max(num_ctx, self._recovery_policy.num_ctx_for_attempt(attempt + 2, base_num_ctx))
                     logger.info("HTML Generator recovery: increasing num_ctx %d -> %d", num_ctx, next_num_ctx)
                     num_ctx = next_num_ctx
                 elif strategy is RecoveryStrategy.REGENERATE:
@@ -84,7 +85,7 @@ class HTMLGenerator:
                     break
                 strategy = strategy_for(error)
                 if strategy is RecoveryStrategy.INCREASE_CONTEXT:
-                    next_num_ctx = self._recovery_policy.next_num_ctx(num_ctx)
+                    next_num_ctx = max(num_ctx, self._recovery_policy.num_ctx_for_attempt(attempt + 2, base_num_ctx))
                     logger.info("HTML Generator recovery: increasing num_ctx %d -> %d", num_ctx, next_num_ctx)
                     num_ctx = next_num_ctx
                 prompt = build_recovery_prompt(original_prompt, previous_response, error, [str(exc)], revision_template)
