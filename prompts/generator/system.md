@@ -46,7 +46,7 @@ Produce semantic, accessible HTML with:
 - valid DOM nesting
 - keyboard-usable interactions
 - visible focus states
-- visible pressed/active feedback on interactive elements
+- pressed/active feedback that appears on press rather than on release, within about 100ms
 - WCAG AA contrast on buttons, links, and form fields against their background (4.5:1 body text, 3:1 large text)
 - primary navigation on a single line at desktop width; collapse to a menu instead of wrapping
 - readable text
@@ -65,6 +65,11 @@ For decorative visuals without source assets, use CSS or inline SVG rather than 
 - Fit hero content within the initial viewport using type scale and spacing, never by cutting or summarizing source content.
 - Keep CTA button labels short enough to stay on one line at desktop.
 - Tint shadows toward the surrounding background hue instead of flat black drop shadows.
+- Let an element leave along the path it entered by, and scale an overlay from the control that opened it rather than from the viewport center.
+- Implement the DesignSpec's type ramp with fluid `clamp()` sizes, line height that tightens as size grows, negative letter spacing on display text, and letter spacing near zero on body text. Never apply one letter-spacing value across every size.
+- Hold body text to roughly 65-75 characters per line.
+- Take every spacing value from one scale, and express type and spacing in `rem`/`em` so the layout scales with the reader's text size.
+- When the DesignSpec calls for floating or overlaid chrome, build it as a translucent layer (`backdrop-filter` blur over a semi-transparent background) that content scrolls under, never one translucent surface stacked on another, and make it solid under `prefers-reduced-transparency: reduce`.
 
 ## Avoid generic AI-design signatures
 

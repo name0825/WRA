@@ -48,14 +48,14 @@ def main() -> None:
         raise FileNotFoundError(f"Input file not found: {INPUT_PATH}")
 
     llm_client = OllamaClient(config.ollama.base_url)
-    design_recovery_policy = DesignRecoveryPolicy(max_retries=config.recovery.max_retries, initial_num_ctx=config.recovery.initial_num_ctx, max_num_ctx=config.recovery.max_num_ctx, context_multiplier=config.recovery.context_multiplier)
-    generator_recovery_policy = GeneratorRecoveryPolicy(max_retries=config.recovery.max_retries, initial_num_ctx=config.recovery.initial_num_ctx, max_num_ctx=config.recovery.max_num_ctx, context_multiplier=config.recovery.context_multiplier)
+    design_recovery_policy = DesignRecoveryPolicy(max_retries=config.recovery.max_retries, initial_num_ctx=config.recovery.initial_num_ctx, max_num_ctx=config.recovery.max_num_ctx, ceiling_num_ctx=config.recovery.initial_ceiling_num_ctx, growth_power=config.recovery.growth_power, output_headroom_tokens=config.recovery.designer_output_headroom_tokens)
+    generator_recovery_policy = GeneratorRecoveryPolicy(max_retries=config.recovery.max_retries, initial_num_ctx=config.recovery.initial_num_ctx, max_num_ctx=config.recovery.max_num_ctx, ceiling_num_ctx=config.recovery.initial_ceiling_num_ctx, growth_power=config.recovery.growth_power, output_headroom_tokens=config.recovery.generator_output_headroom_tokens)
 
     analyzer_model = ModelSelector.select(config.models.analyzer, "analyzer")
-    analyzer = HTMLAnalyzer(llm_client=llm_client, analyzer_model=analyzer_model.name, analyzer_think=analyzer_model.think, analyzer_timeout=analyzer_model.timeout, semantic_max_retries=config.recovery.max_retries, min_num_ctx=config.recovery.initial_num_ctx, max_num_ctx=config.recovery.max_num_ctx)
+    analyzer = HTMLAnalyzer(llm_client=llm_client, analyzer_model=analyzer_model.name, analyzer_think=analyzer_model.think, analyzer_timeout=analyzer_model.timeout, semantic_max_retries=config.recovery.max_retries, min_num_ctx=config.recovery.initial_num_ctx, max_num_ctx=config.recovery.max_num_ctx, ceiling_num_ctx=config.recovery.initial_ceiling_num_ctx)
     designer = DesignPlanner(llm_client=llm_client, designer_model="", frameworks=config.frameworks, recovery_policy=design_recovery_policy, content_freedom=config.content.freedom)
     generator = HTMLGenerator(llm_client=llm_client, generator_model="", frameworks=config.frameworks, recovery_policy=generator_recovery_policy)
-    evaluator = LLMEvaluator(llm_client=llm_client, model="", min_num_ctx=config.recovery.initial_num_ctx, max_num_ctx=config.recovery.max_num_ctx, max_retries=config.recovery.max_retries, content_freedom=config.content.freedom)
+    evaluator = LLMEvaluator(llm_client=llm_client, model="", min_num_ctx=config.recovery.initial_num_ctx, max_num_ctx=config.recovery.max_num_ctx, ceiling_num_ctx=config.recovery.initial_ceiling_num_ctx, max_retries=config.recovery.max_retries, content_freedom=config.content.freedom)
     browser_evaluator = BrowserEvaluator(config.browser) if config.browser.enabled else None
 
     run_dir = create_run_directory()

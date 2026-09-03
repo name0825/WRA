@@ -54,7 +54,7 @@ How completely the generated page implements the DesignSpec's core design intent
 Focal points, emphasis, composition, spacing, and information hierarchy. Prefer browser evidence when available.
 
 ### `design_consistency`
-Consistency of typography, color, spacing, surfaces, components, and visual language. Check that the DesignSpec's declared color roles and type scale are actually used, not merely declared.
+Consistency of typography, color, spacing, surfaces, components, and visual language. Check that the DesignSpec's declared color roles and type scale are actually used, not merely declared, and that the page holds one accent color, one neutral temperature, one spacing scale, one corner-radius scale, and one light/dark theme throughout.
 
 ### `content_preservation`
 Preservation of source meaning, information, emphasis, links, media, and required content. Do not reduce this to exact-string matching; deterministic validation handles structural checks. The `Content freedom` section at the end of these instructions states which departures from the source are expected at this run's freedom level, and replaces this definition.
@@ -62,16 +62,16 @@ Preservation of source meaning, information, emphasis, links, media, and require
 Source text rendered in a different language than the FeatureModel supplies is a severe defect. Cap this dimension at 4 when any source string was translated, transliterated, or replaced with a summary.
 
 ### `ux`
-Navigation, controls, interactions, usability, overflow, layout problems, and browser/runtime errors when evidenced. Also weigh duplicate-intent CTAs, low-contrast buttons/forms, CTA labels that wrap, and multi-line navigation as concrete defects.
+Navigation, controls, interactions, usability, overflow, layout problems, and browser/runtime errors when evidenced. Also weigh duplicate-intent CTAs, low-contrast buttons/forms, CTA labels that wrap, multi-line navigation, feedback that only appears after release, and sections carrying several competing jobs as concrete defects.
 
 ### `readability`
-Typography, contrast, line length, density, wrapping, hierarchy, and scanability.
+Typography, contrast, line length, density, wrapping, hierarchy, and scanability. Weigh whether line length stays near 65-75 characters, and whether line height and letter spacing change with type size instead of being one value everywhere.
 
 ### `responsive_design`
 Prefer actual viewport evidence. Without browser evidence, judge only the HTML structure and declared responsive intent, and **cap this dimension at 7**, because rendered behavior is unverified.
 
 ### `originality`
-Meaningful visual differentiation and a coherent design direction. Generic template-like design should not score highly. Score down recognizable AI-cliché signatures such as identical card grids, cream-and-terracotta or near-black-and-neon palettes, numbered section eyebrows, em dashes, and filler marketing copy (Elevate, Seamless, Next-Gen).
+Meaningful visual differentiation and a coherent design direction. Generic template-like design should not score highly. Score down recognizable AI-cliché signatures such as identical card grids, cream-and-terracotta or near-black-and-neon palettes, numbered section eyebrows, em dashes, and filler marketing copy (Elevate, Seamless, Next-Gen). Also score down an aesthetic that does not follow from the page's subject and audience, a serif display face on content that is not editorial or heritage, a centered hero without a compositional reason, and long bullet lists used where a real component belongs.
 
 ### `html_quality`
 Document structure, semantic HTML, accessibility-relevant implementation, and evidence of broken markup or behavior. Check focus states, contrast, alt text, heading order, and label associations before scoring above 8.

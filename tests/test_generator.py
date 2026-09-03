@@ -185,7 +185,7 @@ def test_generator_increases_context_on_token_error_without_previous_response(tm
             return "<!DOCTYPE html><html><head><meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\"></head><body></body></html>"
 
     client = TokenThenSuccess([])
-    generator = HTMLGenerator(client, "generator-model", FrameworkConfig(), prompt, recovery, RecoveryPolicy(max_retries=2, initial_num_ctx=100, max_num_ctx=400, context_multiplier=2))
+    generator = HTMLGenerator(client, "generator-model", FrameworkConfig(), prompt, recovery, RecoveryPolicy(max_retries=2, initial_num_ctx=100, max_num_ctx=400, growth_power=2.0))
 
     generator.generate(FeatureModel(), make_spec())
 
@@ -203,7 +203,7 @@ def test_generator_increases_context_when_html_response_is_truncated(tmp_path):
     truncated = "<!DOCTYPE html><html><head><style>body { background: #111; color: #fff; } .panel { padding: 20px;"
     complete = "<!DOCTYPE html><html><head><meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\"></head><body></body></html>"
     client = FakeLLMClient([truncated, complete])
-    generator = HTMLGenerator(client, "generator-model", FrameworkConfig(), prompt, recovery, RecoveryPolicy(max_retries=2, initial_num_ctx=100, max_num_ctx=400, context_multiplier=2))
+    generator = HTMLGenerator(client, "generator-model", FrameworkConfig(), prompt, recovery, RecoveryPolicy(max_retries=2, initial_num_ctx=100, max_num_ctx=400, growth_power=2.0))
 
     generator.generate(FeatureModel(), make_spec())
 
@@ -231,3 +231,33 @@ def test_recovery_classifies_content_and_structure_failures():
     assert strategy_for(HTMLRecoveryError.TOKEN_LIMIT).value == "increase_context"
     assert strategy_for(HTMLRecoveryError.CONTENT).value == "revise_response"
     assert strategy_for(HTMLRecoveryError.UNKNOWN).value == "regenerate"
+
+
+def test_prune_features_drops_unreferenced_branches():
+    features = FeatureModel(**{
+        "metadata": {"title": "Title"},
+        "content": {"text": ["x" * 5000], "headings": [{"level": 1, "text": "H1"}, {"level": 2, "text": "H2"}]},
+        "structure": {"header": True},
+    })
+    spec = make_spec()
+    spec.sections[0].components = [
+        ComponentSpec(type="heading", purpose="Title", content_source="content.headings[1]"),
+    ]
+
+    pruned = HTMLGenerator._prune_features(features, spec)
+
+    # An indexed reference keeps the whole collection so the index still resolves.
+    assert [h["text"] for h in pruned["content"]["headings"]] == ["H1", "H2"]
+    assert "text" not in pruned["content"]
+    # metadata survives because the output contract reads it directly.
+    assert pruned["metadata"]["title"] == "Title"
+    assert "structure" not in pruned
+
+
+def test_prune_features_keeps_referenced_branch_whole():
+    features = FeatureModel(**{"content": {"text": ["body copy"], "headings": [{"level": 1, "text": "H1"}]}})
+    spec = make_spec()
+
+    pruned = HTMLGenerator._prune_features(features, spec)
+
+    assert pruned["content"] == {"text": ["body copy"]}

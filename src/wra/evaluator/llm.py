@@ -24,7 +24,7 @@ _REPAIR_INSTRUCTION = (
 class LLMEvaluator:
     """Evaluate generated pages using structured LLM and browser evidence."""
 
-    def __init__(self, llm_client: LLMClient, model: str, think: bool | None = None, timeout: float | None = None, prompt_path: str | Path = "prompts/evaluator/llm.md", min_num_ctx: int = 8192, max_num_ctx: int = 32768, max_retries: int = 1, content_freedom: ContentFreedom = "low") -> None:
+    def __init__(self, llm_client: LLMClient, model: str, think: bool | None = None, timeout: float | None = None, prompt_path: str | Path = "prompts/evaluator/llm.md", min_num_ctx: int = 8192, max_num_ctx: int = 32768, ceiling_num_ctx: int = 32768, max_retries: int = 1, content_freedom: ContentFreedom = "low") -> None:
         self._llm_client = llm_client
         self._model = model
         self._content_freedom = content_freedom
@@ -32,6 +32,7 @@ class LLMEvaluator:
         self._timeout = timeout
         self._min_num_ctx = min_num_ctx
         self._max_num_ctx = max_num_ctx
+        self._ceiling_num_ctx = ceiling_num_ctx
         self._max_retries = max(0, max_retries)
         self._system_prompt = Path(prompt_path).read_text(encoding="utf-8")
 
@@ -76,7 +77,7 @@ class LLMEvaluator:
             f"{self._content_freedom_instruction()}"
         )
         prompt = base_prompt
-        num_ctx = estimate_num_ctx(base_prompt, self._min_num_ctx, self._max_num_ctx)
+        num_ctx = estimate_num_ctx(base_prompt, self._min_num_ctx, self._max_num_ctx, ceiling=self._ceiling_num_ctx)
         last_error: Exception | None = None
 
         for attempt in range(self._max_retries + 1):

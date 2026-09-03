@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 class HTMLAnalyzer:
     """Analyze arbitrary web pages with deterministic extraction and optional LLM semantics."""
 
-    def __init__(self, llm_client: LLMClient | None = None, analyzer_model: str = "", analyzer_think: bool | None = None, analyzer_timeout: float | None = None, semantic_max_retries: int = 2, prompt_path: str | Path = "prompts/analyzer/system.md", min_num_ctx: int = 8192, max_num_ctx: int = 32768) -> None:
+    def __init__(self, llm_client: LLMClient | None = None, analyzer_model: str = "", analyzer_think: bool | None = None, analyzer_timeout: float | None = None, semantic_max_retries: int = 2, prompt_path: str | Path = "prompts/analyzer/system.md", min_num_ctx: int = 8192, max_num_ctx: int = 32768, ceiling_num_ctx: int = 32768) -> None:
         self._llm_client = llm_client
         self._analyzer_model = analyzer_model
         self._analyzer_think = analyzer_think
@@ -32,6 +32,7 @@ class HTMLAnalyzer:
         self._prompt_path = Path(prompt_path)
         self._min_num_ctx = min_num_ctx
         self._max_num_ctx = max_num_ctx
+        self._ceiling_num_ctx = ceiling_num_ctx
 
     def analyze(self, html: str) -> FeatureModel:
         logger.info("Analyzer started: html_chars=%d model=%s", len(html), self._analyzer_model or "none")
@@ -75,7 +76,7 @@ class HTMLAnalyzer:
             f"{prompt_template}"
         )
         prompt = base_prompt
-        num_ctx = estimate_num_ctx(base_prompt, self._min_num_ctx, self._max_num_ctx)
+        num_ctx = estimate_num_ctx(base_prompt, self._min_num_ctx, self._max_num_ctx, ceiling=self._ceiling_num_ctx)
         last_error: Exception | None = None
 
         for attempt in range(self._semantic_max_retries + 1):

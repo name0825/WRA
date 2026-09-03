@@ -109,8 +109,23 @@ pipeline:
 recovery:
   max_retries: 3
   initial_num_ctx: 8192
-  max_num_ctx: 32768
-  context_multiplier: 2.0
+  # Upper bound on the *initial* estimate. This is the VRAM guard: a larger
+  # window means a larger KV cache. Recovery escalates beyond it up to
+  # max_num_ctx.
+  initial_ceiling_num_ctx: 32768
+  max_num_ctx: 131072
+  # Shape of the retry escalation from the initial window to max_num_ctx. The
+  # final attempt always lands on max_num_ctx; growth_power decides how much of
+  # the growth is deferred to it. Above 1.0 keeps the early retries small and
+  # cheap, 1.0 is linear, below 1.0 jumps large immediately.
+  growth_power: 2.0
+  # The designer's revision prompt carries the previous spec, an HTML
+  # excerpt and the evaluation on top of the Feature Model, and its own
+  # DesignSpec output runs long, so it needs more room than a first plan.
+  designer_output_headroom_tokens: 8192
+  # The generator emits a whole HTML document, so its context estimate must
+  # reserve far more output room than the JSON-producing roles.
+  generator_output_headroom_tokens: 16384
 
 logging:
   level: "INFO"

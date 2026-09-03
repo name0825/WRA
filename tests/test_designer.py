@@ -87,7 +87,7 @@ def test_design_validator_rejects_duplicate_sections_and_bad_references():
     assert not result.valid
     assert "duplicate section id: featured" in result.errors
     assert "invalid content_source: content.unknown" in result.errors
-    assert "invalid interaction target: missing" in result.errors
+    assert any(error.startswith("invalid interaction target: missing") for error in result.errors)
 
 
 def test_design_validator_rejects_unconfigured_frameworks():
@@ -163,7 +163,7 @@ def test_token_limit_increases_num_ctx_and_does_not_reuse_large_previous_respons
     planner = DesignPlanner(
         client,
         "designer-model",
-        recovery_policy=RecoveryPolicy(max_retries=1, initial_num_ctx=4096, max_num_ctx=8192, context_multiplier=2),
+        recovery_policy=RecoveryPolicy(max_retries=1, initial_num_ctx=4096, max_num_ctx=8192, growth_power=2.0),
     )
 
     result = planner.plan(FeatureModel())
@@ -181,7 +181,7 @@ def test_truncated_json_is_detected_as_token_limit():
     planner = DesignPlanner(
         client,
         "designer-model",
-        recovery_policy=RecoveryPolicy(max_retries=1, initial_num_ctx=4096, max_num_ctx=8192, context_multiplier=2),
+        recovery_policy=RecoveryPolicy(max_retries=1, initial_num_ctx=4096, max_num_ctx=8192, growth_power=2.0),
     )
 
     result = planner.plan(FeatureModel())
@@ -327,7 +327,7 @@ def test_recovery_stops_at_max_num_ctx_but_keeps_concision_guidance():
     planner = DesignPlanner(
         client,
         "designer-model",
-        recovery_policy=RecoveryPolicy(max_retries=2, initial_num_ctx=8192, max_num_ctx=8192, context_multiplier=2),
+        recovery_policy=RecoveryPolicy(max_retries=2, initial_num_ctx=8192, max_num_ctx=8192, growth_power=2.0),
     )
 
     planner.plan(FeatureModel())

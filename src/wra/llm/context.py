@@ -17,9 +17,27 @@ _OUTPUT_HEADROOM_TOKENS = 2048
 _INITIAL_CEILING = 32768
 
 
-def estimate_num_ctx(prompt: str, minimum: int, maximum: int, ceiling: int | None = _INITIAL_CEILING) -> int:
+def estimate_num_ctx(prompt: str, minimum: int, maximum: int, ceiling: int | None = _INITIAL_CEILING, headroom_tokens: int = _OUTPUT_HEADROOM_TOKENS) -> int:
     """Return a power-of-two context window large enough to hold ``prompt``."""
-    required = int(len(prompt) / _CHARS_PER_TOKEN) + _OUTPUT_HEADROOM_TOKENS
+    required = int(len(prompt) / _CHARS_PER_TOKEN) + headroom_tokens
     size = max(minimum, 1 << max(0, required - 1).bit_length())
     upper = maximum if ceiling is None else min(maximum, ceiling)
     return max(minimum, min(size, upper)) if minimum <= upper else minimum
+
+
+def growth_num_ctx(attempt: int, total_attempts: int, initial: int, maximum: int, growth_power: float) -> int:
+    """Return the context window for ``attempt`` on an accelerating growth curve.
+
+    ``attempt`` is 1-based and counts total attempts, not retries, so the final
+    attempt lands exactly on ``maximum``. ``growth_power`` shapes the curve:
+    above 1.0 keeps the early retries small and saves the large window for the
+    last attempt, which matters when an oversized window spills the KV cache
+    out of VRAM.
+    """
+    if attempt < 1 or attempt > total_attempts:
+        raise ValueError(f"attempt must be between 1 and {total_attempts}, got {attempt}")
+    if total_attempts == 1 or attempt == 1 or initial >= maximum:
+        return min(initial, maximum)
+    progress = (attempt - 1) / (total_attempts - 1)
+    scaled = initial + (progress ** growth_power) * (maximum - initial)
+    return min(int(scaled), maximum)

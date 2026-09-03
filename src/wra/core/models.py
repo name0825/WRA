@@ -194,7 +194,10 @@ class RecoveryConfig(BaseModel):
     max_retries: int = 3
     initial_num_ctx: int = 8192
     max_num_ctx: int = 32768
-    context_multiplier: float = 2.0
+    initial_ceiling_num_ctx: int = 32768
+    growth_power: float = 2.0
+    designer_output_headroom_tokens: int = 2048
+    generator_output_headroom_tokens: int = 2048
 
 
 class LoggingConfig(BaseModel):

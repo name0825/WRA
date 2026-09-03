@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from enum import Enum
+from wra.llm.context import growth_num_ctx
 
 
 class DesignRecoveryError(str, Enum):
@@ -22,13 +23,20 @@ class RecoveryPolicy:
     max_retries: int = 3
     initial_num_ctx: int = 8192
     max_num_ctx: int = 32768
-    context_multiplier: float = 2.0
+    ceiling_num_ctx: int = 32768
+    output_headroom_tokens: int = 2048
+    growth_power: float = 2.0
 
-    def next_num_ctx(self, current: int) -> int:
-        if current >= self.max_num_ctx:
-            return current
-        next_value = max(current + 1, int(current * self.context_multiplier))
-        return min(next_value, self.max_num_ctx)
+    def num_ctx_for_attempt(self, attempt: int, base: int) -> int:
+        """Return the window for ``attempt``, growing from ``base`` to ``max_num_ctx``.
+
+        ``base`` is the first attempt's estimated window, so the curve never
+        starts below what the prompt already needs.
+        """
+        total_attempts = self.max_retries + 1
+        if attempt > total_attempts:
+            return min(base, self.max_num_ctx)
+        return growth_num_ctx(attempt, total_attempts, base, self.max_num_ctx, self.growth_power)
 
 
 def classify_exception(exc: Exception) -> DesignRecoveryError:
@@ -84,7 +92,8 @@ def _reference_contract() -> str:
         "Critical reference rules: `content_source` must be a Feature Model dotted path, never literal content. "
         "Use only paths listed in the `Available Feature Model reference paths` block above; any path missing from "
         "that block is invalid, and paths listed as empty must never be referenced. Prefer the plain collection path; "
-        "append an index only when that block states the index exists. Never use forms such as `text: '...'`, "
+        "append an index in bracket form (`content.paragraphs[2]`) only when that block states the index exists. "
+        "Never use forms such as `text: '...'`, "
         "`metadata.title: '...'`, or `content.text: '...'` as content_source. "
         "`interaction.components[].target` must exactly equal one of the component `type` values declared in "
         "`sections[].components`; do not invent pluralized, hyphenated, or CSS-selector-style targets, and leave "
