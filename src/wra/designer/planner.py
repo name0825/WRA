@@ -250,7 +250,7 @@ class DesignPlanner:
                 if isinstance(child, list):
                     if child:
                         noun = "item" if len(child) == 1 else "items"
-                        usable.append(f"`{path}` ({len(child)} {noun}; index as `{path}[0]` .. `{path}[{len(child) - 1}]`)")
+                        usable.append(f"`{path}` ({len(child)} {noun}; one index per reference, 0 to {len(child) - 1}, written `{path}[0]`)")
                     else:
                         empty.append(f"`{path}`")
                 elif isinstance(child, dict):
