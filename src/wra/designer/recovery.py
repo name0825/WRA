@@ -93,6 +93,8 @@ def _reference_contract() -> str:
         "Use only paths listed in the `Available Feature Model reference paths` block above; any path missing from "
         "that block is invalid, and paths listed as empty must never be referenced. Prefer the plain collection path; "
         "append an index in bracket form (`content.paragraphs[2]`) only when that block states the index exists. "
+        "A bracket holds exactly one index: ranges and slices such as `content.paragraphs[2..4]` or `media.images[2:8]` "
+        "are invalid, and the plain collection path is the way to reference several items at once. "
         "Never use forms such as `text: '...'`, "
         "`metadata.title: '...'`, or `content.text: '...'` as content_source. "
         "`interaction.components[].target` must exactly equal one of the component `type` values declared in "

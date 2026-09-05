@@ -70,6 +70,7 @@ The audience picks the aesthetic, not habit or the first look that comes to mind
 - Use only paths from the `Available Feature Model reference paths` block. A path missing from that block is invalid.
 - Never reference a path the block lists under `Empty, never reference`.
 - Prefer the plain collection path (`content.paragraphs`). Append an index in bracket form (`content.paragraphs[2]`) only when the block states that index exists, and never exceed the stated range.
+- A bracket holds exactly one index. Ranges and slices such as `content.paragraphs[2..4]`, `media.images[2:8]`, or `content.buttons[0-3]` are invalid. To reference several items of a collection, use the plain collection path.
 - Do not invent semantic aliases such as `content.hero`, `content.services`, `media.logo`, `navigation.items`, or `ui.*`.
 - Never write a value with literal content in it, such as `text: "..."` or `metadata.title: "..."`.
 
