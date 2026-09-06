@@ -124,7 +124,11 @@ class OutputManager:
             logger.debug("Iteration artifacts saved: %s", iteration_dir)
 
         best = self._best.get(slug)
-        if score is None or best is None or best.score is None or score > best.score:
+        # An iteration with no score failed validation and was never evaluated.
+        # It must not replace a scored page: `_publish` writes the best straight
+        # to the run root, so accepting it overwrites the good page with a
+        # broken one -- and disagrees with the loop, which keeps the old best.
+        if best is None or (score is not None and (best.score is None or score > best.score)):
             self._best[slug] = _Best(iteration=iteration, score=score, html=html, browser_source=self._browser_source(browser))
             logger.info("New best iteration for page '%s': iteration=%d score=%s", slug, iteration, score if score is not None else "n/a")
             # Publish now rather than at the end of the run. Termination is

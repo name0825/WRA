@@ -123,6 +123,27 @@ def test_a_worse_iteration_does_not_overwrite_the_published_page(tmp_path: Path)
     assert (tmp_path / "index.html").read_text(encoding="utf-8") == "<html>best</html>"
 
 
+def test_an_unscored_iteration_does_not_overwrite_the_published_page(tmp_path: Path) -> None:
+    """An iteration whose HTML failed validation is never evaluated, so it
+    arrives with no score. It must not become the best: the run root would end
+    up holding a page the loop itself rejected."""
+    manager = OutputManager(tmp_path, "all")
+    manager.save_iteration(iteration=1, slug="index", html="<html>best</html>", score=9.0)
+    manager.save_iteration(iteration=2, slug="index", html="<broken", score=None)
+
+    assert (tmp_path / "index.html").read_text(encoding="utf-8") == "<html>best</html>"
+    assert manager.finalize("index").read_text(encoding="utf-8") == "<html>best</html>"
+    result = json.loads((tmp_path / "result.json").read_text(encoding="utf-8"))
+    assert result["pages"]["index"] == {"best_iteration": 1, "best_score": 9.0}
+
+
+def test_the_first_iteration_is_published_even_unscored(tmp_path: Path) -> None:
+    manager = OutputManager(tmp_path, "all")
+    manager.save_iteration(iteration=1, slug="index", html="<html>only</html>", score=None)
+
+    assert (tmp_path / "index.html").read_text(encoding="utf-8") == "<html>only</html>"
+
+
 def test_every_page_is_published_as_it_is_scored(tmp_path: Path) -> None:
     manager = OutputManager(tmp_path, "all")
     manager.register_pages(["index", "about"])

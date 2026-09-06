@@ -135,26 +135,55 @@ RENDER_KINDS = {"image", "video", "font", "css", "js"}
 MEDIA_KINDS = {"image", "video", "font"}
 
 
-def _build_render_map(files: list[InputFile], asset_directory: str) -> dict[str, str]:
-    """Map each file's basename to its output path under the run's asset directory.
+def _free_output(candidate: str, taken: set[str]) -> str:
+    """Number the stem until the output path is one no other file holds.
 
-    Source markup addresses assets by paths that need not exist locally
-    (`/src/img/logo.png`), so the basename is the only reliable join between a
-    reference and a delivered file. Colliding basenames keep their directory.
+    A file at the input root has no directory to be kept apart by, so its
+    source path is its basename and cannot disambiguate it from a same-named
+    file deeper in the tree.
+    """
+    if candidate.lower() not in taken:
+        return candidate
+    stem, _, suffix = candidate.rpartition(".")
+    counter = 2
+    while f"{stem}-{counter}.{suffix}".lower() in taken:
+        counter += 1
+    return f"{stem}-{counter}.{suffix}"
+
+
+def _build_render_map(files: list[InputFile], asset_directory: str) -> dict[str, str]:
+    """Map each file to its output path under the run's asset directory.
+
+    Every file is keyed by its source path, which is unique, and by its
+    basename as well when no other file claimed that name first. Source markup
+    addresses assets by paths that need not exist locally (`/src/img/logo.png`),
+    so the basename is often the only join between a reference and a delivered
+    file -- but it cannot be the only key: two files named `logo.png` would then
+    share one entry, one of them would never be copied, and every reference to
+    it would silently resolve to the other file's image.
+
+    Source paths are therefore assigned first and basenames only aliased
+    afterwards, so an alias can never take a key a real source path needs: for
+    a file at the input root the two are the same string.
     """
     mapping: dict[str, str] = {}
-    used: dict[str, str] = {}
-    for item in files:
-        if item.kind not in RENDER_KINDS:
-            continue
+    holder: dict[str, str] = {}
+    taken: set[str] = set()
+    renderable = [item for item in files if item.kind in RENDER_KINDS]
+    for item in renderable:
         name = Path(item.relative).name
-        if name in used and used[name] != item.relative:
-            logger.warning("Duplicate asset basename kept at its source path: %s", item.relative)
-            output = f"{asset_directory}/{item.relative}"
-        else:
+        first = holder.setdefault(name.lower(), item.relative)
+        if first == item.relative:
             output = f"{asset_directory}/{name}"
-            used[name] = item.relative
-        mapping[name.lower()] = output
+        else:
+            logger.warning("Duplicate asset basename kept apart from %s: %s (both are named '%s')", first, item.relative, name)
+            output = _free_output(f"{asset_directory}/{item.relative}", taken)
+        mapping[item.relative.lower()] = output
+        taken.add(output.lower())
+    for item in renderable:
+        key = Path(item.relative).name.lower()
+        if key not in mapping:
+            mapping[key] = mapping[item.relative.lower()]
     return mapping
 
 
@@ -185,8 +214,9 @@ def discover(directory: str | Path, entry: str | None = None, asset_directory: s
         raise InputError(f"Nothing to work from in {root}. Place an .html file to redesign, or a .md/.txt/.yaml brief to create from.")
 
     render_map = _build_render_map(files, asset_directory)
-    media_names = {Path(item.relative).name.lower() for item in files if item.kind in MEDIA_KINDS}
-    asset_map = {name: target for name, target in render_map.items() if name in media_names}
+    media = [item for item in files if item.kind in MEDIA_KINDS]
+    media_keys = {item.relative.lower() for item in media} | {Path(item.relative).name.lower() for item in media}
+    asset_map = {key: target for key, target in render_map.items() if key in media_keys}
 
     if not html_files:
         bundle = InputBundle(root=root, entry=None, pages=[], files=files, brief=brief, asset_map=asset_map, render_map=render_map)
@@ -205,8 +235,12 @@ def _mapped(reference: str, asset_map: dict[str, str]) -> str | None:
     candidate = reference.strip()
     if not candidate or candidate.startswith(("http://", "https://", "//", "data:", "#", "mailto:", "tel:")):
         return None
-    name = Path(candidate.split("?")[0].split("#")[0]).name.lower()
-    return asset_map.get(name)
+    path = candidate.split("?")[0].split("#")[0].lstrip("/")
+    while path.startswith("./"):
+        path = path[2:]
+    # The source path first: it tells two files of the same name apart. The
+    # basename only after that, for markup addressing a path we never received.
+    return asset_map.get(path.lower()) or asset_map.get(Path(path).name.lower())
 
 
 def rewrite_asset_paths(html: str, asset_map: dict[str, str], page_map: dict[str, str] | None = None) -> str:
@@ -247,7 +281,7 @@ def copy_assets(bundle: InputBundle, run_dir: str | Path) -> int:
     destination_root = Path(run_dir)
     copied = 0
     for item in bundle.files:
-        target = bundle.render_map.get(Path(item.relative).name.lower())
+        target = bundle.render_map.get(item.relative.lower())
         if target is None:
             continue
         destination = destination_root / target

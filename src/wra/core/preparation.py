@@ -331,7 +331,7 @@ class InputPreparer:
     def _pair_sources(bundle: InputBundle, asset_infos):
         by_output = {}
         for item in bundle.files:
-            output = bundle.asset_map.get(Path(item.relative).name.lower())
+            output = bundle.asset_map.get(item.relative.lower())
             if output is not None:
                 by_output.setdefault(output, item)
         return [(info, by_output[info.path]) for info in asset_infos if info.path in by_output]
