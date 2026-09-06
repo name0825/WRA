@@ -29,6 +29,29 @@ def _json_object_candidates(response: str) -> list[str]:
     return candidates
 
 
+def json_root_text(response: str) -> str:
+    """The text the model meant as its JSON object, with its wrappers removed.
+
+    Reasoning blocks, Markdown fences, and prose all sit in front of the object
+    the caller asked for. A truncation check has to look past them: a response
+    cut off mid-object still starts with "```json" or "Here is the spec".
+    """
+    normalized = response.lstrip("﻿").strip()
+    normalized = _THINK_BLOCK_RE.sub("", normalized).strip()
+    normalized = _THINK_OPEN_RE.sub("", normalized).strip()
+
+    fence = _JSON_FENCE_RE.search(normalized)
+    if fence:
+        return fence.group(1).strip()
+    if not normalized.startswith("{"):
+        # An unterminated fence keeps its opening line but never closes.
+        without_fence = re.sub(r"^```(?:json)?\s*", "", normalized, flags=re.IGNORECASE)
+        index = without_fence.find("{")
+        if index >= 0:
+            return without_fence[index:].strip()
+    return normalized
+
+
 def normalize_json_response(response: str) -> str:
     """Normalize common LLM wrappers around a JSON object.
 

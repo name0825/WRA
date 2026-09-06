@@ -85,7 +85,45 @@ def test_design_validator_rejects_out_of_range_dot_index():
 
     result = validate_design_spec(spec, features, FrameworkConfig(), content_freedom="madmax")
 
-    assert "invalid content_source: media.images.3" in result.errors
+    error = next(error for error in result.errors if error.startswith("invalid content_source: media.images.3"))
+    assert "highest index is 0" in error, "the limit has to travel with the error, or retries guess"
+
+
+def _spec_sourcing(path: str):
+    spec_data = make_spec().model_dump()
+    spec_data["sections"][0]["components"] = [
+        {"type": "figure", "purpose": "Lead image", "content_source": path},
+    ]
+    spec_data["interaction"]["components"] = []
+    return DesignSpec.model_validate(spec_data)
+
+
+def test_an_out_of_range_index_reports_the_real_size():
+    """The failure that killed two runs: [8] on a collection of 7."""
+    features = FeatureModel(media={"images": [Image(src=f"{n}.png", alt=str(n)) for n in range(7)]})
+
+    result = validate_design_spec(_spec_sourcing("media.images[8]"), features, FrameworkConfig(), content_freedom="madmax")
+
+    assert not result.valid
+    assert any("media.images holds 7 items, so its highest index is 6" in error for error in result.errors)
+
+
+def test_an_index_on_an_empty_collection_says_it_is_empty():
+    result = validate_design_spec(_spec_sourcing("media.images[0]"), FeatureModel(), FrameworkConfig(), content_freedom="madmax")
+
+    assert any("media.images is empty and has no valid index" in error for error in result.errors)
+
+
+def test_an_index_under_an_unknown_collection_says_so():
+    result = validate_design_spec(_spec_sourcing("content.nope[1]"), FeatureModel(), FrameworkConfig(), content_freedom="madmax")
+
+    assert any("content.nope does not resolve either" in error for error in result.errors)
+
+
+def test_a_path_without_an_index_gets_no_index_hint():
+    result = validate_design_spec(_spec_sourcing("content.nope"), FeatureModel(), FrameworkConfig(), content_freedom="madmax")
+
+    assert "invalid content_source: content.nope" in result.errors
 
 
 def test_design_validator_names_declared_types_on_invalid_interaction_target():

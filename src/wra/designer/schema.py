@@ -1,9 +1,33 @@
+import re
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
 
 MotionLevel = Literal["none", "low", "mid", "high"]
+
+
+def _as_text(value: Any) -> str:
+    """Flatten a structure an LLM sent where the schema asks for one string."""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, dict):
+        return ", ".join(f"{key}: {_as_text(item)}" for key, item in value.items())
+    if isinstance(value, (list, tuple)):
+        return ", ".join(_as_text(item) for item in value)
+    return str(value)
+
+
+def _breakpoint_name(width: str) -> str:
+    """Name a breakpoint an LLM gave as a bare width."""
+    digits = re.match(r"\s*(\d+)", width)
+    if not digits:
+        return width.strip() or "breakpoint"
+    pixels = int(digits.group(1))
+    if pixels < 640:
+        return "mobile"
+    return "tablet" if pixels < 1024 else "desktop"
+
 
 
 class ColorSystem(BaseModel):
@@ -23,6 +47,16 @@ class Typography(BaseModel):
 
     @model_validator(mode="before")
     @classmethod
+    def normalize_scale(cls, value: Any) -> Any:
+        """Accept a type scale sent as a list of sizes or a map of roles to sizes."""
+        if isinstance(value, dict) and not isinstance(value.get("scale", ""), str):
+            result = dict(value)
+            result["scale"] = _as_text(value["scale"])
+            return result
+        return value
+
+    @model_validator(mode="before")
+    @classmethod
     def normalize_weight(cls, value: Any) -> Any:
         """Accept concise structured weight output from LLMs and normalize it.
 
@@ -30,12 +64,15 @@ class Typography(BaseModel):
         naturally emit a mapping such as {"heading": 600, "body": 400}.
         Converting that representation keeps the schema strict downstream
         without forcing the planner to retry a semantically valid response.
+
+        Only the weight itself is rewritten: joining the whole typography object
+        into this field turned every weight token into a description of the type
+        family and scale, which is not a weight at all.
         """
-        if isinstance(value, dict):
-            parts = [f"{key}: {item}" for key, item in value.items()]
-            value = dict(value)
-            value["weight"] = ", ".join(parts)
-            return value
+        if isinstance(value, dict) and isinstance(value.get("weight"), dict):
+            result = dict(value)
+            result["weight"] = ", ".join(f"{key}: {item}" for key, item in value["weight"].items())
+            return result
         return value
 
 
@@ -75,6 +112,16 @@ class Design(BaseModel):
     framework: FrameworkRecommendations
     motion: Motion
 
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_layout(cls, value: Any) -> Any:
+        """Accept a layout described as a list of notes or a map of regions."""
+        if isinstance(value, dict) and "layout" in value and not isinstance(value["layout"], str):
+            result = dict(value)
+            result["layout"] = _as_text(value["layout"])
+            return result
+        return value
+
 
 class ComponentSpec(BaseModel):
     type: str
@@ -98,6 +145,46 @@ class ResponsiveSpec(BaseModel):
     strategy: str
     breakpoints: list[ResponsiveBreakpoint] = Field(default_factory=list)
     behavior: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_breakpoints(cls, value: Any) -> Any:
+        """Normalize the shapes LLMs reach for instead of [{name, width}].
+
+        Seen in practice: a bare width ("768px"), a numeric width, a single
+        {name: width} pair per entry, and the whole set as one
+        {"mobile": "0px", "tablet": "768px"} map. Each carries the same
+        information the schema asks for, just arranged differently.
+        """
+        if not isinstance(value, dict) or "breakpoints" not in value:
+            return value
+        breakpoints = value["breakpoints"]
+
+        if isinstance(breakpoints, dict):
+            normalized = [{"name": str(name), "width": _as_text(width)} for name, width in breakpoints.items()]
+        elif isinstance(breakpoints, list):
+            normalized = []
+            for item in breakpoints:
+                if isinstance(item, dict) and "width" in item:
+                    entry = dict(item)
+                    entry["width"] = _as_text(entry["width"])
+                    if "name" in entry:
+                        entry["name"] = _as_text(entry["name"])
+                    normalized.append(entry)
+                elif isinstance(item, dict) and len(item) == 1:
+                    name, width = next(iter(item.items()))
+                    normalized.append({"name": str(name), "width": _as_text(width)})
+                elif isinstance(item, (str, int, float)):
+                    width = _as_text(item)
+                    normalized.append({"name": _breakpoint_name(width), "width": width})
+                else:
+                    normalized.append(item)
+        else:
+            return value
+
+        result = dict(value)
+        result["breakpoints"] = normalized
+        return result
 
     @model_validator(mode="before")
     @classmethod
@@ -146,6 +233,15 @@ class ResponsiveSpec(BaseModel):
 class InteractionComponent(BaseModel):
     target: str
     behavior: str
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_behavior(cls, value: Any) -> Any:
+        if isinstance(value, dict) and "behavior" in value and not isinstance(value["behavior"], str):
+            result = dict(value)
+            result["behavior"] = _as_text(value["behavior"])
+            return result
+        return value
 
 
 class InteractionSpec(BaseModel):

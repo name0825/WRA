@@ -16,7 +16,7 @@ def make_config(freedom: str) -> WRAConfig:
 
 
 def make_engine(freedom: str) -> IterationEngine:
-    return IterationEngine(config=make_config(freedom), analyzer=None, designer=None, generator=None, evaluator=None)
+    return IterationEngine(config=make_config(freedom), designer=None, generator=None, evaluator=None)
 
 
 def test_default_freedom_is_low() -> None:

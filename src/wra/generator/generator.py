@@ -15,8 +15,10 @@ logger = logging.getLogger(__name__)
 
 # Branches kept regardless of what the DesignSpec references: the output
 # contract reads metadata directly, and these carry the page identity and
-# preservation requirements at a negligible size.
-_ALWAYS_KEEP = ("site", "metadata", "navigation", "requirements", "business")
+# preservation requirements at a negligible size. `source_assets` is kept
+# because the generator may not write an image path that is not listed there,
+# whether or not the DesignSpec happened to cite the asset.
+_ALWAYS_KEEP = ("site", "metadata", "navigation", "requirements", "business", "source_assets")
 
 
 class GeneratorError(ValueError):

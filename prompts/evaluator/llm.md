@@ -62,16 +62,20 @@ Preservation of source meaning, information, emphasis, links, media, and require
 Source text rendered in a different language than the FeatureModel supplies is a severe defect. Cap this dimension at 4 when any source string was translated, transliterated, or replaced with a summary.
 
 ### `ux`
-Navigation, controls, interactions, usability, overflow, layout problems, and browser/runtime errors when evidenced. Also weigh duplicate-intent CTAs, low-contrast buttons/forms, CTA labels that wrap, multi-line navigation, feedback that only appears after release, and sections carrying several competing jobs as concrete defects.
+Navigation, controls, interactions, usability, overflow, layout problems, and browser/runtime errors when evidenced. Also weigh duplicate-intent CTAs, low-contrast buttons/forms, CTA labels that wrap, multi-line navigation, feedback that only appears after release, sections carrying several competing jobs, and controls named for their mechanism (Submit, Learn More) rather than the outcome they produce, as concrete defects.
 
 ### `readability`
 Typography, contrast, line length, density, wrapping, hierarchy, and scanability. Weigh whether line length stays near 65-75 characters, and whether line height and letter spacing change with type size instead of being one value everywhere.
 
 ### `responsive_design`
-Prefer actual viewport evidence. Without browser evidence, judge only the HTML structure and declared responsive intent, and **cap this dimension at 7**, because rendered behavior is unverified.
+When `browser_evaluation` is present, judge from it. The screenshots show the page laid out at each viewport, and `horizontal_overflow`, `scroll_width`, and `page_height` are measured facts rather than claims.
+
+Screenshots are still images: they establish layout, not interaction. A menu toggle, a scroll-driven reveal, or a hover state cannot be confirmed from them. Say so in the feedback and score what the evidence does show. **Unverified interaction inside an otherwise evidenced page is a note, not a ceiling.**
+
+**Cap this dimension at 7 only when `browser_evaluation` is null or disabled** — when no viewport evidence was supplied at all. Then judge the HTML structure and declared responsive intent alone.
 
 ### `originality`
-Meaningful visual differentiation and a coherent design direction. Generic template-like design should not score highly. Score down recognizable AI-cliché signatures such as identical card grids, cream-and-terracotta or near-black-and-neon palettes, numbered section eyebrows, em dashes, and filler marketing copy (Elevate, Seamless, Next-Gen). Also score down an aesthetic that does not follow from the page's subject and audience, a serif display face on content that is not editorial or heritage, a centered hero without a compositional reason, and long bullet lists used where a real component belongs.
+Meaningful visual differentiation and a coherent design direction. Generic template-like design should not score highly. Score down recognizable AI-cliché signatures such as identical card grids, cream-and-terracotta or near-black-and-neon palettes, numbered section eyebrows, em dashes, and filler marketing copy (Elevate, Seamless, Next-Gen). Also score down an aesthetic that does not follow from the page's subject and audience, a serif display face on content that is not editorial or heritage, a centered hero without a compositional reason, long bullet lists used where a real component belongs, several elements competing to be the loudest, and copy that would sit unchanged on a competitor's page.
 
 ### `html_quality`
 Document structure, semantic HTML, accessibility-relevant implementation, and evidence of broken markup or behavior. Check focus states, contrast, alt text, heading order, and label associations before scoring above 8.
@@ -84,6 +88,10 @@ If browser evaluation or screenshots are disabled, unavailable, or null:
 - do not invent viewport, rendering, overflow, console, or visual observations;
 - assess only what the FeatureModel, DesignSpec, and HTML establish;
 - mention missing browser confirmation when it materially limits the assessment.
+
+When they are present, they are evidence and should be used as such. A page can be
+evidenced for layout and unevidenced for interaction at the same time; that is a limit
+on one observation, not a reason to discount the evidence you were given.
 
 ## Improvement suggestions
 

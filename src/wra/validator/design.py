@@ -40,6 +40,11 @@ REQUIRED_COVERAGE_COLLECTIONS = (
 )
 
 
+# A path whose last step is an index, in either form the planners write:
+# `media.images[8]` and `media.images.8` name the same item.
+_TRAILING_INDEX_RE = re.compile(r"(?P<collection>.+?)(?:\[(?P<bracket>\d+)\]|\.(?P<dotted>\d+))")
+
+
 def _resolve_path(value: object, path: str) -> object | None:
     """Resolve dotted FeatureModel paths with optional list indexes."""
     current = value
@@ -87,14 +92,51 @@ def _is_no_framework(name: str) -> bool:
     return name.strip().lower() in {"", "none", "vanilla", "vanilla css", "vanilla js", "vanilla javascript"}
 
 
+def _framework_hint(name: str, frameworks: FrameworkConfig, slot: str) -> str:
+    """What the designer needs to fix the name, not just be told it is wrong.
+
+    Naming the problem alone is not recoverable: told only that "Tailwind" is
+    not configured, the designer returns "Tailwind" again and the run dies with
+    its retries spent. The message has to carry the alternatives, and the most
+    likely mistake is a framework put in the wrong slot.
+    """
+    catalog, other_slot = (frameworks.css, "JavaScript") if slot == "CSS" else (frameworks.js, "CSS")
+    other = frameworks.find_js(name) if slot == "CSS" else frameworks.find_css(name)
+    listed = ", ".join(framework.name for framework in catalog) or "(none)"
+    misplaced = f"; {other.name} is a configured {other_slot} framework, so it belongs in the {other_slot} slot" if other is not None else ""
+    return f"{misplaced}; configured {slot} frameworks are: {listed}"
+
+
+def _source_hint(features: object, source: str) -> str:
+    """Why the path did not resolve, in terms the planner can act on.
+
+    Naming the path alone is not recoverable. Told only that
+    `media.images[8]` is invalid, the planner tried `[9]`, then `[8]` three
+    times over, and the run died with its retries spent -- on a collection whose
+    highest index is 6. The limit has to travel with the error.
+    """
+    match = _TRAILING_INDEX_RE.fullmatch(source)
+    if match is None:
+        return ""
+    collection = match.group("collection")
+    resolved = _resolve_path(features, collection)
+    if isinstance(resolved, list):
+        if not resolved:
+            return f"; {collection} is empty and has no valid index"
+        return f"; {collection} holds {len(resolved)} items, so its highest index is {len(resolved) - 1}"
+    if resolved is None:
+        return f"; {collection} does not resolve either"
+    return f"; {collection} is not a collection and takes no index"
+
+
 def _validate_frameworks(spec: DesignSpec, frameworks: FrameworkConfig, errors: list[str]) -> None:
     css_name = spec.design.framework.css.name.strip()
     if not _is_no_framework(css_name) and frameworks.find_css(css_name) is None:
-        errors.append(f"CSS framework is not configured: {css_name}")
+        errors.append(f"CSS framework is not configured: {css_name}{_framework_hint(css_name, frameworks, 'CSS')}")
 
     js_name = spec.design.framework.js.name.strip()
     if not _is_no_framework(js_name) and frameworks.find_js(js_name) is None:
-        errors.append(f"JavaScript framework is not configured: {js_name}")
+        errors.append(f"JavaScript framework is not configured: {js_name}{_framework_hint(js_name, frameworks, 'JavaScript')}")
 
 
 def _source_covers_collection(source: str, collection_path: str) -> bool:
@@ -153,7 +195,7 @@ def validate_design_spec(spec: DesignSpec, features: FeatureModel, frameworks: F
                 errors.append(f"empty content_source: {component.type}")
                 continue
             if _resolve_path(features, source) is None:
-                errors.append(f"invalid content_source: {source}")
+                errors.append(f"invalid content_source: {source}{_source_hint(features, source)}")
 
     for interaction in spec.interaction.components:
         if interaction.target not in component_types:

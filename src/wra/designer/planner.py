@@ -18,7 +18,7 @@ from wra.designer.recovery import (
 from wra.designer.schema import DesignSpec
 from wra.llm.client import LLMClient
 from wra.llm.context import estimate_num_ctx
-from wra.llm.response import normalize_json_response
+from wra.llm.response import json_root_text, normalize_json_response
 from wra.validator.design import required_coverage_paths, validate_design_spec
 
 logger = logging.getLogger(__name__)
@@ -262,7 +262,11 @@ class DesignPlanner:
                 else:
                     usable.append(f"`{path}`")
 
-        visit(features.model_dump(exclude_none=True), "")
+        data = features.model_dump(exclude_none=True)
+        # `source_assets` is design context, not page content. Listing its paths
+        # here would invite a `content_source` pointing at a colour token.
+        data.pop("source_assets", None)
+        visit(data, "")
         lines = [f"- {entry}" for entry in usable]
         if empty:
             lines.append("Empty, never reference: " + ", ".join(empty))
@@ -306,7 +310,7 @@ class DesignPlanner:
         DesignSpec. Only a response whose decode error sits at the very end
         counts: an error early in the text is malformed JSON, not truncation.
         """
-        text = response.strip()
+        text = json_root_text(response)
         if not text.startswith("{"):
             return False
 

@@ -8,16 +8,62 @@ ollama:
 models:
   analyzer:
     - name: "gemma4:26b"
-      think: false
-      timeout: 600
   designer:
     - name: "gemma4:26b"
-      think: true
-      timeout: 600
-  generator:
+  generator: 
+    - name: "gemma4:12b"
+
+  # Model that edits a finished page during a refinement pass. Left empty it
+  # falls back to the generator pool, where a small model damages the source
+  # text as often as it improves the design. Use designer-grade models here.
+  refiner:
     - name: "gemma4:26b"
-      think: false
-      timeout: 600
+
+  # Vision model used to read the source images and the source page screenshot.
+  # Leave empty to skip media vision entirely.
+  vision:
+    - name: "gemma4:26b"
+      timeout: 900
+
+# Where the source site comes from and how much of it is redesigned.
+#   entry : redesign the entry page only
+#   pages : redesign every HTML file independently
+#   site  : redesign every HTML file, sharing one site context between them
+# entry selection order: input.entry, then index.html, input.html, the largest HTML.
+# Files and folders starting with "_" or "." are ignored.
+input:
+  directory: "input"
+  mode: "entry"
+  entry: null
+  asset_directory: "assets"
+  # Upper bound on the source CSS/JS read for the style and script digests.
+  # The source text is never sent to a model; only the distilled digest is.
+  max_css_bytes: 512000
+  max_js_bytes: 512000
+  vision:
+    enabled: true
+    # Images below either threshold are skipped (favicons, sprite icons).
+    min_bytes: 4096
+    min_dimension: 64
+    max_images: 20
+    # Render the source page and read its overall impression. Needs Playwright.
+    screenshot: true
+    # Scroll-reveal animations start at opacity 0, so an untouched screenshot is
+    # mostly blank. Scroll the page first, then force whatever is still
+    # transparent into view.
+    reveal_animations: true
+    # Images analysed at once. Raise this only if the Ollama server actually has
+    # more than one parallel slot (OLLAMA_NUM_PARALLEL); otherwise the requests
+    # queue and nothing is gained.
+    concurrency: 1
+    # Keyed by file content, so re-running the same input costs no vision calls.
+    cache_directory: ".cache/vision"
+
+# Building a site from a brief instead of redesigning one. This runs when input/
+# holds no HTML but does hold a .md/.txt/.yaml brief; content freedom is forced
+# to madmax there, because there is no source to preserve.
+creator:
+  max_pages: 4
 
 design:
   mode: "auto"
@@ -101,8 +147,21 @@ frameworks:
 pipeline:
   max_iterations: 3
   evaluation_threshold: 8.0
+  # Disabled, every page keeps being iterated until you interrupt the run.
   termination:
     enabled: true
+    # 최고 점수가 이만큼의 회차 동안 갱신되지 않으면 그 페이지를 마친다.
+    # 0이면 max_iterations만으로 제한한다. enabled가 false면 무시된다.
+    patience: 2
+  # 2회차부터 디자인을 새로 세우는 대신 최고 결과를 국소 수정한다.
+  # 전체 재생성은 잘 나온 부분까지 버리므로 후퇴가 잦다.
+  refine:
+    enabled: false
+    # 국소 수정이 이만큼 연속으로 개선에 실패하면 한 번은 전체 재설계로 돌아간다.
+    # 0이면 절대 돌아가지 않아, 막힌 페이지가 막힌 채로 남는다.
+    redesign_after_stalls: 2
+    # 한 번의 수정이 겨냥하는 최저점 항목 수.
+    weakest_dimensions: 3
   output:
     save_mode: "all"
 
