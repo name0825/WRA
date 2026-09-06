@@ -1,5 +1,6 @@
 from typing import Literal
 import json
+import re
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -35,8 +36,11 @@ class ModelConfig(BaseModel):
     analyzer: list[ModelSpec] = Field(default_factory=list)
     designer: list[ModelSpec] = Field(default_factory=list)
     generator: list[ModelSpec] = Field(default_factory=list)
+    vision: list[ModelSpec] = Field(default_factory=list)
+    creator: list[ModelSpec] = Field(default_factory=list)
+    refiner: list[ModelSpec] = Field(default_factory=list)
 
-    @field_validator("analyzer", "designer", "generator", mode="before")
+    @field_validator("analyzer", "designer", "generator", "vision", "creator", "refiner", mode="before")
     @classmethod
     def normalize_models(cls, value):
         if value is None:
@@ -161,6 +165,22 @@ def coverage_is_enforced(level: ContentFreedom) -> bool:
     return level in _COVERAGE_ENFORCED_LEVELS
 
 
+# At these levels the rubric has narrowed `content_preservation` to identity,
+# factual accuracy, and invented assets. That is a constraint, not a quality
+# axis: averaging it in hands a compliant page a free top mark it did not earn
+# through design, and reduces a misstated fact to a ninth of the total.
+_CONTENT_GATE_LEVELS: set[str] = {"ultra", "madmax"}
+
+# Below this the evaluator has reported one of those defects. The rubric leaves
+# no other way for the score to fall this far at a gated level.
+CONTENT_GATE_THRESHOLD = 7.0
+
+
+def content_preservation_is_a_gate(level: ContentFreedom) -> bool:
+    """Whether content_preservation caps the total instead of averaging into it."""
+    return level in _CONTENT_GATE_LEVELS
+
+
 class ContentConfig(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -171,6 +191,10 @@ class PipelineTerminationConfig(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     enabled: bool = True
+    # Stop a page after this many iterations that fail to beat its best score.
+    # 0 leaves the run bounded only by max_iterations. Ignored when `enabled`
+    # is false, which asks for an unbounded run on purpose.
+    patience: int = Field(default=0, ge=0)
 
 
 class PipelineOutputConfig(BaseModel):
@@ -179,12 +203,26 @@ class PipelineOutputConfig(BaseModel):
     save_mode: Literal["all", "best"] = "all"
 
 
+class RefineConfig(BaseModel):
+    """Improving the best page in place instead of redesigning it."""
+    model_config = ConfigDict(frozen=True)
+
+    enabled: bool = False
+    # Consecutive refinements that fail to improve before one full redesign is
+    # tried instead. Refining exploits what already works; a redesign explores.
+    # 0 never falls back, and a stuck page stays stuck.
+    redesign_after_stalls: int = Field(default=2, ge=0)
+    # How many of the lowest-scoring dimensions a refinement pass aims at.
+    weakest_dimensions: int = Field(default=3, ge=1, le=9)
+
+
 class PipelineConfig(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     max_iterations: int = 3
     evaluation_threshold: float = 8.0
     termination: PipelineTerminationConfig = PipelineTerminationConfig()
+    refine: RefineConfig = RefineConfig()
     output: PipelineOutputConfig = PipelineOutputConfig()
 
 
@@ -235,17 +273,86 @@ class Framework(BaseModel):
         return self.tag or default
 
 
+# A model writes one framework's name several ways -- "Tailwind", "Tailwind CSS",
+# "tailwindcss" -- and an exact-match lookup rejected all but the catalogue's own
+# spelling. The mismatch is unrecoverable: the designer is told the name is not
+# configured, repeats it, and the run dies after its retries.
+_FRAMEWORK_NAME_SUFFIXES = ("javascript", "css", "js")
+
+
+def normalize_framework_name(name: str) -> str:
+    """A catalogue key for a framework name, ignoring case, spacing and a trailing kind."""
+    key = re.sub(r"[^a-z0-9]", "", name.lower())
+    for suffix in _FRAMEWORK_NAME_SUFFIXES:
+        if len(key) > len(suffix) and key.endswith(suffix):
+            return key[: -len(suffix)]
+    return key
+
+
 class FrameworkConfig(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     css: list[Framework] = Field(default_factory=list)
     js: list[Framework] = Field(default_factory=list)
 
+    @staticmethod
+    def _find(catalog: list[Framework], name: str) -> Framework | None:
+        """The catalogue entry for a name: its own spelling first, then a normalized one."""
+        exact = next((framework for framework in catalog if framework.name == name), None)
+        if exact is not None:
+            return exact
+        key = normalize_framework_name(name)
+        if not key:
+            return None
+        return next((framework for framework in catalog if normalize_framework_name(framework.name) == key), None)
+
     def find_css(self, name: str) -> Framework | None:
-        return next((framework for framework in self.css if framework.name == name), None)
+        return self._find(self.css, name)
 
     def find_js(self, name: str) -> Framework | None:
-        return next((framework for framework in self.js if framework.name == name), None)
+        return self._find(self.js, name)
+
+
+class VisionConfig(BaseModel):
+    """Vision-model analysis of the source media, run once per input."""
+    model_config = ConfigDict(frozen=True)
+
+    enabled: bool = True
+    max_images: int = 20
+    min_bytes: int = 4096
+    min_dimension: int = 64
+    screenshot: bool = True
+    # Scroll the source page before capturing it, then reveal whatever its own
+    # animations left transparent. Without this, scroll-reveal pages screenshot
+    # as mostly blank.
+    reveal_animations: bool = True
+    cache_directory: str = ".cache/vision"
+    # Images analysed at once. Worth raising only when the Ollama server has
+    # more than one parallel slot (OLLAMA_NUM_PARALLEL); otherwise the requests
+    # simply queue.
+    concurrency: int = Field(default=1, ge=1, le=16)
+
+
+class CreatorConfig(BaseModel):
+    """Building a site from a brief instead of redesigning one."""
+    model_config = ConfigDict(frozen=True)
+
+    max_pages: int = Field(default=4, ge=1, le=12)
+
+
+class InputConfig(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    directory: str = "input"
+    # entry: redesign the entry page only.
+    # pages: redesign every page independently.
+    # site:  redesign every page, sharing one site context between them.
+    mode: Literal["entry", "pages", "site"] = "entry"
+    entry: str | None = None
+    asset_directory: str = "assets"
+    max_css_bytes: int = 512000
+    max_js_bytes: int = 512000
+    vision: VisionConfig = VisionConfig()
 
 
 class WRAConfig(BaseModel):
@@ -253,6 +360,8 @@ class WRAConfig(BaseModel):
 
     ollama: OllamaConfig
     models: ModelConfig
+    input: InputConfig = InputConfig()
+    creator: CreatorConfig = CreatorConfig()
     design: DesignConfig = DesignConfig()
     content: ContentConfig = ContentConfig()
     evaluation: EvaluationConfig = EvaluationConfig()
@@ -327,6 +436,73 @@ class Media(BaseModel):
     urls: list[str] = Field(default_factory=list)
 
 
+class VisionInsight(BaseModel):
+    """What a vision model saw in one source image."""
+
+    subject: str = ""
+    mood: list[str] = Field(default_factory=list)
+    role: str = ""
+    has_text: bool = False
+    text: str | None = None
+
+
+class AssetInfo(BaseModel):
+    """One file discovered in the input directory, described deterministically."""
+
+    path: str
+    kind: Literal["image", "video", "css", "js", "font", "other"] = "other"
+    bytes: int = 0
+    width: int | None = None
+    height: int | None = None
+    aspect: float | None = None
+    usable_as: list[str] = Field(default_factory=list)
+    vision: VisionInsight | None = None
+
+
+class StyleDigest(BaseModel):
+    """Design tokens distilled from the source CSS. Never the CSS itself."""
+
+    palette: list[str] = Field(default_factory=list)
+    fonts: list[str] = Field(default_factory=list)
+    type_scale: list[str] = Field(default_factory=list)
+    spacing: list[str] = Field(default_factory=list)
+    radii: list[str] = Field(default_factory=list)
+    shadows: list[str] = Field(default_factory=list)
+    breakpoints: list[str] = Field(default_factory=list)
+    layout_signals: dict[str, int] = Field(default_factory=dict)
+
+
+class ScriptDigest(BaseModel):
+    """What the source JavaScript does, not how it does it."""
+
+    libraries: list[str] = Field(default_factory=list)
+    interactions: list[str] = Field(default_factory=list)
+
+
+class PageImpression(BaseModel):
+    """A vision model's read of the rendered source page."""
+
+    mood: list[str] = Field(default_factory=list)
+    density: str = ""
+    layout: str = ""
+    strengths: list[str] = Field(default_factory=list)
+    weaknesses: list[str] = Field(default_factory=list)
+
+
+class SourceAssets(BaseModel):
+    """Everything derived once from the input folder and reused every iteration.
+
+    This travels inside the Feature Model, so it is billed to the designer and
+    evaluator prompt on every iteration. Keep it distilled: raw CSS, raw
+    JavaScript, and image bytes must never reach this structure.
+    """
+
+    styles: StyleDigest = Field(default_factory=StyleDigest)
+    scripts: ScriptDigest = Field(default_factory=ScriptDigest)
+    assets: list[AssetInfo] = Field(default_factory=list)
+    impression: PageImpression | None = None
+
+
 class Structure(BaseModel):
     header: bool = False
     navigation: bool = False
@@ -388,9 +564,24 @@ class FeatureModel(BaseModel):
     content: Content = Field(default_factory=Content)
     structure: Structure = Field(default_factory=Structure)
     media: Media = Field(default_factory=Media)
+    source_assets: SourceAssets = Field(default_factory=SourceAssets)
     business: BusinessInfo | None = None
     navigation: dict[str, object] = Field(default_factory=dict)
     requirements: Requirements = Field(default_factory=Requirements)
+
+
+EVALUATION_DIMENSIONS = (
+    "design_completeness", "visual_hierarchy", "design_consistency", "content_preservation",
+    "ux", "readability", "responsive_design", "originality", "html_quality",
+)
+
+# Dimensions that live in the DesignSpec: section composition, hierarchy, the
+# palette and type system, the responsive model. A refinement is forbidden from
+# touching any of those, so aiming one at these dimensions asks for an edit its
+# own contract disallows -- the model either returns the page unchanged or
+# damages something it was allowed to touch.
+STRUCTURAL_DIMENSIONS = ("design_completeness", "visual_hierarchy", "responsive_design", "originality")
+LOCAL_DIMENSIONS = tuple(name for name in EVALUATION_DIMENSIONS if name not in STRUCTURAL_DIMENSIONS)
 
 
 class EvaluationDimension(BaseModel):
@@ -411,6 +602,9 @@ class EvaluationResult(BaseModel):
     overall_score: float = Field(ge=0.0, le=10.0)
     summary: str = ""
     improvement_suggestions: list[str] = Field(default_factory=list)
+    # The level this page was authored at, which decides how the total is formed.
+    # Supplied by the evaluator, never by the model being scored.
+    content_freedom: ContentFreedom = "low"
 
     @model_validator(mode="before")
     @classmethod
@@ -445,17 +639,31 @@ class EvaluationResult(BaseModel):
 
     @model_validator(mode="after")
     def enforce_overall_score_mean(self):
-        """Make overall_score a deterministic function of the nine dimension scores."""
-        dimensions = (
+        """Make overall_score a deterministic function of the dimension scores.
+
+        Ordinarily the mean of all nine. At `ultra` and `madmax`, where
+        content_preservation has become a constraint rather than a measure of
+        craft, it leaves the mean and caps the result instead: a compliant page
+        is scored on its design alone, and a page that loses the subject or
+        misstates a fact cannot pass on strong visuals.
+        """
+        graded = (
             self.design_completeness,
             self.visual_hierarchy,
             self.design_consistency,
-            self.content_preservation,
             self.ux,
             self.readability,
             self.responsive_design,
             self.originality,
             self.html_quality,
         )
-        self.overall_score = sum(dimension.score for dimension in dimensions) / len(dimensions)
+        if not content_preservation_is_a_gate(self.content_freedom):
+            graded = (*graded, self.content_preservation)
+            self.overall_score = sum(dimension.score for dimension in graded) / len(graded)
+            return self
+
+        score = sum(dimension.score for dimension in graded) / len(graded)
+        if self.content_preservation.score < CONTENT_GATE_THRESHOLD:
+            score = min(score, self.content_preservation.score)
+        self.overall_score = score
         return self

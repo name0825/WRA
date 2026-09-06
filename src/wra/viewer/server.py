@@ -1,16 +1,23 @@
 """Local Flask viewer for WRA run artifacts."""
 
 import json
+import re
 from pathlib import Path
 
 import yaml
-from flask import Flask, abort, render_template_string, send_from_directory
+from flask import Flask, abort, render_template_string, request, send_from_directory
 
 from wra.core.models import ViewerConfig
 from wra.viewer.data import criteria_scores, iteration_artifacts, list_runs, load_run, read_json, safe_run_dir, score_band
 from wra.viewer.templates import BASE_CSS, ITERATION_TEMPLATE, JSON_TEMPLATE, RUN_DETAIL_TEMPLATE, RUN_LIST_TEMPLATE
 
 CONFIG_PATH = Path("config/config.yaml")
+SLUG_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+
+
+def _is_slug(value: str) -> bool:
+    """Guard the raw routes: a slug names a file, never a path."""
+    return bool(SLUG_RE.match(value)) and ".." not in value
 ARTIFACT_FILES = {"design": "design.json", "validation": "validation.json", "evaluation": "evaluation.json", "browser": "browser.json"}
 
 
@@ -30,8 +37,8 @@ def create_app(config: ViewerConfig | None = None) -> Flask:
         normalized = None if score is None else score * 10.0 / maximum
         return score_band(normalized, resolved_config.score_high_threshold, resolved_config.score_mid_threshold)
 
-    def require_run(run_id: str):
-        run = load_run(root, run_id)
+    def require_run(run_id: str, page: str | None = None):
+        run = load_run(root, run_id, page)
         if run is None:
             abort(404)
         return run
@@ -42,11 +49,11 @@ def create_app(config: ViewerConfig | None = None) -> Flask:
 
     @app.route("/run/<run_id>")
     def run_detail(run_id: str):
-        return render_template_string(RUN_DETAIL_TEMPLATE, css=BASE_CSS, run=require_run(run_id), score_band=band, artifacts=iteration_artifacts)
+        return render_template_string(RUN_DETAIL_TEMPLATE, css=BASE_CSS, run=require_run(run_id, request.args.get("page")), score_band=band, artifacts=iteration_artifacts)
 
     @app.route("/run/<run_id>/iteration/<int:number>")
     def iteration_detail(run_id: str, number: int):
-        run = require_run(run_id)
+        run = require_run(run_id, request.args.get("page"))
         iteration = next((item for item in run.iterations if item.number == number), None)
         if iteration is None:
             abort(404)
@@ -61,35 +68,54 @@ def create_app(config: ViewerConfig | None = None) -> Flask:
 
     @app.route("/run/<run_id>/features")
     def run_features(run_id: str):
-        run = require_run(run_id)
+        run = require_run(run_id, request.args.get("page"))
         if run.features is None:
             abort(404)
         return render_template_string(JSON_TEMPLATE, css=BASE_CSS, run_id=run_id, heading="features.json", payload=json.dumps(run.features, ensure_ascii=False, indent=2))
 
     @app.route("/json/<run_id>/iteration/<int:number>/<artifact>")
     def iteration_json(run_id: str, number: int, artifact: str):
-        run = require_run(run_id)
+        run = require_run(run_id, request.args.get("page"))
         filename = ARTIFACT_FILES.get(artifact)
         if filename is None:
             abort(404)
-        payload = read_json(run.directory / "iterations" / f"iteration_{number:03d}" / filename)
+        payload = read_json(run.directory / "iterations" / f"iter{number}" / "data" / run.slug / filename)
         if payload is None:
             abort(404)
         return render_template_string(JSON_TEMPLATE, css=BASE_CSS, run_id=run_id, heading=f"반복 {number} / {filename}", payload=json.dumps(payload, ensure_ascii=False, indent=2))
 
-    @app.route("/raw/<run_id>/<page>")
-    def raw_page(run_id: str, page: str):
+    @app.route("/raw/<run_id>/final/<slug>")
+    def raw_final(run_id: str, slug: str):
         run_dir = safe_run_dir(root, run_id)
-        if run_dir is None or page not in {"final", "original"}:
+        if run_dir is None or not _is_slug(slug):
             abort(404)
-        return send_from_directory(run_dir, f"{page}.html")
+        return send_from_directory(run_dir, f"{slug}.html")
 
-    @app.route("/raw/<run_id>/iteration/<int:number>")
-    def raw_iteration(run_id: str, number: int):
+    @app.route("/raw/<run_id>/original/<slug>")
+    def raw_original(run_id: str, slug: str):
+        run_dir = safe_run_dir(root, run_id)
+        if run_dir is None or not _is_slug(slug):
+            abort(404)
+        return send_from_directory(run_dir / "data" / slug, "original.html")
+
+    @app.route("/raw/<run_id>/iteration/<int:number>/<slug>")
+    def raw_iteration(run_id: str, number: int, slug: str):
+        run_dir = safe_run_dir(root, run_id)
+        if run_dir is None or not _is_slug(slug):
+            abort(404)
+        return send_from_directory(run_dir / "iterations" / f"iter{number}", f"{slug}.html")
+
+    # Generated pages reference media as `assets/<file>`, relative to wherever
+    # the page itself is served from, so every raw view needs the same tree.
+    @app.route("/raw/<run_id>/assets/<path:asset>")
+    @app.route("/raw/<run_id>/final/assets/<path:asset>")
+    @app.route("/raw/<run_id>/original/assets/<path:asset>")
+    @app.route("/raw/<run_id>/iteration/<int:number>/assets/<path:asset>")
+    def raw_asset(run_id: str, asset: str, number: int | None = None):
         run_dir = safe_run_dir(root, run_id)
         if run_dir is None:
             abort(404)
-        return send_from_directory(run_dir / "iterations" / f"iteration_{number:03d}", "html.html")
+        return send_from_directory(run_dir / "assets", asset)
 
     return app
 

@@ -83,6 +83,17 @@ def test_analyzer_extracts_features() -> None:
     assert "Example Company" in features.requirements.must_preserve
 
 
+def test_analyzer_extracts_video_media() -> None:
+    features = HTMLAnalyzer().analyze(
+        '<html><body><video src="clip.mp4" poster="cover.jpg"></video>'
+        '<img src="photo.png" alt="Photo"></body></html>'
+    )
+
+    assert [video.src for video in features.media.videos] == ["clip.mp4"]
+    assert features.media.videos[0].poster == "cover.jpg"
+    assert features.media.urls == ["photo.png", "clip.mp4"]
+
+
 def test_analyzer_applies_llm_semantic_analysis() -> None:
     llm = FakeLLMClient(
         response='''{

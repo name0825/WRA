@@ -100,8 +100,53 @@ def test_design_validator_rejects_unconfigured_frameworks():
     result = validate_design_spec(DesignSpec.model_validate(data), FeatureModel(), FrameworkConfig())
 
     assert not result.valid
-    assert "CSS framework is not configured: Tailwind" in result.errors
-    assert "JavaScript framework is not configured: UnknownJS" in result.errors
+    assert any(error.startswith("CSS framework is not configured: Tailwind") for error in result.errors)
+    assert any(error.startswith("JavaScript framework is not configured: UnknownJS") for error in result.errors)
+
+
+CATALOG = FrameworkConfig(
+    css=[Framework(name="TailwindCSS", cdn="https://example.com/tailwind.js", tag="script"),
+         Framework(name="Bootstrap", cdn="https://example.com/bootstrap.css", tag="link")],
+    js=[Framework(name="GSAP", cdn="https://example.com/gsap.js", tag="script")],
+)
+
+
+@pytest.mark.parametrize("written", ["TailwindCSS", "Tailwind", "tailwind", "Tailwind CSS", "tailwindcss"])
+def test_a_framework_is_found_however_the_model_spells_it(written):
+    """One catalogue entry, several spellings: an exact match rejected all but one."""
+    assert CATALOG.find_css(written) is not None
+    assert CATALOG.find_css(written).name == "TailwindCSS"
+
+
+def test_a_name_that_is_not_in_the_catalogue_is_still_rejected():
+    assert CATALOG.find_css("Bulma") is None
+    assert CATALOG.find_js("Tailwind") is None, "normalizing must not move it between slots"
+
+
+def test_a_spelling_variant_validates():
+    from wra.designer.schema import DesignSpec
+
+    data = make_design_spec()
+    data["design"]["framework"]["css"]["name"] = "Tailwind"
+    data["design"]["framework"]["js"]["name"] = "gsap"
+
+    assert validate_design_spec(DesignSpec.model_validate(data), FeatureModel(), CATALOG).valid
+
+
+def test_a_framework_in_the_wrong_slot_is_told_where_it_belongs():
+    """The failure that killed two runs: TailwindCSS written into framework.js."""
+    from wra.designer.schema import DesignSpec
+
+    data = make_design_spec()
+    data["design"]["framework"]["css"]["name"] = "none"
+    data["design"]["framework"]["js"]["name"] = "Tailwind"
+
+    result = validate_design_spec(DesignSpec.model_validate(data), FeatureModel(), CATALOG)
+
+    assert not result.valid
+    error = next(error for error in result.errors if error.startswith("JavaScript framework"))
+    assert "belongs in the CSS slot" in error
+    assert "GSAP" in error, "and what it could have used instead"
 
 
 def test_design_validator_accepts_configured_frameworks():

@@ -17,6 +17,11 @@ _OUTPUT_HEADROOM_TOKENS = 2048
 _INITIAL_CEILING = 32768
 
 
+# Separators for JSON that goes into a prompt. Indentation is worth 40% of the
+# block's tokens and buys the model nothing -- measured on a real FeatureModel:
+# 3095 tokens indented against 1799 compact. JSON written to disk stays indented.
+COMPACT_JSON = (",", ":")
+
 def estimate_num_ctx(prompt: str, minimum: int, maximum: int, ceiling: int | None = _INITIAL_CEILING, headroom_tokens: int = _OUTPUT_HEADROOM_TOKENS) -> int:
     """Return a power-of-two context window large enough to hold ``prompt``."""
     required = int(len(prompt) / _CHARS_PER_TOKEN) + headroom_tokens

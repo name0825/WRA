@@ -11,12 +11,13 @@ SCORE_KEYS = ("design_completeness", "visual_hierarchy", "design_consistency", "
 class Iteration:
     number: int
     directory: Path
+    slug: str
     evaluation: dict[str, Any] | None
     validation: dict[str, Any] | None
 
     @property
     def name(self) -> str:
-        return f"iteration_{self.number:03d}"
+        return f"iter{self.number}"
 
     @property
     def score(self) -> float | None:
@@ -28,7 +29,7 @@ class Iteration:
 
     @property
     def has_html(self) -> bool:
-        return (self.directory / "html.html").is_file()
+        return (self.directory / f"{self.slug}.html").is_file()
 
 
 @dataclass(frozen=True)
@@ -38,14 +39,21 @@ class Run:
     result: dict[str, Any] | None
     features: dict[str, Any] | None
     iterations: list[Iteration] = field(default_factory=list)
+    slug: str = ""
+    slugs: list[str] = field(default_factory=list)
 
     @property
     def best_iteration(self) -> int | None:
-        return (self.result or {}).get("best_iteration")
+        return (self.page_result or {}).get("best_iteration")
 
     @property
     def best_score(self) -> float | None:
-        return (self.result or {}).get("best_score")
+        return (self.page_result or {}).get("best_score")
+
+    @property
+    def page_result(self) -> dict[str, Any] | None:
+        pages = (self.result or {}).get("pages") or {}
+        return pages.get(self.slug) or (self.result if not pages else None)
 
     @property
     def title(self) -> str:
@@ -57,11 +65,15 @@ class Run:
 
     @property
     def has_final(self) -> bool:
-        return (self.directory / "final.html").is_file()
+        return (self.directory / f"{self.slug}.html").is_file()
 
     @property
     def has_original(self) -> bool:
-        return (self.directory / "original.html").is_file()
+        return (self.directory / "data" / self.slug / "original.html").is_file()
+
+    @property
+    def has_source_screenshot(self) -> bool:
+        return (self.directory / "data" / self.slug / "source.png").is_file()
 
     @property
     def complete(self) -> bool:
@@ -77,27 +89,51 @@ def read_json(path: Path) -> dict[str, Any] | None:
         return None
 
 
-def load_iterations(run_dir: Path) -> list[Iteration]:
+def page_slugs(run_dir: Path, result: dict[str, Any] | None) -> list[str]:
+    """The run's pages, entry first: the order the pipeline recorded them in.
+
+    Falling back to the directory listing puts them in alphabetical order, which
+    is not the entry page's order, so the recorded entry is pulled to the front
+    when the run says which one it is.
+    """
+    recorded = list(((result or {}).get("pages") or {}).keys())
+    data_dir = run_dir / "data"
+    found = sorted(item.name for item in data_dir.iterdir() if item.is_dir()) if data_dir.is_dir() else []
+    slugs = recorded + [slug for slug in found if slug not in recorded]
+    entry = (result or {}).get("entry")
+    if entry in slugs:
+        slugs = [entry] + [slug for slug in slugs if slug != entry]
+    return slugs
+
+
+def load_iterations(run_dir: Path, slug: str) -> list[Iteration]:
     iterations_dir = run_dir / "iterations"
     if not iterations_dir.is_dir():
         return []
     iterations = []
-    for directory in sorted(iterations_dir.iterdir()):
-        if not directory.is_dir() or not directory.name.startswith("iteration_"):
+    for directory in iterations_dir.iterdir():
+        if not directory.is_dir() or not directory.name.startswith("iter"):
             continue
         try:
-            number = int(directory.name.split("_")[-1])
+            number = int(directory.name.removeprefix("iter"))
         except ValueError:
             continue
-        iterations.append(Iteration(number, directory, read_json(directory / "evaluation.json"), read_json(directory / "validation.json")))
+        data_dir = directory / "data" / slug
+        if not data_dir.is_dir():
+            continue
+        iterations.append(Iteration(number, directory, slug, read_json(data_dir / "evaluation.json"), read_json(data_dir / "validation.json")))
     return sorted(iterations, key=lambda item: item.number)
 
 
-def load_run(output_root: Path, run_id: str) -> Run | None:
+def load_run(output_root: Path, run_id: str, slug: str | None = None) -> Run | None:
     run_dir = safe_run_dir(output_root, run_id)
     if run_dir is None:
         return None
-    return Run(run_id, run_dir, read_json(run_dir / "result.json"), read_json(run_dir / "features.json"), load_iterations(run_dir))
+    result = read_json(run_dir / "result.json")
+    slugs = page_slugs(run_dir, result)
+    selected = slug if slug in slugs else (slugs[0] if slugs else "")
+    features = read_json(run_dir / "data" / selected / "features.json") if selected else None
+    return Run(run_id, run_dir, result, features, load_iterations(run_dir, selected), selected, slugs)
 
 
 def list_runs(output_root: Path) -> list[Run]:
@@ -115,7 +151,8 @@ def safe_run_dir(output_root: Path, run_id: str) -> Path | None:
 
 
 def iteration_artifacts(iteration: Iteration) -> list[str]:
-    return [key for key, filename in ARTIFACTS.items() if (iteration.directory / filename).is_file()]
+    data_dir = iteration.directory / "data" / iteration.slug
+    return [key for key, filename in ARTIFACTS.items() if (data_dir / filename).is_file()]
 
 
 def criteria_scores(evaluation: dict[str, Any] | None) -> list[tuple[str, float | None, str]]:

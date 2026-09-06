@@ -19,8 +19,20 @@ Input: `FeatureModel` + `DesignSpec` → Output: one standalone HTML document.
 - Do not fabricate, summarize, or silently omit source content.
 - Do not use placeholders, lorem ipsum, or generic AI-cliché copy (filler verbs like Elevate/Seamless/Next-Gen; stock names like Acme or John Doe).
 - Do not invent external assets or URLs.
+- Every `src` and `url()` you write for a local file must be copied verbatim from a `path` in `source_assets.assets`. A file that is not listed there does not exist; never guess a filename, a directory, or an extension.
 - If a referenced collection is empty, do not invent content.
 - If an implementation detail is unspecified, choose the smallest implementation that preserves the DesignSpec.
+
+## Writing the words
+
+This section applies to copy you author. Where the content freedom entry has you reproduce
+source text, that rule wins and this one does not reach it.
+
+- Words are design content, not decoration. Before writing a line, decide what the page has to say in that place.
+- Name things as a reader would say them, not as the system is built.
+- Write in active voice, and let a control say what happens when it is used: "Save changes", not "Submit". An action keeps one name everywhere it appears, so the button that says Publish produces a message that says Published.
+- Say what something is or does in plain terms instead of selling it. Specific and legible beats clever.
+- Sentence case, plain verbs, no filler. Let each heading, sentence, and label do exactly one job.
 
 ## Design fidelity
 

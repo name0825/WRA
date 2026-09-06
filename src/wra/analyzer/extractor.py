@@ -15,6 +15,7 @@ from wra.core.models import (
     Requirements,
     Section,
     Structure,
+    Video,
 )
 
 

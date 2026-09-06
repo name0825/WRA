@@ -5,6 +5,8 @@ from wra.browser.models import BrowserConfig, BrowserEvaluationResult, BrowserVi
 
 logger = logging.getLogger(__name__)
 
+PREVIEW_NAME = ".browser_preview.html"
+
 
 class BrowserEvaluator:
     """Render generated HTML in Chromium and collect deterministic browser evidence."""
@@ -12,7 +14,7 @@ class BrowserEvaluator:
     def __init__(self, config: BrowserConfig) -> None:
         self._config = config
 
-    def evaluate(self, html: str, output_dir: str | Path, iteration: int) -> BrowserEvaluationResult:
+    def evaluate(self, html: str, output_dir: str | Path, iteration: int, asset_root: str | Path | None = None) -> BrowserEvaluationResult:
         if not self._config.enabled:
             logger.debug("Browser evaluation skipped: disabled")
             return BrowserEvaluationResult(enabled=False)
@@ -30,7 +32,13 @@ class BrowserEvaluator:
         output_path = Path(output_dir)
         browser_dir = output_path / f"iteration_{iteration:03d}"
         browser_dir.mkdir(parents=True, exist_ok=True)
-        html_path = browser_dir / "page.html"
+        # Rendered beside the run's `assets/` when there is one: a page loaded
+        # from the temporary directory resolves `assets/...` against that
+        # directory instead, and every image fails to load. Screenshots of a
+        # page with no images are not evidence of how the page looks.
+        page_root = Path(asset_root) if asset_root is not None else browser_dir
+        page_root.mkdir(parents=True, exist_ok=True)
+        html_path = page_root / (PREVIEW_NAME if asset_root is not None else "page.html")
         html_path.write_text(html, encoding="utf-8")
         results: list[BrowserViewportResult] = []
 
@@ -63,5 +71,7 @@ class BrowserEvaluator:
                         context.close()
             finally:
                 browser.close()
+        if asset_root is not None:
+            html_path.unlink(missing_ok=True)
         logger.info("Browser evaluation completed: iteration=%d", iteration)
         return BrowserEvaluationResult(enabled=True, viewports=results)

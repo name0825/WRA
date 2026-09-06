@@ -31,10 +31,10 @@ ul.suggestions { margin: 0; padding-left: 18px; font-size: 14px; line-height: 1.
 RUN_LIST_TEMPLATE = """<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>WRA 결과 뷰어</title><style>{{ css }}</style></head>
 <body><header><h1>WRA 결과 뷰어</h1><span class="crumb">{{ runs|length }}개 실행</span></header><main>
 {% if not runs %}<p class="muted">'{{ output_root }}' 폴더에 실행 결과가 없습니다.</p>{% else %}
-<table><tr><th>실행</th><th>제목</th><th>유형</th><th>반복</th><th>최고 반복</th><th>최고 점수</th><th>결과물</th></tr>
+<table><tr><th>실행</th><th>제목</th><th>유형</th><th>페이지</th><th>반복</th><th>최고 반복</th><th>최고 점수</th><th>결과물</th></tr>
 {% for run in runs %}<tr>
 <td><a href="/run/{{ run.run_id }}">{{ run.run_id }}</a></td>
-<td>{{ run.title }}</td><td>{{ run.site_type }}</td><td>{{ run.iterations|length }}</td>
+<td>{{ run.title }}</td><td>{{ run.site_type }}</td><td>{{ run.slugs|length }}</td><td>{{ run.iterations|length }}</td>
 <td>{{ run.best_iteration if run.best_iteration is not none else '-' }}</td>
 <td>{% if run.best_score is not none %}<span class="badge {{ score_band(run.best_score) }}">{{ '%.2f'|format(run.best_score) }}</span>{% else %}<span class="badge none">-</span>{% endif %}</td>
 <td>{% if run.complete %}<span class="pill">final</span>{% else %}<span class="muted">미완료</span>{% endif %}</td>
@@ -44,33 +44,34 @@ RUN_LIST_TEMPLATE = """<!doctype html><html lang="ko"><head><meta charset="utf-8
 RUN_DETAIL_TEMPLATE = """<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>{{ run.run_id }}</title><style>{{ css }}</style></head>
 <body><header><h1><a href="/">WRA</a> / {{ run.run_id }}</h1>
 <span class="crumb">{{ run.title }} · {{ run.site_type }} · 최고 {{ '%.2f'|format(run.best_score) if run.best_score is not none else '-' }} (반복 {{ run.best_iteration if run.best_iteration is not none else '-' }})</span>
-{% if run.features %}<span class="crumb"><a href="/run/{{ run.run_id }}/features">features.json</a></span>{% endif %}</header><main>
+{% if run.features %}<span class="crumb"><a href="/run/{{ run.run_id }}/features?page={{ run.slug }}">features.json</a></span>{% endif %}</header><main>
+{% if run.slugs|length > 1 %}<p class="muted">페이지: {% for slug in run.slugs %}{% if slug == run.slug %}<strong>{{ slug }}</strong>{% else %}<a href="/run/{{ run.run_id }}?page={{ slug }}">{{ slug }}</a>{% endif %}{% if not loop.last %} · {% endif %}{% endfor %}</p>{% endif %}
 <section><h2>원본 / 최종</h2><div class="frames">
-<div class="frame"><h3>original.html {% if run.has_original %}<a href="/raw/{{ run.run_id }}/original" target="_blank">새 창</a>{% endif %}</h3>
-{% if run.has_original %}<iframe src="/raw/{{ run.run_id }}/original"></iframe>{% else %}<p class="muted" style="padding:12px">없음</p>{% endif %}</div>
-<div class="frame"><h3>final.html {% if run.has_final %}<a href="/raw/{{ run.run_id }}/final" target="_blank">새 창</a>{% endif %}</h3>
-{% if run.has_final %}<iframe src="/raw/{{ run.run_id }}/final"></iframe>{% else %}<p class="muted" style="padding:12px">없음</p>{% endif %}</div>
+<div class="frame"><h3>원본 {{ run.slug }} {% if run.has_original %}<a href="/raw/{{ run.run_id }}/original/{{ run.slug }}" target="_blank">새 창</a>{% endif %}</h3>
+{% if run.has_original %}<iframe src="/raw/{{ run.run_id }}/original/{{ run.slug }}"></iframe>{% else %}<p class="muted" style="padding:12px">없음</p>{% endif %}</div>
+<div class="frame"><h3>{{ run.slug }}.html {% if run.has_final %}<a href="/raw/{{ run.run_id }}/final/{{ run.slug }}" target="_blank">새 창</a>{% endif %}</h3>
+{% if run.has_final %}<iframe src="/raw/{{ run.run_id }}/final/{{ run.slug }}"></iframe>{% else %}<p class="muted" style="padding:12px">없음</p>{% endif %}</div>
 </div></section>
 <section><h2>반복</h2>
 {% if not run.iterations %}<p class="muted">저장된 반복 결과가 없습니다.</p>{% else %}
 <table><tr><th>반복</th><th>점수</th><th>검증</th><th>요약</th><th>산출물</th></tr>
 {% for iteration in run.iterations %}<tr>
-<td><a href="/run/{{ run.run_id }}/iteration/{{ iteration.number }}">{{ iteration.number }}</a>{% if iteration.number == run.best_iteration %} <span class="pill">best</span>{% endif %}</td>
+<td><a href="/run/{{ run.run_id }}/iteration/{{ iteration.number }}?page={{ run.slug }}">{{ iteration.number }}</a>{% if iteration.number == run.best_iteration %} <span class="pill">best</span>{% endif %}</td>
 <td>{% if iteration.score is not none %}<span class="badge {{ score_band(iteration.score) }}">{{ '%.2f'|format(iteration.score) }}</span>{% else %}<span class="badge none">-</span>{% endif %}</td>
 <td>{% if iteration.valid is none %}<span class="muted">-</span>{% elif iteration.valid %}<span class="badge high">valid</span>{% else %}<span class="badge low">invalid</span>{% endif %}</td>
 <td class="muted">{{ (iteration.evaluation or {}).get('summary') or '' }}</td>
-<td>{% if iteration.has_html %}<a href="/raw/{{ run.run_id }}/iteration/{{ iteration.number }}" target="_blank">html</a>{% endif %}
+<td>{% if iteration.has_html %}<a href="/raw/{{ run.run_id }}/iteration/{{ iteration.number }}/{{ run.slug }}" target="_blank">html</a>{% endif %}
 {% for artifact in artifacts(iteration) %} <a href="/json/{{ run.run_id }}/iteration/{{ iteration.number }}/{{ artifact }}">{{ artifact }}</a>{% endfor %}</td>
 </tr>{% endfor %}</table>{% endif %}</section>
 </main></body></html>"""
 
 ITERATION_TEMPLATE = """<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>{{ run.run_id }} #{{ iteration.number }}</title><style>{{ css }}</style></head>
-<body><header><h1><a href="/">WRA</a> / <a href="/run/{{ run.run_id }}">{{ run.run_id }}</a> / 반복 {{ iteration.number }}</h1>
-<span class="crumb">{% if previous %}<a href="/run/{{ run.run_id }}/iteration/{{ previous }}">← 이전</a>{% endif %}
-{% if next %}<a href="/run/{{ run.run_id }}/iteration/{{ next }}">다음 →</a>{% endif %}</span></header><main>
+<body><header><h1><a href="/">WRA</a> / <a href="/run/{{ run.run_id }}?page={{ run.slug }}">{{ run.run_id }}</a> / {{ run.slug }} / 반복 {{ iteration.number }}</h1>
+<span class="crumb">{% if previous %}<a href="/run/{{ run.run_id }}/iteration/{{ previous }}?page={{ run.slug }}">← 이전</a>{% endif %}
+{% if next %}<a href="/run/{{ run.run_id }}/iteration/{{ next }}?page={{ run.slug }}">다음 →</a>{% endif %}</span></header><main>
 <section><h2>결과 HTML</h2>
-{% if iteration.has_html %}<div class="frame"><h3><a href="/raw/{{ run.run_id }}/iteration/{{ iteration.number }}" target="_blank">새 창에서 열기</a></h3>
-<iframe src="/raw/{{ run.run_id }}/iteration/{{ iteration.number }}"></iframe></div>
+{% if iteration.has_html %}<div class="frame"><h3><a href="/raw/{{ run.run_id }}/iteration/{{ iteration.number }}/{{ run.slug }}" target="_blank">새 창에서 열기</a></h3>
+<iframe src="/raw/{{ run.run_id }}/iteration/{{ iteration.number }}/{{ run.slug }}"></iframe></div>
 {% else %}<p class="muted">html.html 없음</p>{% endif %}</section>
 {% if criteria %}<section><h2>평가 · 총점
 <span class="badge {{ score_band(iteration.score) }}">{{ '%.2f'|format(iteration.score) if iteration.score is not none else '-' }}</span></h2>

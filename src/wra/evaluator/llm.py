@@ -3,7 +3,7 @@ import logging
 from pathlib import Path
 
 from wra.browser.models import BrowserEvaluationResult
-from wra.core.models import FACTUAL_ACCURACY_CAP, ContentFreedom, EvaluationResult, FeatureModel, content_freedom_policy
+from wra.core.models import CONTENT_GATE_THRESHOLD, FACTUAL_ACCURACY_CAP, ContentFreedom, EvaluationResult, FeatureModel, content_freedom_policy, content_preservation_is_a_gate
 from wra.designer.schema import DesignSpec
 from wra.llm.client import LLMClient
 from wra.llm.context import estimate_num_ctx
@@ -46,6 +46,18 @@ class LLMEvaluator:
             "`deterministic_content_findings` in the input lists corruptions already confirmed by deterministic "
             "checking. Treat every entry as a defect you have observed, apply the cap above, and name it in the "
             "`content_preservation` feedback."
+            f"{self._content_gate_instruction()}"
+        )
+
+    def _content_gate_instruction(self) -> str:
+        """Tell the evaluator when its content_preservation score is a ceiling."""
+        if not content_preservation_is_a_gate(self._content_freedom):
+            return ""
+        return (
+            "\n\nAt this freedom level `content_preservation` does not average into the overall score; it caps it. "
+            f"A score below {CONTENT_GATE_THRESHOLD:.0f} becomes the page's overall score no matter how well it is "
+            "designed. Score it as a judgement on whether the page is still about the same subject, states the "
+            "source's facts correctly, and invents no external assets - not on how much source wording survived."
         )
 
     def evaluate(self, features: FeatureModel, design_spec: DesignSpec, html: str, browser_result: BrowserEvaluationResult | None = None, content_findings: list[str] | None = None, model: str | None = None, think: bool | None = None, timeout: float | None = None) -> EvaluationResult:
@@ -87,7 +99,11 @@ class LLMEvaluator:
                 normalized_response = normalize_json_response(response)
                 if normalized_response != response.strip():
                     logger.debug("Normalized evaluator JSON response: raw_chars=%d normalized_chars=%d", len(response), len(normalized_response))
-                result = EvaluationResult.model_validate_json(normalized_response)
+                payload = json.loads(normalized_response)
+                if isinstance(payload, dict):
+                    # The level is the pipeline's, not the model's to report.
+                    payload["content_freedom"] = self._content_freedom
+                result = EvaluationResult.model_validate(payload)
             except Exception as exc:
                 last_error = exc
                 if attempt >= self._max_retries:
