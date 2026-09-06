@@ -67,7 +67,72 @@ def test_discover_requires_html(tmp_path: Path) -> None:
 
 def test_asset_map_covers_media_only(tmp_path: Path) -> None:
     bundle = discover(_site(tmp_path))
-    assert bundle.asset_map == {"hero.png": "assets/hero.png", "icon.png": "assets/icon.png"}
+    # Keyed by source path and by basename: the basename joins markup that
+    # addresses a path we never received, the source path tells two files of
+    # the same name apart.
+    assert bundle.asset_map == {
+        "hero.png": "assets/hero.png",
+        "icon.png": "assets/icon.png",
+        "src/img/hero.png": "assets/hero.png",
+        "src/img/icon.png": "assets/icon.png",
+    }
+
+
+def test_duplicate_basenames_keep_separate_files(tmp_path: Path) -> None:
+    root = tmp_path / "input"
+    (root / "a").mkdir(parents=True)
+    (root / "b").mkdir()
+    (root / "index.html").write_text(
+        '<html><body><img src="a/logo.png"><img src="b/logo.png"></body></html>',
+        encoding="utf-8",
+    )
+    _png(root / "a" / "logo.png", 100, 50)
+    _png(root / "b" / "logo.png", 200, 80)
+
+    bundle = discover(root)
+    html = rewrite_asset_paths(bundle.entry.html, bundle.render_map)
+    assert 'src="assets/logo.png"' in html
+    assert 'src="assets/b/logo.png"' in html
+
+    run_dir = tmp_path / "run"
+    assert copy_assets(bundle, run_dir) == 2
+    # Both files survive, each at the path the rewritten markup points to.
+    assert (run_dir / "assets" / "logo.png").read_bytes() == (root / "a" / "logo.png").read_bytes()
+    assert (run_dir / "assets" / "b" / "logo.png").read_bytes() == (root / "b" / "logo.png").read_bytes()
+    assert [(info.path, info.width) for info in build_asset_infos(bundle)] == [
+        ("assets/logo.png", 100),
+        ("assets/b/logo.png", 200),
+    ]
+
+
+def test_duplicate_basename_at_the_input_root_keeps_both_files(tmp_path: Path) -> None:
+    """A file at the input root has no directory to be kept apart by: its
+    source path is its basename. Keying it at `logo.png` used to take the key
+    the deeper file's basename alias already held and map both to
+    `assets/logo.png`, so one file overwrote the other on copy and both
+    references rendered the same image."""
+    root = tmp_path / "input"
+    (root / "a").mkdir(parents=True)
+    (root / "index.html").write_text(
+        '<html><body><img src="a/logo.png"><img src="logo.png"></body></html>',
+        encoding="utf-8",
+    )
+    _png(root / "a" / "logo.png", 100, 50)
+    _png(root / "logo.png", 200, 80)
+
+    bundle = discover(root)
+    html = rewrite_asset_paths(bundle.entry.html, bundle.render_map)
+    assert 'src="assets/logo.png"' in html
+    assert 'src="assets/logo-2.png"' in html
+
+    run_dir = tmp_path / "run"
+    assert copy_assets(bundle, run_dir) == 2
+    assert (run_dir / "assets" / "logo.png").read_bytes() == (root / "a" / "logo.png").read_bytes()
+    assert (run_dir / "assets" / "logo-2.png").read_bytes() == (root / "logo.png").read_bytes()
+    assert sorted((info.path, info.width) for info in build_asset_infos(bundle)) == [
+        ("assets/logo-2.png", 200),
+        ("assets/logo.png", 100),
+    ]
 
 
 def test_rewrite_asset_paths_normalises_absolute_references(tmp_path: Path) -> None:

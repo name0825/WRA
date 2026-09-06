@@ -269,7 +269,7 @@ def build_asset_infos(bundle: InputBundle) -> list[AssetInfo]:
     """Describe every delivered asset with facts read straight off the file."""
     infos: list[AssetInfo] = []
     for item in bundle.files:
-        output = bundle.asset_map.get(Path(item.relative).name.lower())
+        output = bundle.asset_map.get(item.relative.lower())
         if output is None:
             continue
         width = height = None
