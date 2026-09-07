@@ -10,8 +10,8 @@ class RecordingClient:
         self.response = response
         self.calls: list[dict] = []
 
-    def generate(self, prompt, model, options=None, images=None, *, think=None, timeout=None):
-        self.calls.append({"prompt": prompt, "model": model, "images": images})
+    def generate(self, prompt, model, options=None, images=None, *, think=None, format=None, timeout=None):
+        self.calls.append({"prompt": prompt, "model": model, "images": images, "format": format})
         return self.response
 
 
@@ -80,7 +80,7 @@ def test_concurrent_analysis_covers_every_image(tmp_path: Path) -> None:
 
 def test_concurrent_analysis_isolates_one_failure(tmp_path: Path) -> None:
     class OneBadImage(RecordingClient):
-        def generate(self, prompt, model, options=None, images=None, *, think=None, timeout=None):
+        def generate(self, prompt, model, options=None, images=None, *, think=None, format=None, timeout=None):
             if images and "photo2.png" in images[0]:
                 raise RuntimeError("Failed to load image or audio file")
             return self.response
@@ -104,6 +104,9 @@ def test_attaches_insight_to_the_asset(tmp_path: Path) -> None:
     assert asset.vision.role == "product"
     assert asset.vision.mood == ["industrial", "metallic", "dark"]
     assert len(client.calls) == 1
+    # A schema, not the bare "json" grammar, and the insight one at that.
+    assert isinstance(client.calls[0]["format"], dict)
+    assert client.calls[0]["format"]["title"] == "VisionInsight"
 
 
 def test_a_failing_image_does_not_break_the_run(tmp_path: Path) -> None:
@@ -130,8 +133,11 @@ def test_cache_prevents_a_second_call_for_the_same_file(tmp_path: Path) -> None:
 
 
 def test_page_impression_is_capped(tmp_path: Path) -> None:
-    analyzer = _analyzer(tmp_path, RecordingClient(IMPRESSION))
+    client = RecordingClient(IMPRESSION)
+    analyzer = _analyzer(tmp_path, client)
     impression = analyzer.analyze_page(_image(tmp_path, "source.png"))
+    # analyze_page and _analyze_one share _request but not their schema.
+    assert client.calls[0]["format"]["title"] == "PageImpression"
     assert impression is not None
     assert impression.weaknesses == ["weak typographic hierarchy", "low contrast"]
     assert len(impression.mood) <= 5

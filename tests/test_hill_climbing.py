@@ -4,14 +4,11 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-import yaml
 
 from wra.core.iteration import IterationEngine, _PageRun
 from wra.core.models import EvaluationDimension, EvaluationResult, FeatureModel, WRAConfig
 from wra.core.preparation import PreparedPage
-
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-SAMPLE_CONFIG = PROJECT_ROOT / "config" / "config.yaml.sample"
+from support import sample_config_data
 
 
 def _evaluation(score: float, **dimensions) -> EvaluationResult:
@@ -101,7 +98,7 @@ def test_an_improvement_clears_the_previous_setback() -> None:
 # --- termination ------------------------------------------------------------
 
 def _config(**termination) -> WRAConfig:
-    data = yaml.safe_load(SAMPLE_CONFIG.read_text(encoding="utf-8"))
+    data = sample_config_data()
     data["pipeline"] = {**data["pipeline"], "max_iterations": 99, "evaluation_threshold": 9.5,
                         "termination": {"enabled": True, **termination}}
     return WRAConfig.model_validate(data)
@@ -150,7 +147,7 @@ def test_the_threshold_is_judged_on_the_best_not_the_latest() -> None:
 
 
 def test_a_disabled_termination_ignores_patience() -> None:
-    data = yaml.safe_load(SAMPLE_CONFIG.read_text(encoding="utf-8"))
+    data = sample_config_data()
     data["pipeline"] = {**data["pipeline"], "termination": {"enabled": False, "patience": 1}}
     engine = _engine(WRAConfig.model_validate(data))
     state = _state()
@@ -197,6 +194,47 @@ class _Evaluator:
         return _evaluation(score)
 
 
+class _RaisingEvaluator:
+    """Fails every evaluation, the way an over-context Ollama call does."""
+
+    def evaluate(self, features, design_spec, html, browser_result, content_findings, model, think=None, timeout=None):
+        raise RuntimeError("evaluator exploded")
+
+
+def test_a_failed_evaluation_still_saves_the_iteration_then_raises(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr("wra.core.iteration.validate_html", lambda html, features: SimpleNamespace(valid=True, errors=[], warnings=[]))
+    monkeypatch.setattr("wra.core.iteration.find_corrupted_tokens", lambda html, features: [])
+
+    designer, generator = _Designer(), _Generator()
+    config = _config(patience=0)
+    pipeline = config.pipeline.model_copy(update={"output": config.pipeline.output.model_copy(update={"save_mode": "best"})})
+    config = config.model_copy(update={"pipeline": pipeline})
+    engine = IterationEngine(config=config, designer=designer, generator=generator, evaluator=_RaisingEvaluator())
+
+    page = PreparedPage(slug="index", relative="index.html", html="", features=FeatureModel(),
+                        run_root=tmp_path, data_dir=tmp_path / "data" / "index", is_entry=True)
+    state = _PageRun(page=page)
+
+    from wra.core.output import OutputManager
+    output_manager = OutputManager(tmp_path, config.pipeline.output.save_mode)
+    save_calls = []
+    original_save = output_manager.save_iteration
+
+    def spy_save(**kwargs):
+        save_calls.append(kwargs)
+        return original_save(**kwargs)
+
+    monkeypatch.setattr(output_manager, "save_iteration", spy_save)
+
+    with pytest.raises(RuntimeError, match="evaluator exploded"):
+        engine._run_one_iteration(state, 1, None, output_manager, tmp_path / ".browser_tmp")
+
+    assert len(save_calls) == 1
+    assert save_calls[0]["evaluation"] is None
+    assert save_calls[0]["score"] is None
+    assert save_calls[0]["html"] == "<html>v1</html>"
+
+
 def test_the_engine_revises_the_best_page_not_the_last(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr("wra.core.iteration.validate_html", lambda html, features: SimpleNamespace(valid=True, errors=[], warnings=[]))
     monkeypatch.setattr("wra.core.iteration.find_corrupted_tokens", lambda html, features: [])
@@ -215,3 +253,29 @@ def test_the_engine_revises_the_best_page_not_the_last(tmp_path: Path, monkeypat
     # v1 scored 8.5, v2 scored 4.0. Both later revisions must start from v1.
     assert designer.revised_from == ["<html>v1</html>", "<html>v1</html>"]
     assert results[0].html == "<html>v1</html>", "the best page is what gets finalized"
+
+
+def _spec(primary: str) -> "DesignSpec":
+    from test_generator import make_spec
+
+    spec = make_spec()
+    spec.design.color_system.primary = primary
+    return spec
+
+
+def test_siblings_follow_the_entry_pages_best_design_not_its_latest() -> None:
+    """A rejected entry-page attempt must not set the palette the site is built on."""
+    lead, sibling = _state(), _state()
+    lead.record(SimpleNamespace(**{**vars(_result(1, _evaluation(8.5))), "design_spec": _spec("#good")}))
+    lead.record(SimpleNamespace(**{**vars(_result(2, _evaluation(4.0))), "design_spec": _spec("#bad")}))
+    assert lead.best.design_spec.design.color_system.primary == "#good"
+
+    system = IterationEngine._design_system([lead, sibling], sibling)
+
+    assert system is not None
+    assert system["color_system"]["primary"] == "#good"
+
+
+def test_no_design_system_before_the_entry_page_has_run() -> None:
+    lead, sibling = _state(), _state()
+    assert IterationEngine._design_system([lead, sibling], sibling) is None

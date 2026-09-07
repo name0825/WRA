@@ -6,6 +6,10 @@ initial context window from the actual prompt keeps those instructions inside
 the window instead of relying on recovery retries to discover the truncation.
 """
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 # Conservative characters-per-token ratio. Mixed English/CJK prompts tokenize
 # closer to 1.5-3 chars per token, so 2.5 avoids under-sizing the window.
 _CHARS_PER_TOKEN = 2.5
@@ -27,7 +31,10 @@ def estimate_num_ctx(prompt: str, minimum: int, maximum: int, ceiling: int | Non
     required = int(len(prompt) / _CHARS_PER_TOKEN) + headroom_tokens
     size = max(minimum, 1 << max(0, required - 1).bit_length())
     upper = maximum if ceiling is None else min(maximum, ceiling)
-    return max(minimum, min(size, upper)) if minimum <= upper else minimum
+    result = max(minimum, min(size, upper)) if minimum <= upper else minimum
+    if size > upper:
+        logger.warning("num_ctx clamped: prompt wanted %d but ceiling/maximum is %d, returning %d", size, upper, result)
+    return result
 
 
 def growth_num_ctx(attempt: int, total_attempts: int, initial: int, maximum: int, growth_power: float) -> int:

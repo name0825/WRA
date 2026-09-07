@@ -3,15 +3,14 @@ import re
 from pathlib import Path
 
 import pytest
-import yaml
 
 from wra.core.inputs import discover
 from wra.core.models import Button, FeatureModel, Heading, Link, PageImpression, ScriptDigest, SourceAssets, StyleDigest, WRAConfig
 from wra.core.preparation import InputPreparer, merge_feature_models, retarget_links
 from wra.designer.site_plan import SitePlanError, SitePlanner, identity_plan
+from support import sample_config_data
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-SAMPLE_CONFIG = PROJECT_ROOT / "config" / "config.yaml.sample"
 
 SUMMARIES = [
     {"slug": "index", "title": "Home"},
@@ -24,9 +23,11 @@ class ReplyClient:
     def __init__(self, *responses: str) -> None:
         self.responses = list(responses)
         self.calls = 0
+        self.formats: list = []
 
-    def generate(self, prompt, model, options=None, images=None, *, think=None, timeout=None):
+    def generate(self, prompt, model, options=None, images=None, *, think=None, format=None, timeout=None):
         self.calls += 1
+        self.formats.append(format)
         return self.responses[min(self.calls - 1, len(self.responses) - 1)]
 
 
@@ -45,7 +46,10 @@ def _planner(client, **kwargs) -> SitePlanner:
 
 
 def test_merges_two_pages_into_one() -> None:
-    plan = _planner(ReplyClient(MERGED)).plan(SUMMARIES)
+    client = ReplyClient(MERGED)
+    plan = _planner(client).plan(SUMMARIES)
+    # A schema, not the bare "json" grammar.
+    assert isinstance(client.formats[0], dict)
     assert [page.slug for page in plan.pages] == ["index", "company"]
     assert plan.pages[1].sources == ["about", "history"]
     assert plan.restructures
@@ -215,7 +219,7 @@ class StubPlanner:
 
 
 def _config(freedom: str, mode: str) -> WRAConfig:
-    data = yaml.safe_load(SAMPLE_CONFIG.read_text(encoding="utf-8"))
+    data = sample_config_data()
     data["content"] = {"freedom": freedom}
     data["input"] = {**data["input"], "mode": mode}
     data["input"]["vision"] = {**data["input"]["vision"], "enabled": False}

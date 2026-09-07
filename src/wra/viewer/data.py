@@ -72,10 +72,6 @@ class Run:
         return (self.directory / "data" / self.slug / "original.html").is_file()
 
     @property
-    def has_source_screenshot(self) -> bool:
-        return (self.directory / "data" / self.slug / "source.png").is_file()
-
-    @property
     def complete(self) -> bool:
         return self.result is not None and self.has_final
 

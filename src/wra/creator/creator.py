@@ -9,6 +9,7 @@ from wra.core.models import AssetInfo, BusinessInfo, Button, Content, FeatureMod
 from wra.llm.client import LLMClient
 from wra.llm.context import COMPACT_JSON, estimate_num_ctx
 from wra.llm.response import normalize_json_response
+from wra.llm.schema import bound_strings
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +44,9 @@ class SiteDraft(BaseModel):
     brand_voice: str = ""
     business: BusinessInfo = Field(default_factory=BusinessInfo)
     pages: list[CreatedPage]
+
+
+SITE_DRAFT_SCHEMA = bound_strings(SiteDraft.model_json_schema())
 
 
 class CreatorError(ValueError):
@@ -92,7 +96,7 @@ class Creator:
         for attempt in range(self._max_retries + 1):
             logger.info("Site creation attempt %d/%d: model=%s brief_chars=%d images=%d num_ctx=%d", attempt + 1, self._max_retries + 1, self._model, len(brief), len(available), num_ctx)
             try:
-                response = self._llm_client.generate(prompt=prompt, model=self._model, options={"format": "json", "num_ctx": num_ctx}, think=self._think, timeout=self._timeout)
+                response = self._llm_client.generate(prompt=prompt, model=self._model, options={"num_ctx": num_ctx}, think=self._think, format=SITE_DRAFT_SCHEMA, timeout=self._timeout)
                 draft = self._parse(response, {item["path"] for item in available})
                 logger.info("Site draft ready: type=%s industry=%s pages=%s", draft.site_type, draft.industry, [page.slug for page in draft.pages])
                 return draft

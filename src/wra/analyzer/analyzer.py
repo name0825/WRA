@@ -12,12 +12,15 @@ from wra.analyzer.extractor import (
     extract_structure,
 )
 from wra.analyzer.html_parser import parse_html
-from wra.core.models import BusinessInfo, FeatureModel, ModelSpec, Requirements, Site
+from wra.core.models import BusinessInfo, FeatureModel, Requirements, SemanticAnalysis, Site
 from wra.llm.client import LLMClient
 from wra.llm.context import estimate_num_ctx
 from wra.llm.response import normalize_json_response
+from wra.llm.schema import bound_strings
 
 logger = logging.getLogger(__name__)
+
+SEMANTIC_ANALYSIS_SCHEMA = bound_strings(SemanticAnalysis.model_json_schema())
 
 
 class HTMLAnalyzer:
@@ -59,12 +62,6 @@ class HTMLAnalyzer:
         logger.info("Analyzer completed")
         return features
 
-    def analyze_file(self, path: str | Path) -> FeatureModel:
-        file_path = Path(path)
-        logger.info("Reading input HTML: %s", file_path)
-        html = file_path.read_text(encoding="utf-8")
-        return self.analyze(html)
-
     def _apply_semantic_analysis(self, features: FeatureModel) -> FeatureModel:
         prompt_template = self._prompt_path.read_text(encoding="utf-8")
         # Data first, instructions last: Ollama drops the front of an over-long
@@ -77,17 +74,15 @@ class HTMLAnalyzer:
         )
         prompt = base_prompt
         num_ctx = estimate_num_ctx(base_prompt, self._min_num_ctx, self._max_num_ctx, ceiling=self._ceiling_num_ctx)
-        last_error: Exception | None = None
 
         for attempt in range(self._semantic_max_retries + 1):
             try:
-                response = self._llm_client.generate(prompt=prompt, model=self._analyzer_model, options={"format": "json", "num_ctx": num_ctx}, think=self._analyzer_think, timeout=self._analyzer_timeout)
+                response = self._llm_client.generate(prompt=prompt, model=self._analyzer_model, options={"num_ctx": num_ctx}, think=self._analyzer_think, format=SEMANTIC_ANALYSIS_SCHEMA, timeout=self._analyzer_timeout)
                 semantic = self._parse_semantic_response(response)
                 logger.debug("Analyzer semantic response parsed: keys=%s", sorted(semantic.keys()))
                 self._merge_semantic_analysis(features, semantic)
                 return features
             except Exception as exc:
-                last_error = exc
                 if attempt >= self._semantic_max_retries:
                     logger.exception("Analyzer semantic analysis failed after %d attempt(s)", attempt + 1)
                     raise
@@ -102,23 +97,24 @@ class HTMLAnalyzer:
                     "Return JSON only, conforming exactly to the analyzer schema. Keep it compact and do not generate HTML, CSS, JavaScript, or implementation instructions."
                 )
 
-        if last_error is not None:
-            raise last_error
-        raise RuntimeError("Analyzer semantic analysis failed without an error")
+        raise RuntimeError("Analyzer semantic retry loop exited without a result")
 
     def _merge_semantic_analysis(self, features: FeatureModel, semantic: dict[str, Any]) -> None:
         # Snapshot the deterministic strings before any semantic value is merged.
         # Otherwise semantic business values become their own proof of being
         # verbatim source text, and invented strings enter must_preserve.
         deterministic_strings = self._normalised_feature_strings(features)
-        if "site" in semantic:
+        # A model with nothing to say about a section returns the key holding a
+        # null rather than omitting it, and JSON mode makes that the normal case:
+        # the shape is satisfied, the content is empty. A null is an absent section.
+        if semantic.get("site") is not None:
             features.site = Site.model_validate(semantic["site"])
-        if "business" in semantic:
+        if semantic.get("business") is not None:
             semantic_business = BusinessInfo.model_validate(semantic["business"])
             features.business = self._merge_business_info(features.business, semantic_business)
-        if "navigation" in semantic:
+        if semantic.get("navigation") is not None:
             features.navigation = semantic["navigation"]
-        if "requirements" in semantic:
+        if semantic.get("requirements") is not None:
             semantic_requirements = Requirements.model_validate(semantic["requirements"])
             features.requirements = self._merge_requirements(features.requirements, semantic_requirements, deterministic_strings)
 

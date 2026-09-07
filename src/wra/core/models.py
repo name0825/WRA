@@ -11,6 +11,10 @@ class OllamaConfig(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     base_url: str
+    # Ollama unloads an idle model after 5 minutes by default, and a browser
+    # evaluation or a save step easily runs longer than that between two LLM
+    # calls. Holding the runner resident is what makes single-model mode pay off.
+    keep_alive: str | float | None = "30m"
 
 
 class ModelSpec(BaseModel):
@@ -30,40 +34,39 @@ class ModelSpec(BaseModel):
         return value
 
 
+SINGLE_MODEL_ROLES = ("analyzer", "designer", "generator", "evaluator", "vision", "creator", "refiner")
+
+
+class SingleModelConfig(BaseModel):
+    """One model, one context window, for the whole run."""
+    model_config = ConfigDict(frozen=True)
+
+    enabled: bool = False
+    name: str = ""
+    think: bool | None = None
+    timeout: float | None = Field(default=None, gt=0)
+    num_ctx: int | None = Field(default=32768, gt=0)
+
+    @model_validator(mode="after")
+    def validate_name(self):
+        if self.enabled and not self.name.strip():
+            raise ValueError("models.single.name must not be empty when models.single.enabled is true")
+        return self
+
+
 class ModelConfig(BaseModel):
     model_config = ConfigDict(frozen=True)
 
+    single: SingleModelConfig = SingleModelConfig()
     analyzer: list[ModelSpec] = Field(default_factory=list)
     designer: list[ModelSpec] = Field(default_factory=list)
     generator: list[ModelSpec] = Field(default_factory=list)
+    evaluator: list[ModelSpec] = Field(default_factory=list)
     vision: list[ModelSpec] = Field(default_factory=list)
     creator: list[ModelSpec] = Field(default_factory=list)
     refiner: list[ModelSpec] = Field(default_factory=list)
 
-    @field_validator("analyzer", "designer", "generator", "vision", "creator", "refiner", mode="before")
-    @classmethod
-    def normalize_models(cls, value):
-        if value is None:
-            return []
-        if isinstance(value, (str, dict)):
-            value = [value]
-        normalized = []
-        for item in value:
-            if isinstance(item, str):
-                normalized.append({"name": item})
-            elif isinstance(item, dict):
-                normalized.append(item)
-            else:
-                normalized.append(item)
-        return normalized
-
-
-class EvaluationConfig(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    model: list[ModelSpec] = Field(default_factory=list)
-
-    @field_validator("model", mode="before")
+    @field_validator("analyzer", "designer", "generator", "evaluator", "vision", "creator", "refiner", mode="before")
     @classmethod
     def normalize_models(cls, value):
         if value is None:
@@ -364,13 +367,44 @@ class WRAConfig(BaseModel):
     creator: CreatorConfig = CreatorConfig()
     design: DesignConfig = DesignConfig()
     content: ContentConfig = ContentConfig()
-    evaluation: EvaluationConfig = EvaluationConfig()
     browser: BrowserConfig = BrowserConfig()
     pipeline: PipelineConfig
     recovery: RecoveryConfig = RecoveryConfig()
     frameworks: FrameworkConfig = FrameworkConfig()
     logging: LoggingConfig = LoggingConfig()
     viewer: ViewerConfig = ViewerConfig()
+
+    # Single-model mode is a load-time rewrite rather than a runtime branch:
+    # every role pool is replaced by the one pinned model and every recovery
+    # window is pinned to one size, so Ollama keeps a single runner resident for
+    # the whole run instead of rebuilding it whenever the model or num_ctx
+    # changes. The cost is that recovery can no longer grow the window on a
+    # truncated response; it retries with concision guidance on the same window.
+    @model_validator(mode="before")
+    @classmethod
+    def apply_single_model(cls, data):
+        if not isinstance(data, dict):
+            return data
+        models = data.get("models")
+        if not isinstance(models, dict):
+            return data
+        single = models.get("single")
+        if not isinstance(single, dict) or not single.get("enabled"):
+            return data
+
+        spec = {"name": single.get("name", "")}
+        if single.get("think") is not None:
+            spec["think"] = single["think"]
+        if single.get("timeout") is not None:
+            spec["timeout"] = single["timeout"]
+        models = {**models, **{role: [dict(spec)] for role in SINGLE_MODEL_ROLES}}
+
+        num_ctx = single.get("num_ctx")
+        recovery = data.get("recovery")
+        recovery = dict(recovery) if isinstance(recovery, dict) else {}
+        if num_ctx is not None:
+            recovery.update({"initial_num_ctx": num_ctx, "initial_ceiling_num_ctx": num_ctx, "max_num_ctx": num_ctx})
+        return {**data, "models": models, "recovery": recovery}
 
 
 class Metadata(BaseModel):
@@ -556,6 +590,18 @@ class Site(BaseModel):
     type: str | None = None
     industry: str | None = None
     brand: dict[str, object] = Field(default_factory=dict)
+
+
+class SemanticAnalysis(BaseModel):
+    # The analyzer's semantic response shape. Every field is required on
+    # purpose: an optional field lets the schema be satisfied by `{}`, which is
+    # exactly the empty-object collapse this schema exists to prevent. The
+    # merge stays key-by-key in the analyzer -- this model is used only for its
+    # JSON schema.
+    site: Site
+    business: BusinessInfo
+    navigation: dict[str, object]
+    requirements: Requirements
 
 
 class FeatureModel(BaseModel):

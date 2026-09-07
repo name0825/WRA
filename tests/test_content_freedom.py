@@ -3,7 +3,7 @@ import pytest
 from wra.core.iteration import IterationEngine
 from wra.core.models import FACTUAL_ACCURACY_CAP, FACTUAL_ACCURACY_RULE, ContentConfig, FeatureModel, FrameworkConfig, Section, WRAConfig, content_freedom_policy
 from wra.designer.planner import DesignPlanner
-from wra.evaluator.llm import LLMEvaluator
+from wra.evaluator.llm import EVALUATION_SCHEMA, LLMEvaluator
 
 
 def make_config(freedom: str) -> WRAConfig:
@@ -74,6 +74,14 @@ def test_evaluator_instruction_carries_level_and_factual_cap(freedom: str) -> No
     assert f"`{freedom}`" in instruction
     assert content_freedom_policy(freedom)["evaluation"] in instruction
     assert FACTUAL_ACCURACY_CAP in instruction
+
+
+def test_the_evaluation_schema_does_not_ask_the_model_for_the_freedom_level() -> None:
+    # content_freedom is injected by the evaluator after parsing; constraining
+    # the model to report it would let it contradict the pipeline.
+    assert "content_freedom" not in EVALUATION_SCHEMA["properties"]
+    assert "content_freedom" not in EVALUATION_SCHEMA["required"]
+    assert "overall_score" in EVALUATION_SCHEMA["required"]
 
 
 def test_every_freedom_level_has_a_complete_policy() -> None:

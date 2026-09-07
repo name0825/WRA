@@ -1,6 +1,17 @@
-from dataclasses import dataclass
 from enum import Enum
-from wra.llm.context import growth_num_ctx
+
+from wra.llm.recovery import RecoveryPolicy, RecoveryStrategy, is_token_limit_message
+
+__all__ = [
+    "HTMLRecoveryError",
+    "RecoveryPolicy",
+    "RecoveryStrategy",
+    "build_recovery_prompt",
+    "classify_exception",
+    "classify_response",
+    "classify_validation_errors",
+    "strategy_for",
+]
 
 
 class HTMLRecoveryError(str, Enum):
@@ -8,33 +19,6 @@ class HTMLRecoveryError(str, Enum):
     STRUCTURE = "structure"
     CONTENT = "content"
     UNKNOWN = "unknown"
-
-
-class RecoveryStrategy(str, Enum):
-    INCREASE_CONTEXT = "increase_context"
-    REVISE_RESPONSE = "revise_response"
-    REGENERATE = "regenerate"
-
-
-@dataclass(frozen=True)
-class RecoveryPolicy:
-    max_retries: int = 3
-    initial_num_ctx: int = 8192
-    max_num_ctx: int = 32768
-    ceiling_num_ctx: int = 32768
-    growth_power: float = 2.0
-    output_headroom_tokens: int = 2048
-
-    def num_ctx_for_attempt(self, attempt: int, base: int) -> int:
-        """Return the window for ``attempt``, growing from ``base`` to ``max_num_ctx``.
-
-        ``base`` is the first attempt's estimated window, so the curve never
-        starts below what the prompt already needs.
-        """
-        total_attempts = self.max_retries + 1
-        if attempt > total_attempts:
-            return min(base, self.max_num_ctx)
-        return growth_num_ctx(attempt, total_attempts, base, self.max_num_ctx, self.growth_power)
 
 
 def _looks_truncated_html(response: str | None) -> bool:
@@ -72,29 +56,15 @@ def classify_response(response: str | None) -> HTMLRecoveryError:
 
 
 def classify_exception(exc: Exception, response: str | None = None) -> HTMLRecoveryError:
-    message = str(exc).lower()
-    token_markers = (
-        "context length",
-        "context window",
-        "maximum context",
-        "num_ctx",
-        "token limit",
-        "too many tokens",
-        "prompt is too long",
-        "maximum number of tokens",
-        "max tokens",
-        "done_reason=length",
-        "done reason: length",
-        "output limit",
-    )
-    if any(marker in message for marker in token_markers):
+    message = str(exc)
+    if is_token_limit_message(message):
         return HTMLRecoveryError.TOKEN_LIMIT
 
-    response_error = classify_response(response)
-    if response_error is HTMLRecoveryError.TOKEN_LIMIT:
-        return response_error
+    if classify_response(response) is HTMLRecoveryError.TOKEN_LIMIT:
+        return HTMLRecoveryError.TOKEN_LIMIT
 
-    if "complete html document" in message or "doctype" in message or "</head>" in message:
+    lowered = message.lower()
+    if "complete html document" in lowered or "doctype" in lowered or "</head>" in lowered:
         return HTMLRecoveryError.STRUCTURE
     return HTMLRecoveryError.UNKNOWN
 

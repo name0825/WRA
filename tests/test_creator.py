@@ -4,16 +4,15 @@ import json
 from pathlib import Path
 
 import pytest
-import yaml
 
 from wra.cli import creating_config
 from wra.core.inputs import InputError, discover
 from wra.core.models import AssetInfo, VisionInsight, WRAConfig
 from wra.core.preparation import InputPreparer
 from wra.creator.creator import Creator, CreatorError, feature_model_for
+from support import sample_config_data
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-SAMPLE_CONFIG = PROJECT_ROOT / "config" / "config.yaml.sample"
 PROMPT = PROJECT_ROOT / "prompts" / "creator" / "system.md"
 
 BRIEF = "대구에서 25년 된 정밀 절삭공구 유통사. 엔드밀·드릴 취급. 빠른 납기가 강점. 문의 유도가 목표."
@@ -50,10 +49,12 @@ class ReplyClient:
         self.responses = list(responses)
         self.calls = 0
         self.prompts: list[str] = []
+        self.formats: list = []
 
-    def generate(self, prompt, model, options=None, images=None, *, think=None, timeout=None):
+    def generate(self, prompt, model, options=None, images=None, *, think=None, format=None, timeout=None):
         self.calls += 1
         self.prompts.append(prompt)
+        self.formats.append(format)
         return self.responses[min(self.calls - 1, len(self.responses) - 1)]
 
 
@@ -62,7 +63,10 @@ def _creator(client, **kwargs) -> Creator:
 
 
 def test_a_brief_becomes_a_site_of_pages() -> None:
-    draft = _creator(ReplyClient(json.dumps(DRAFT))).create(BRIEF, ASSETS)
+    client = ReplyClient(json.dumps(DRAFT))
+    draft = _creator(client).create(BRIEF, ASSETS)
+    # A schema, not the bare "json" grammar.
+    assert isinstance(client.formats[0], dict)
     assert [page.slug for page in draft.pages] == ["index", "products"]
     assert draft.business.company_name == "대성정밀"
     assert draft.pages[0].entry
@@ -166,7 +170,7 @@ def test_a_structured_brief_is_read_after_the_prose(tmp_path: Path) -> None:
 
 
 def _config(freedom: str) -> WRAConfig:
-    data = yaml.safe_load(SAMPLE_CONFIG.read_text(encoding="utf-8"))
+    data = sample_config_data()
     data["content"] = {"freedom": freedom}
     data["input"] = {**data["input"], "vision": {**data["input"]["vision"], "enabled": False}}
     return WRAConfig.model_validate(data)

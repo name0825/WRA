@@ -35,9 +35,3 @@ class BrowserEvaluationResult(BaseModel):
     enabled: bool
     viewports: list[BrowserViewportResult] = Field(default_factory=list)
 
-    @property
-    def has_errors(self) -> bool:
-        return any(
-            result.horizontal_overflow or result.console_errors or result.page_errors
-            for result in self.viewports
-        )

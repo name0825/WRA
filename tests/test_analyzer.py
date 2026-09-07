@@ -43,10 +43,10 @@ HTML = """
 class FakeLLMClient(LLMClient):
     def __init__(self, response: str | list[str]) -> None:
         self.responses = [response] if isinstance(response, str) else list(response)
-        self.calls: list[tuple[str, str, dict | None]] = []
+        self.calls: list[tuple[str, str, dict | None, str | dict | None]] = []
 
     def generate(self, prompt: str, model: str, options: dict | None = None, **kwargs) -> str:
-        self.calls.append((prompt, model, options))
+        self.calls.append((prompt, model, options, kwargs.get("format")))
         if len(self.responses) > 1:
             return self.responses.pop(0)
         return self.responses[0]
@@ -139,7 +139,14 @@ def test_analyzer_applies_llm_semantic_analysis() -> None:
     assert "Educational background and awards" not in features.requirements.must_preserve
     assert features.navigation["primary_items"] == ["About", "Contact"]
     assert llm.calls[0][1] == "test-model"
-    assert llm.calls[0][2]["format"] == "json"
+    # The analyzer is constrained by a JSON *schema*, never the bare "json"
+    # grammar -- that one makes this model return an object with every section
+    # null. All four sections are required so `{}` cannot satisfy the shape.
+    # `format` never belongs inside options.
+    schema = llm.calls[0][3]
+    assert isinstance(schema, dict)
+    assert set(schema["required"]) == {"site", "business", "navigation", "requirements"}
+    assert "format" not in llm.calls[0][2]
     assert llm.calls[0][2]["num_ctx"] > 0
 
 

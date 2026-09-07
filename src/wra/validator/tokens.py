@@ -171,7 +171,7 @@ def find_corrupted_tokens(html: str, features: FeatureModel) -> list[str]:
                 # lost characters, which is exactly what corruption looks like.
                 continue
             if _differs_by_one_character(candidate, original) or SequenceMatcher(None, candidate, original).ratio() >= _SIMILARITY_THRESHOLD:
-                findings.append(f"corrupted source token: {original!r} rendered as {candidate!r}")
+                findings.append(f"corrupted source token: '{original}' rendered as '{candidate}'")
                 break
 
     if findings:

@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field, field_validator
 from wra.llm.client import LLMClient
 from wra.llm.context import COMPACT_JSON, estimate_num_ctx
 from wra.llm.response import normalize_json_response
+from wra.llm.schema import bound_strings
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +41,9 @@ class SitePlan(BaseModel):
     def restructures(self) -> bool:
         """Whether this plan is anything other than one output page per source."""
         return len(self.pages) != len({source for page in self.pages for source in page.sources}) or any(len(page.sources) != 1 for page in self.pages)
+
+
+SITE_PLAN_SCHEMA = bound_strings(SitePlan.model_json_schema())
 
 
 class SitePlanError(ValueError):
@@ -90,7 +94,7 @@ class SitePlanner:
         for attempt in range(self._max_retries + 1):
             logger.info("Site plan attempt %d/%d: model=%s pages_in=%d num_ctx=%d", attempt + 1, self._max_retries + 1, self._model, len(summaries), num_ctx)
             try:
-                response = self._llm_client.generate(prompt=prompt, model=self._model, options={"format": "json", "num_ctx": num_ctx}, think=self._think, timeout=self._timeout)
+                response = self._llm_client.generate(prompt=prompt, model=self._model, options={"num_ctx": num_ctx}, think=self._think, format=SITE_PLAN_SCHEMA, timeout=self._timeout)
                 plan = self._parse(response, slugs)
                 logger.info("Site plan ready: pages_out=%d restructured=%s", len(plan.pages), plan.restructures)
                 for page in plan.pages:

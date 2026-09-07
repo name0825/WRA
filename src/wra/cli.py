@@ -1,11 +1,10 @@
 from datetime import datetime
 from pathlib import Path
 
-import yaml
-
 from wra.analyzer.analyzer import HTMLAnalyzer
 from wra.analyzer.vision import VisionAnalyzer
 from wra.browser.evaluator import BrowserEvaluator
+from wra.core.config import load_config
 from wra.core.inputs import discover
 from wra.core.iteration import IterationEngine
 from wra.core.models import WRAConfig
@@ -25,7 +24,6 @@ from wra.utils.logging import configure_logging, get_logger
 logger = get_logger(__name__)
 INPUT_DIR = Path("input")
 OUTPUT_ROOT = Path("output")
-CONFIG_PATH = Path("config/config.yaml")
 
 
 def create_run_directory() -> Path:
@@ -88,13 +86,6 @@ def creating_config(config: WRAConfig) -> WRAConfig:
     return config.model_copy(update={"content": config.content.model_copy(update={"freedom": "madmax"})})
 
 
-def load_config() -> WRAConfig:
-    if not CONFIG_PATH.is_file():
-        raise FileNotFoundError(f"Config file not found: {CONFIG_PATH}. Copy config/config.yaml.sample to config/config.yaml first.")
-    data = yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8")) or {}
-    return WRAConfig.model_validate(data)
-
-
 def main() -> None:
     config = load_config()
     configure_logging(level=config.logging.level, console_level=config.logging.console_level, log_dir=config.logging.directory)
@@ -105,6 +96,14 @@ def main() -> None:
     logger.info("Input: %s (mode=%s)", input_dir, config.input.mode)
     logger.info("Ollama endpoint: %s", config.ollama.base_url)
     logger.info("Content freedom: %s", config.content.freedom)
+    if config.models.single.enabled:
+        logger.info("Single-model mode: every role runs on %s", config.models.single.name)
+        if config.models.single.num_ctx is None:
+            logger.info("Single-model mode: num_ctx is unpinned, so the window is still sized per prompt")
+        else:
+            logger.info("Single-model mode: num_ctx pinned to %d for every request", config.models.single.num_ctx)
+        if config.input.vision.enabled:
+            logger.warning("Single-model mode: %s also serves as the vision model, so it must be multimodal", config.models.single.name)
     if not input_dir.is_dir():
         logger.error("Input directory not found: %s", input_dir)
         raise FileNotFoundError(f"Input directory not found: {input_dir}")
@@ -113,7 +112,7 @@ def main() -> None:
         logger.info("No source page found: creating a site from the brief (%d chars)", len(bundle.brief))
         config = creating_config(config)
 
-    llm_client = OllamaClient(config.ollama.base_url)
+    llm_client = OllamaClient(config.ollama.base_url, keep_alive=config.ollama.keep_alive)
     design_recovery_policy = DesignRecoveryPolicy(max_retries=config.recovery.max_retries, initial_num_ctx=config.recovery.initial_num_ctx, max_num_ctx=config.recovery.max_num_ctx, ceiling_num_ctx=config.recovery.initial_ceiling_num_ctx, growth_power=config.recovery.growth_power, output_headroom_tokens=config.recovery.designer_output_headroom_tokens)
     generator_recovery_policy = GeneratorRecoveryPolicy(max_retries=config.recovery.max_retries, initial_num_ctx=config.recovery.initial_num_ctx, max_num_ctx=config.recovery.max_num_ctx, ceiling_num_ctx=config.recovery.initial_ceiling_num_ctx, growth_power=config.recovery.growth_power, output_headroom_tokens=config.recovery.generator_output_headroom_tokens)
 
@@ -121,7 +120,7 @@ def main() -> None:
     analyzer = HTMLAnalyzer(llm_client=llm_client, analyzer_model=analyzer_model.name, analyzer_think=analyzer_model.think, analyzer_timeout=analyzer_model.timeout, semantic_max_retries=config.recovery.max_retries, min_num_ctx=config.recovery.initial_num_ctx, max_num_ctx=config.recovery.max_num_ctx, ceiling_num_ctx=config.recovery.initial_ceiling_num_ctx)
     designer = DesignPlanner(llm_client=llm_client, designer_model="", frameworks=config.frameworks, recovery_policy=design_recovery_policy, content_freedom=config.content.freedom)
     generator = HTMLGenerator(llm_client=llm_client, generator_model="", frameworks=config.frameworks, recovery_policy=generator_recovery_policy)
-    evaluator = LLMEvaluator(llm_client=llm_client, model="", min_num_ctx=config.recovery.initial_num_ctx, max_num_ctx=config.recovery.max_num_ctx, ceiling_num_ctx=config.recovery.initial_ceiling_num_ctx, max_retries=config.recovery.max_retries, content_freedom=config.content.freedom)
+    evaluator = LLMEvaluator(llm_client=llm_client, model="", min_num_ctx=config.recovery.initial_num_ctx, max_num_ctx=config.recovery.max_num_ctx, ceiling_num_ctx=config.recovery.initial_ceiling_num_ctx, max_retries=config.recovery.max_retries, content_freedom=config.content.freedom, growth_power=config.recovery.growth_power)
     browser_evaluator = BrowserEvaluator(config.browser) if config.browser.enabled else None
     vision_analyzer = build_vision_analyzer(config, llm_client)
 

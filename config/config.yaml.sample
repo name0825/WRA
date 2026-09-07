@@ -1,30 +1,3 @@
-ollama:
-  base_url: "http://localhost:11434"
-
-# Multiple models may be configured for each role.
-# Each entry may be a model name string or an object with per-model options.
-# think: true/false enables/disables Ollama reasoning when supported by the model.
-# timeout: request timeout in seconds. Omit it to use the default of 900.
-models:
-  analyzer:
-    - name: "gemma4:26b"
-  designer:
-    - name: "gemma4:26b"
-  generator: 
-    - name: "gemma4:12b"
-
-  # Model that edits a finished page during a refinement pass. Left empty it
-  # falls back to the generator pool, where a small model damages the source
-  # text as often as it improves the design. Use designer-grade models here.
-  refiner:
-    - name: "gemma4:26b"
-
-  # Vision model used to read the source images and the source page screenshot.
-  # Leave empty to skip media vision entirely.
-  vision:
-    - name: "gemma4:26b"
-      timeout: 900
-
 # Where the source site comes from and how much of it is redesigned.
 #   entry : redesign the entry page only
 #   pages : redesign every HTML file independently
@@ -67,12 +40,6 @@ creator:
 
 design:
   mode: "auto"
-  presets:
-    - "business"
-    - "portfolio"
-    - "blog"
-    - "landing"
-    - "ecommerce"
 
 # How far the pipeline may depart from the source content.
 #   low    : keep the source content as-is
@@ -85,12 +52,6 @@ design:
 # Dates, numbers, names, and their pairings must stay accurate at every level.
 content:
   freedom: "low"
-
-evaluation:
-  model:
-    - name: "gemma4:26b"
-      think: false
-      timeout: 600
 
 browser:
   enabled: false
@@ -106,43 +67,6 @@ browser:
     - name: mobile
       width: 390
       height: 844
-
-frameworks:
-  css:
-    - name: "Bootstrap"
-      cdn: "https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css"
-      tag: "link"
-    - name: "TailwindCSS"
-      cdn: "https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"
-      tag: "script"
-    - name: "Bulma"
-      cdn: "https://cdn.jsdelivr.net/npm/bulma@1.0.4/css/bulma.min.css"
-      tag: "link"
-    - name: "Foundation"
-      cdn: "https://cdn.jsdelivr.net/npm/foundation-sites@6.9.0/dist/css/foundation.min.css"
-      tag: "link"
-    - name: "Materialize"
-      cdn: "https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/css/materialize.min.css"
-      tag: "link"
-  js:
-    - name: "GSAP"
-      cdn: "https://cdn.jsdelivr.net/npm/gsap@3.15/dist/gsap.min.js"
-      tag: "script"
-    - name: "Svelte"
-      cdn: "https://cdn.jsdelivr.net/npm/svelte@5.57.0/+esm"
-      tag: "script"
-    - name: "React"
-      cdn: "https://unpkg.com/react@18/umd/react.production.min.js"
-      tag: "script"
-    - name: "ReactDOM"
-      cdn: "https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"
-      tag: "script"
-    - name: "Vue"
-      cdn: "https://unpkg.com/vue@3/dist/vue.global.js"
-      tag: "script"
-    - name: "Angular"
-      cdn: "https://cdnjs.cloudflare.com/ajax/libs/angular.js/1.8.3/angular.min.js"
-      tag: "script"
 
 pipeline:
   max_iterations: 3
@@ -165,6 +89,8 @@ pipeline:
   output:
     save_mode: "all"
 
+# models.single.num_ctx overrides initial_num_ctx, initial_ceiling_num_ctx and
+# max_num_ctx when single-model mode is on.
 recovery:
   max_retries: 3
   initial_num_ctx: 8192

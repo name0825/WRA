@@ -26,7 +26,7 @@ class FakeLLMClient(LLMClient):
         self.calls: list[dict] = []
 
     def generate(self, prompt: str, model: str, options=None, **kwargs) -> str:
-        self.calls.append({"prompt": prompt, "model": model, "options": options or {}})
+        self.calls.append({"prompt": prompt, "model": model, "options": options or {}, "format": kwargs.get("format")})
         if self.error is not None:
             raise self.error
         index = min(len(self.calls) - 1, len(self.responses) - 1)
@@ -87,6 +87,7 @@ def test_generator_returns_complete_html(tmp_path):
     assert "</html>" in html
     assert client.calls[0]["options"] == {"num_ctx": 8192}
     assert "format" not in client.calls[0]["options"]
+    assert client.calls[0]["format"] is None
 
 
 def test_generator_injects_configured_framework_cdn(tmp_path):

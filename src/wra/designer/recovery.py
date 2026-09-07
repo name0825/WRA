@@ -1,6 +1,15 @@
-from dataclasses import dataclass
 from enum import Enum
-from wra.llm.context import growth_num_ctx
+
+from wra.llm.recovery import RecoveryPolicy, RecoveryStrategy, is_token_limit_message
+
+__all__ = [
+    "DesignRecoveryError",
+    "RecoveryPolicy",
+    "RecoveryStrategy",
+    "build_recovery_prompt",
+    "classify_exception",
+    "strategy_for",
+]
 
 
 class DesignRecoveryError(str, Enum):
@@ -12,49 +21,8 @@ class DesignRecoveryError(str, Enum):
     UNKNOWN = "unknown"
 
 
-class RecoveryStrategy(str, Enum):
-    INCREASE_CONTEXT = "increase_context"
-    REVISE_RESPONSE = "revise_response"
-    REGENERATE = "regenerate"
-
-
-@dataclass(frozen=True)
-class RecoveryPolicy:
-    max_retries: int = 3
-    initial_num_ctx: int = 8192
-    max_num_ctx: int = 32768
-    ceiling_num_ctx: int = 32768
-    output_headroom_tokens: int = 2048
-    growth_power: float = 2.0
-
-    def num_ctx_for_attempt(self, attempt: int, base: int) -> int:
-        """Return the window for ``attempt``, growing from ``base`` to ``max_num_ctx``.
-
-        ``base`` is the first attempt's estimated window, so the curve never
-        starts below what the prompt already needs.
-        """
-        total_attempts = self.max_retries + 1
-        if attempt > total_attempts:
-            return min(base, self.max_num_ctx)
-        return growth_num_ctx(attempt, total_attempts, base, self.max_num_ctx, self.growth_power)
-
-
 def classify_exception(exc: Exception) -> DesignRecoveryError:
-    message = str(exc).lower()
-    token_markers = (
-        "context length",
-        "context window",
-        "maximum context",
-        "num_ctx",
-        "token limit",
-        "too many tokens",
-        "prompt is too long",
-        "output token",
-        "max tokens",
-        "maximum tokens",
-        "length limit",
-    )
-    if any(marker in message for marker in token_markers):
+    if is_token_limit_message(str(exc)):
         return DesignRecoveryError.TOKEN_LIMIT
     return DesignRecoveryError.UNKNOWN
 

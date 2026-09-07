@@ -279,9 +279,7 @@ models:
   generator:
     - "model-e"
     - "model-f"
-
-evaluation:
-  model:
+  evaluator:
     - "model-g"
     - "model-h"
 ```
@@ -381,13 +379,15 @@ ollama list
 
 ```bash
 cp config/config.yaml.sample config/config.yaml
+cp config/models.yaml.sample config/models.yaml
 ```
 
-실제 사용할 모델은 `config/config.yaml`에 등록한다. `config.yaml.sample`의 모델 목록은 비어 있다.
+실제 사용할 모델은 `config/models.yaml`에 등록한다. `models.yaml.sample`의 모델 목록은 비어 있다.
 
 ```yaml
 ollama:
   base_url: "http://localhost:11434"
+  keep_alive: "30m"
 
 models:
   analyzer:
@@ -396,13 +396,48 @@ models:
     - "qwen3:27b"
   generator:
     - "gemma3:12b"
-
-evaluation:
-  model:
+  evaluator:
     - "qwen3:27b"
 ```
 
 모델명은 `ollama list`에 표시되는 이름과 일치해야 한다.
+
+`ollama.keep_alive`(기본 `"30m"`)는 Ollama가 유휴 모델을 내리기까지의 시간이다. Ollama 기본값은 5분인데,
+두 LLM 호출 사이에 browser evaluation이나 저장 단계가 끼면 그보다 쉽게 넘겨 모델이 다시 로드된다.
+`null`로 두면 Ollama 자체 기본값을 그대로 따른다.
+
+### 단일 모델 모드
+
+Ollama는 모델이나 `num_ctx`가 바뀔 때마다 러너를 다시 만든다. 파이프라인은 역할별 모델 풀과
+프롬프트별 컨텍스트 크기 산정을 쓰므로, 사실상 단계마다 모델이 언로드·재로드된다.
+`config/models.yaml`의 `models.single.enabled: true`로 이를 피할 수 있다.
+
+```yaml
+models:
+  single:
+    enabled: false
+    name: "gemma4:26b"
+    think: false
+    timeout: 900
+    num_ctx: 32768
+```
+
+켜면:
+
+- analyzer, designer, generator, evaluator, vision, creator, refiner의 모든 역할 풀이 이 모델
+  하나로 대체되어, 실행 내내 Ollama에는 이 모델 하나만 요청된다.
+- `num_ctx`가 `recovery.initial_num_ctx`, `recovery.initial_ceiling_num_ctx`,
+  `recovery.max_num_ctx`를 전부 이 값으로 고정해, 모든 요청이 같은 창을 쓰고 러너 하나가
+  실행 내내 상주한다.
+
+대가:
+
+- recovery가 응답 잘림에 대해 더 이상 컨텍스트 창을 키울 수 없다. 대신 간결하게 다시 쓰라는
+  지시만으로 재시도한다. Generator의 전체 문서 출력이 들어갈 만큼 `num_ctx`를 크게 잡거나,
+  `num_ctx: null`로 두어 모델만 고정하고 프롬프트별 크기 산정은 그대로 둔다.
+- 고정된 모델이 vision 모델도 겸하므로, `input.vision.enabled`가 켜져 있다면 멀티모달 모델이어야
+  한다(아니면 CLI가 경고를 남긴다).
+- iteration마다 모델이 바뀌며 생기던 디자인 다양성의 원천 하나를 잃는다.
 
 ## Framework CDN 설정
 
@@ -722,6 +757,8 @@ python -m wra.cli
 
 ```text
 config/config.yaml
+config/models.yaml
+config/frameworks.yaml
 ```
 
 결과:
@@ -762,7 +799,9 @@ WRA/
 ├── pyproject.toml
 │
 ├── config/
-│   └── config.yaml.sample
+│   ├── config.yaml.sample
+│   ├── models.yaml.sample
+│   └── frameworks.yaml
 ├── input/
 │   └── (html, css, js, images)
 ├── prompts/

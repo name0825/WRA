@@ -3,18 +3,17 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-import yaml
 
 from wra.cli import main
 from wra.browser.models import BrowserEvaluationResult, BrowserViewportResult
 from wra.core.inputs import discover
 from wra.core.iteration import IterationEngine
-from wra.core.models import FeatureModel, ModelSpec, PageImpression, VisionInsight, WRAConfig
+from wra.core.models import EvaluationResult, FeatureModel, ModelSpec, PageImpression, VisionInsight, WRAConfig
 from wra.core.preparation import InputPreparer
 from wra.designer.schema import ColorSystem, Design, DesignSpec, FrameworkRecommendation, FrameworkRecommendations, InteractionSpec, Motion, ResponsiveSpec, Typography
+from support import sample_config_data
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-SAMPLE_CONFIG = PROJECT_ROOT / "config" / "config.yaml.sample"
 
 
 class StubAnalyzer:
@@ -27,7 +26,7 @@ class StubAnalyzer:
 
 
 def _config(**input_overrides) -> WRAConfig:
-    data = yaml.safe_load(SAMPLE_CONFIG.read_text(encoding="utf-8"))
+    data = sample_config_data()
     data["input"] = {**data.get("input", {}), **input_overrides}
     data["input"]["vision"] = {**data["input"].get("vision", {}), "enabled": False}
     return WRAConfig.model_validate(data)
@@ -226,8 +225,22 @@ def test_multi_page_run_publishes_pages_beside_the_shared_assets(tmp_path: Path)
     assert (run_dir / "iterations" / "iter1" / "about.html").is_file()
 
 
+def _scored(score: float) -> EvaluationResult:
+    payload = {
+        name: {"score": score, "feedback": ""}
+        for name in ("design_completeness", "visual_hierarchy", "design_consistency", "content_preservation",
+                     "ux", "readability", "responsive_design", "originality", "html_quality")
+    }
+    return EvaluationResult.model_validate({**payload, "overall_score": score, "summary": ""})
+
+
 class SpecRecordingEngine(RecordingEngine):
     """Returns a real DesignSpec, so the design-system hand-off can be observed."""
+
+    # Each iteration scores higher than the last, so every attempt is accepted
+    # and the entry page's best design is also its most recent one.
+    def _score(self, iteration: int) -> float:
+        return float(iteration)
 
     def _design_spec(self, slug: str, iteration: int) -> DesignSpec:
         return DesignSpec(
@@ -245,7 +258,7 @@ class SpecRecordingEngine(RecordingEngine):
 
     def _run_one_iteration(self, state, iteration, site_context, output_manager, browser_tmp, models=None, design_system=None):
         result = super()._run_one_iteration(state, iteration, site_context, output_manager, browser_tmp, models, design_system)
-        return SimpleNamespace(**{**result.__dict__, "design_spec": self._design_spec(state.page.slug, iteration)})
+        return SimpleNamespace(**{**result.__dict__, "design_spec": self._design_spec(state.page.slug, iteration), "evaluation": _scored(self._score(iteration))})
 
 
 class BrowserRecordingEngine(RecordingEngine):
@@ -341,6 +354,21 @@ def test_sibling_pages_inherit_the_entry_page_design_system(tmp_path: Path) -> N
         assert system["typography"]["heading"] == f"Lead {iteration}"
 
 
+def test_siblings_follow_the_entry_pages_best_design_not_its_latest(tmp_path: Path) -> None:
+    """A rejected entry-page attempt must not become the palette the siblings copy."""
+    pages, _ = _prepare(tmp_path, "site")
+
+    class EntryRegresses(SpecRecordingEngine):
+        def _score(self, iteration: int) -> float:
+            return 6.0 if iteration == 1 else 4.0
+
+    engine = EntryRegresses(_capped(_config(mode="site"), 2), [])
+    engine.run_pages(pages)
+
+    by_page = {(iteration, slug): system for (iteration, slug, _), system in zip(engine.recorded, engine.systems)}
+    assert by_page[(2, "about")]["color_system"]["primary"] == "#000001"
+
+
 def test_a_single_page_run_locks_nothing(tmp_path: Path) -> None:
     pages, _ = _prepare(tmp_path, "entry")
     engine = SpecRecordingEngine(_capped(_config(mode="entry"), 2), [])
@@ -367,7 +395,7 @@ def test_cli_creates_feature_model(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.chdir(PROJECT_ROOT)
     monkeypatch.setattr("wra.cli.INPUT_DIR", input_dir)
     monkeypatch.setattr("wra.cli.OUTPUT_ROOT", output_dir)
-    monkeypatch.setattr("wra.cli.CONFIG_PATH", SAMPLE_CONFIG)
+    monkeypatch.setattr("wra.cli.load_config", lambda: WRAConfig.model_validate(sample_config_data()))
 
     main()
 

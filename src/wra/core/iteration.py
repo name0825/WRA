@@ -230,18 +230,27 @@ class IterationEngine:
         validation = validate_html(html, features)
         browser_result = BrowserEvaluationResult(enabled=False)
         evaluation = None
+        evaluation_error = None
         if validation.valid:
             if self._browser_evaluator is not None and self._config.browser.enabled:
                 logger.info("Current task: browser evaluation")
                 browser_result = self._browser_evaluator.evaluate(html=html, output_dir=browser_tmp / slug, iteration=iteration, asset_root=output_manager.run_dir)
             logger.info("Current task: LLM evaluation")
-            evaluation = self._evaluator.evaluate(features, design_spec, html, browser_result=browser_result, content_findings=find_corrupted_tokens(html, features), model=evaluator_model.name, think=evaluator_model.think, timeout=evaluator_model.timeout)
+            try:
+                evaluation = self._evaluator.evaluate(features, design_spec, html, browser_result=browser_result, content_findings=find_corrupted_tokens(html, features), model=evaluator_model.name, think=evaluator_model.think, timeout=evaluator_model.timeout)
+            except Exception as exc:
+                logger.exception("Evaluation failed for iteration %d, page '%s'", iteration, slug)
+                evaluation_error = exc
         else:
             logger.warning("Skipping browser/evaluation because HTML validation failed")
 
         logger.info("Current task: saving iteration %d for page '%s'", iteration, slug)
         saved = output_manager.save_iteration(iteration=iteration, slug=slug, html=html, design_spec=design_spec, validation=validation, evaluation=evaluation, browser=browser_result, score=evaluation.overall_score if evaluation else None)
         logger.info("Iteration %d completed for page '%s': validation=%s score=%s", iteration, slug, validation.valid, f"{evaluation.overall_score:.2f}" if evaluation else "n/a")
+        if evaluation_error is not None:
+            # The page was saved above; re-raise so an evaluator failure still
+            # surfaces instead of silently looping unscored pages forever.
+            raise evaluation_error
         return IterationResult(slug=slug, iteration=iteration, features=features, design_spec=design_spec, html=html, validation=validation, browser=browser_result, evaluation=evaluation, html_path=saved.html_path, validation_path=saved.validation_path, final_path=output_manager.run_dir / f"{slug}.html")
 
     def _select_models(self) -> dict:
@@ -257,7 +266,7 @@ class IterationEngine:
             # Refinement edits a finished page and is where a weak model quietly
             # damages the source text, so it gets its own, stronger pool.
             "refiner": ModelSelector.select(self._config.models.refiner or self._config.models.generator, "refiner"),
-            "evaluator": ModelSelector.select(self._config.evaluation.model, "evaluator"),
+            "evaluator": ModelSelector.select(self._config.models.evaluator, "evaluator"),
         }
 
     @staticmethod
@@ -270,9 +279,15 @@ class IterationEngine:
         several sites.
         """
         lead = states[0]
-        if len(states) < 2 or lead is current or lead.last is None:
+        if len(states) < 2 or lead is current:
             return None
-        spec = lead.last.design_spec
+        # The entry page publishes its *best* attempt, not its latest one. A
+        # sibling that follows `last` after the lead has just regressed locks
+        # onto a design system the finished site never shows.
+        source = lead.best or lead.last
+        if source is None:
+            return None
+        spec = source.design_spec
         if spec is None:
             return None
         return {

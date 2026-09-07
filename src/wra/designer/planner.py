@@ -1,6 +1,5 @@
 import json
 import logging
-import re
 from pathlib import Path
 from typing import Any
 
@@ -17,11 +16,43 @@ from wra.designer.recovery import (
 )
 from wra.designer.schema import DesignSpec
 from wra.llm.client import LLMClient
-from wra.llm.context import estimate_num_ctx
+from wra.llm.context import COMPACT_JSON, estimate_num_ctx
 from wra.llm.response import json_root_text, normalize_json_response
 from wra.validator.design import required_coverage_paths, validate_design_spec
+from wra.llm.schema import bound_strings
 
 logger = logging.getLogger(__name__)
+
+# Upper bounds, measured over the 73 DesignSpecs this pipeline has produced:
+# sections ran 3-6 and components per section 1-7. Twice the observed maximum
+# cannot bind a normal plan, and it is the only thing that ends a runaway --
+# a lower bound alone leaves the model free to keep adding sections until the
+# context is exhausted, which is what it does when recovery asks for more.
+_MAX_SECTIONS = 12
+_MAX_COMPONENTS = 12
+
+
+def _design_spec_schema() -> dict:
+    """DesignSpec's schema, narrowed to what `validate_design_spec` demands.
+
+    Pydantic derives no constraint from a list field, so the plain schema admits
+    a spec with no sections and sections with no components -- the exact shapes
+    the validator rejects. The model then meets the schema, fails validation,
+    and enters recovery holding an instruction to add more; under a grammar that
+    lets a valid object grow without bound it answers by generating until the
+    context runs out. Stating the requirement in the grammar keeps that response
+    unreachable instead of recoverable.
+    """
+    schema = DesignSpec.model_json_schema()
+    schema["required"] = [*schema["required"], "sections"]
+    schema["properties"]["sections"].update(minItems=1, maxItems=_MAX_SECTIONS)
+    section = schema["$defs"]["SectionSpec"]
+    section["required"] = [*section["required"], "components"]
+    section["properties"]["components"].update(minItems=1, maxItems=_MAX_COMPONENTS)
+    return bound_strings(schema)
+
+
+DESIGN_SPEC_SCHEMA = _design_spec_schema()
 
 
 class DesignPlanner:
@@ -94,7 +125,7 @@ class DesignPlanner:
             attempt = retry + 1
             logger.info("Design Planner attempt %d/%d: model=%s num_ctx=%d think=%s timeout=%s", attempt, self._recovery_policy.max_retries + 1, model, current_num_ctx, think, timeout)
             try:
-                response = self._llm_client.generate(prompt=prompt, model=model, options={"format": "json", "num_ctx": current_num_ctx}, think=think, timeout=timeout)
+                response = self._llm_client.generate(prompt=prompt, model=model, options={"num_ctx": current_num_ctx}, think=think, format=DESIGN_SPEC_SCHEMA, timeout=timeout)
                 previous_response = response
                 logger.debug("Designer response received: chars=%d", len(response))
                 spec = self._parse_response(response)
@@ -159,8 +190,8 @@ class DesignPlanner:
             f"Available Feature Model reference paths:\n{DesignPlanner._feature_reference_paths(features)}\n\n"
             f"{DesignPlanner._coverage_label(content_freedom)}:\n{DesignPlanner._coverage_requirements(features, content_freedom)}\n\n"
             f"Available configured frameworks:\n{framework_context}\n\n"
-            f"Design Constraints:\n{json.dumps(design_constraints or {}, ensure_ascii=False)}\n\n"
-            f"Generation Rules:\n{json.dumps(generation_rules or [], ensure_ascii=False)}\n\n"
+            f"Design Constraints:\n{json.dumps(design_constraints or {}, ensure_ascii=False, separators=COMPACT_JSON)}\n\n"
+            f"Generation Rules:\n{json.dumps(generation_rules or [], ensure_ascii=False, separators=COMPACT_JSON)}\n\n"
             f"{prompt_template}"
         )
 
@@ -210,7 +241,7 @@ class DesignPlanner:
             f"Available Feature Model reference paths:\n{DesignPlanner._feature_reference_paths(features)}\n\n"
             f"{DesignPlanner._coverage_label(content_freedom)}:\n{DesignPlanner._coverage_requirements(features, content_freedom)}\n\n"
             f"Available configured frameworks:\n{DesignPlanner._framework_catalog(frameworks or FrameworkConfig())}\n\n"
-            f"Design Constraints:\n{json.dumps(design_constraints or {}, ensure_ascii=False)}"
+            f"Design Constraints:\n{json.dumps(design_constraints or {}, ensure_ascii=False, separators=COMPACT_JSON)}"
         )
 
     @staticmethod
@@ -271,10 +302,6 @@ class DesignPlanner:
         if empty:
             lines.append("Empty, never reference: " + ", ".join(empty))
         return "\n".join(lines)
-
-    @staticmethod
-    def _append_design_constraints(prompt: str, design_constraints: dict[str, Any]) -> str:
-        return f"{prompt}\n\nDesign Constraints:\n{json.dumps(design_constraints, ensure_ascii=False)}"
 
     @staticmethod
     def _classify_parse_error(exc: ValueError) -> DesignRecoveryError:

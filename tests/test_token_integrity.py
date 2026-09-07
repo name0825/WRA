@@ -150,3 +150,22 @@ def test_an_expansion_is_excused_but_a_dropped_character_is_not() -> None:
     assert _finding("대성정밀", "대성정밀사") == []
     assert _finding("품질관리", "품질관리시스템") == []
     assert _finding("품질관리시스템", "품질관리스템") != []
+
+
+def test_a_corrupted_token_holding_a_backslash_survives_the_round_trip() -> None:
+    """The finding string is parsed back out by the refiner; repr() escaping broke it."""
+    from wra.refiner.refiner import HTMLRefiner
+
+    source = r"취급품목\A"
+    rendered = r"취업품목\A"
+    features = FeatureModel()
+    features.requirements.must_preserve = [source]
+    html = f"<html><body><p>{rendered}</p></body></html>"
+
+    findings = find_corrupted_tokens(html, features)
+    assert findings, "the damaged token should be reported"
+
+    repairs = HTMLRefiner.content_repairs(html, findings)
+    assert repairs[0]["with"] == source
+    assert repairs[0]["replace"] == rendered
+    assert repairs[0]["occurrences"] != ["not found in the current page"]

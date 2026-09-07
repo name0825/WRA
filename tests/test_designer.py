@@ -214,6 +214,8 @@ def test_token_limit_increases_num_ctx_and_does_not_reuse_large_previous_respons
     result = planner.plan(FeatureModel())
 
     assert result.design.concept == "Editorial Minimal"
+    # A schema, not the bare "json" grammar, which runs the designer away.
+    assert isinstance(client.calls[0]["format"], dict)
     assert client.calls[1]["options"]["num_ctx"] == 8192
     assert "Failure type: token_limit" in client.calls[1]["prompt"]
     assert truncated not in client.calls[1]["prompt"]

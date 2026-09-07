@@ -8,8 +8,27 @@ from wra.browser.models import BrowserConfig
 from wra.core.models import AssetInfo, PageImpression, VisionConfig, VisionInsight
 from wra.llm.client import LLMClient
 from wra.llm.response import normalize_json_response
+from wra.llm.schema import bound_strings
 
 logger = logging.getLogger(__name__)
+
+def _required(model, fields: list[str]) -> dict:
+    """The model's schema with `fields` marked required.
+
+    Every field on these two models carries a default, so pydantic emits no
+    `required` list and an empty object satisfies the schema -- which is the
+    collapse the schema was added to prevent. Both vision prompts ask for every
+    key, so the contract is stated here rather than by giving the models
+    defaults they do not want: a partial insight must still parse when it comes
+    back from the cache written before this.
+    """
+    schema = bound_strings(model.model_json_schema())
+    schema["required"] = fields
+    return schema
+
+
+VISION_INSIGHT_SCHEMA = _required(VisionInsight, ["subject", "mood", "role", "has_text", "text"])
+PAGE_IMPRESSION_SCHEMA = _required(PageImpression, ["mood", "density", "layout", "strengths", "weaknesses"])
 
 SOURCE_PREVIEW_NAME = ".source_preview.html"
 # Ollama cannot decode these, so sending them only buys a 400 per file: ICO is
@@ -110,7 +129,7 @@ class VisionAnalyzer:
 
     def _analyze_one(self, prompt: str, asset: AssetInfo, path: Path) -> None:
         try:
-            data = self._request(prompt, path)
+            data = self._request(prompt, path, VISION_INSIGHT_SCHEMA)
             asset.vision = VisionInsight.model_validate(self._coerce_insight(data))
             logger.info("Vision insight: asset=%s role=%s subject=%s", asset.path, asset.vision.role, asset.vision.subject)
         except Exception as exc:
@@ -121,7 +140,7 @@ class VisionAnalyzer:
     def analyze_page(self, screenshot_path: str | Path) -> PageImpression | None:
         prompt = self._page_prompt_path.read_text(encoding="utf-8")
         try:
-            data = self._request(prompt, Path(screenshot_path))
+            data = self._request(prompt, Path(screenshot_path), PAGE_IMPRESSION_SCHEMA)
             impression = PageImpression.model_validate(self._coerce_impression(data))
             logger.info("Source page impression: mood=%s density=%s", impression.mood, impression.density)
             return impression
@@ -129,12 +148,12 @@ class VisionAnalyzer:
             logger.warning("Source page impression skipped: %s", exc)
             return None
 
-    def _request(self, prompt: str, image_path: Path) -> dict:
+    def _request(self, prompt: str, image_path: Path, schema: dict) -> dict:
         cached = self._read_cache(prompt, image_path)
         if cached is not None:
             logger.debug("Vision cache hit: %s", image_path)
             return cached
-        response = self._llm_client.generate(prompt=prompt, model=self._model, options={"format": "json"}, images=[str(image_path)], think=self._think, timeout=self._timeout)
+        response = self._llm_client.generate(prompt=prompt, model=self._model, options=None, images=[str(image_path)], think=self._think, format=schema, timeout=self._timeout)
         data = json.loads(normalize_json_response(response))
         if not isinstance(data, dict):
             raise ValueError("Vision model response must be a JSON object")

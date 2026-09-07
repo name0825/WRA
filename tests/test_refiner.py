@@ -4,15 +4,14 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-import yaml
 
 from wra.core.iteration import IterationEngine, _PageRun
 from wra.core.models import EvaluationResult, FeatureModel, WRAConfig
 from wra.core.preparation import PreparedPage
 from wra.refiner.refiner import HTMLRefiner, RefinerError
+from support import sample_config_data
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-SAMPLE_CONFIG = PROJECT_ROOT / "config" / "config.yaml.sample"
 PROMPT = PROJECT_ROOT / "prompts" / "refiner" / "system.md"
 
 PAGE = "<!DOCTYPE html><html lang=\"ko\"><head><meta charset=\"utf-8\"><title>T</title></head><body><main><h1>제목</h1><p>본문</p></main></body></html>"
@@ -131,7 +130,7 @@ def test_a_retry_recovers_from_a_bad_first_response() -> None:
 # --- when the engine refines instead of redesigning -------------------------
 
 def _config(**refine) -> WRAConfig:
-    data = yaml.safe_load(SAMPLE_CONFIG.read_text(encoding="utf-8"))
+    data = sample_config_data()
     data["pipeline"] = {**data["pipeline"], "refine": {"enabled": True, **refine}}
     return WRAConfig.model_validate(data)
 
@@ -159,7 +158,7 @@ def test_a_scored_page_is_refined() -> None:
 
 
 def test_refining_is_off_by_default() -> None:
-    data = yaml.safe_load(SAMPLE_CONFIG.read_text(encoding="utf-8"))
+    data = sample_config_data()
     assert not WRAConfig.model_validate(data).pipeline.refine.enabled
 
 

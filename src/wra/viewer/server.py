@@ -4,28 +4,25 @@ import json
 import re
 from pathlib import Path
 
-import yaml
 from flask import Flask, abort, render_template_string, request, send_from_directory
 
+from wra.core.config import load_raw
 from wra.core.models import ViewerConfig
-from wra.viewer.data import criteria_scores, iteration_artifacts, list_runs, load_run, read_json, safe_run_dir, score_band
+from wra.viewer.data import ARTIFACTS, criteria_scores, iteration_artifacts, list_runs, load_run, read_json, safe_run_dir, score_band
 from wra.viewer.templates import BASE_CSS, ITERATION_TEMPLATE, JSON_TEMPLATE, RUN_DETAIL_TEMPLATE, RUN_LIST_TEMPLATE
 
-CONFIG_PATH = Path("config/config.yaml")
 SLUG_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
 
 def _is_slug(value: str) -> bool:
     """Guard the raw routes: a slug names a file, never a path."""
     return bool(SLUG_RE.match(value)) and ".." not in value
-ARTIFACT_FILES = {"design": "design.json", "validation": "validation.json", "evaluation": "evaluation.json", "browser": "browser.json"}
 
 
 def load_viewer_config() -> ViewerConfig:
-    if not CONFIG_PATH.is_file():
-        return ViewerConfig()
-    data = yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8")) or {}
-    return ViewerConfig.model_validate(data.get("viewer") or {})
+    # The viewer only reads finished runs, so an unconfigured checkout should
+    # still be able to browse them on the defaults.
+    return ViewerConfig.model_validate(load_raw(required=()).get("viewer") or {})
 
 
 def create_app(config: ViewerConfig | None = None) -> Flask:
@@ -76,7 +73,7 @@ def create_app(config: ViewerConfig | None = None) -> Flask:
     @app.route("/json/<run_id>/iteration/<int:number>/<artifact>")
     def iteration_json(run_id: str, number: int, artifact: str):
         run = require_run(run_id, request.args.get("page"))
-        filename = ARTIFACT_FILES.get(artifact)
+        filename = ARTIFACTS.get(artifact)
         if filename is None:
             abort(404)
         payload = read_json(run.directory / "iterations" / f"iter{number}" / "data" / run.slug / filename)
