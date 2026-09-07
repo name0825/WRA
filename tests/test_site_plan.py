@@ -127,6 +127,33 @@ def test_merge_feature_models_combines_content_and_keeps_the_new_title() -> None
     assert first.metadata.title == "About"
 
 
+def test_two_pages_sharing_one_source_do_not_share_state() -> None:
+    """A source used by two output pages must not let one page's retargeting leak into the other."""
+    source = FeatureModel()
+    source.content.links = [Link(text="About", href="about.html")]
+
+    page_a = merge_feature_models([source])
+    page_b = merge_feature_models([source])
+    retarget_links(page_a, {"about.html": "team.html"})
+    retarget_links(page_b, {"about.html": "history.html"})
+
+    assert page_a.content.links[0].href == "team.html"
+    assert page_b.content.links[0].href == "history.html"
+    assert source.content.links[0].href == "about.html"
+
+
+def test_root_relative_and_dot_relative_links_are_retargeted() -> None:
+    features = FeatureModel()
+    features.content.links = [
+        Link(text="About", href="/about.html"),
+        Link(text="About2", href="./about.html"),
+    ]
+
+    retarget_links(features, {"about.html": "company.html"})
+
+    assert [link.href for link in features.content.links] == ["company.html", "company.html"]
+
+
 class StubAnalyzer:
     """Deterministic extraction: keeps the page's links, which restructuring must retarget."""
 

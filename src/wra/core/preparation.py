@@ -69,7 +69,7 @@ class PreparedPage:
 def merge_feature_models(models: list[FeatureModel], title: str = "") -> FeatureModel:
     """Combine several source pages into the material for one output page."""
     if len(models) == 1 and not title:
-        return models[0]
+        return models[0].model_copy(deep=True)
 
     primary = models[0]
     merged = primary.model_copy(deep=True)
@@ -134,7 +134,10 @@ def _retargeted(href: str | None, link_map: dict[str, str]) -> str | None:
     if not href:
         return href
     target, _, fragment = href.partition("#")
-    replacement = link_map.get(target.strip().lower())
+    normalized = target.strip().lstrip("/")
+    while normalized.startswith("./"):
+        normalized = normalized[2:]
+    replacement = link_map.get(normalized.lower())
     if replacement is None:
         return href
     return f"{replacement}#{fragment}" if fragment else replacement
