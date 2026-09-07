@@ -2,6 +2,27 @@ from dataclasses import dataclass, field
 from html.parser import HTMLParser
 
 
+# Elements whose end tag is optional in HTML5: a start tag listed here closes
+# the open elements it maps to, so `<li>A<li>B` yields siblings, not nesting.
+_P_CLOSING_TAGS = {"p", "div", "ul", "ol", "table", "section", "article", "header", "footer", "h1", "h2", "h3", "h4", "h5", "h6", "blockquote", "form", "pre", "hr", "nav", "main", "aside", "fieldset", "dl"}
+_CLOSED_BY: dict[str, set[str]] = {tag: {"p"} for tag in _P_CLOSING_TAGS}
+_CLOSED_BY.update({
+    "li": {"li"},
+    "dt": {"dt", "dd"},
+    "dd": {"dt", "dd"},
+    "td": {"td", "th"},
+    "th": {"td", "th"},
+    "tr": {"tr", "td", "th"},
+    "thead": {"thead", "tbody", "tfoot", "tr", "td", "th"},
+    "tbody": {"thead", "tbody", "tfoot", "tr", "td", "th"},
+    "tfoot": {"thead", "tbody", "tfoot", "tr", "td", "th"},
+    "option": {"option"},
+})
+# Auto-closing never reaches past one of these, so an `li` inside a nested list
+# cannot close the `li` that holds that list.
+_SCOPE_BOUNDARY_TAGS = {"ul", "ol", "table", "tbody", "thead", "tfoot", "tr", "select", "dl", "form", "div", "body", "document"}
+
+
 @dataclass
 class HTMLNode:
     tag: str
@@ -29,7 +50,23 @@ class WRAHTMLParser(HTMLParser):
         self.root = HTMLNode("document")
         self._stack = [self.root]
 
+    def _close_implied(self, tag: str) -> None:
+        closes = _CLOSED_BY.get(tag)
+        if not closes:
+            return
+        while True:
+            for index in range(len(self._stack) - 1, 0, -1):
+                name = self._stack[index].tag
+                if name in closes:
+                    del self._stack[index:]
+                    break
+                if name in _SCOPE_BOUNDARY_TAGS:
+                    return
+            else:
+                return
+
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        self._close_implied(tag)
         node = HTMLNode(tag, {key: value or "" for key, value in attrs})
         self._stack[-1].children.append(node)
         self._stack[-1].parts.append(node)

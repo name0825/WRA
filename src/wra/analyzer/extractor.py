@@ -22,7 +22,7 @@ from wra.core.models import (
 VOID_TAGS = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"}
 SEMANTIC_TAGS = {"header", "nav", "main", "section", "article", "aside", "footer", "form"}
 EMAIL_RE = re.compile(r"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}", re.I)
-PHONE_RE = re.compile(r"(?:\+?\d[\d\s().-]{6,}\d)")
+PHONE_RE = re.compile(r"(?<![\d)])(?:\+\d{1,3}[\s.-]?\(?\d{1,4}\)?[\s.-]\d{3,4}[\s.-]\d{4}|\(?0\d{1,2}\)?[\s.-]?\d{3,4}[\s.-]?\d{4}|1[5-8]\d{2}[\s.-]?\d{4})(?!\d)")
 
 
 def iter_nodes(root: HTMLNode) -> Iterable[HTMLNode]:
@@ -114,7 +114,7 @@ def extract_structure(root: HTMLNode) -> Structure:
     forms: list[Form] = []
     for node in find_nodes(root, "form"):
         fields = []
-        for field in node.children:
+        for field in iter_nodes(node):
             if field.tag in {"input", "select", "textarea"}:
                 name = field.attrs.get("name") or field.attrs.get("id")
                 if name:

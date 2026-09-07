@@ -131,6 +131,9 @@ def main() -> None:
     pages = preparer.prepare(bundle, run_dir)
     engine = IterationEngine(config=config, designer=designer, generator=generator, evaluator=evaluator, browser_evaluator=browser_evaluator, refiner=build_refiner(config, llm_client))
     results = engine.run_pages(pages)
+    if not results:
+        logger.error("No pages were produced to redesign: %s", input_dir)
+        raise RuntimeError(f"No pages were produced from {input_dir}; nothing for the iteration loop to finalize")
     for result in results[:-1]:
         logger.info("Page finished: slug=%s final=%s score=%s", result.slug, result.final_path, f"{result.evaluation.overall_score:.1f}" if result.evaluation else "n/a")
     result = results[-1]

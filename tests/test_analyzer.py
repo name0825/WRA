@@ -1,4 +1,5 @@
 from wra.analyzer.analyzer import HTMLAnalyzer
+from wra.analyzer.extractor import PHONE_RE
 from wra.analyzer.html_parser import parse_html
 from wra.llm.client import LLMClient
 from wra.core.models import BusinessInfo
@@ -242,3 +243,44 @@ def test_text_content_interleaves_repeated_children() -> None:
     root = parse_html("<p>Back-end <b>Node.js</b> and <b>Python</b> only</p>")
 
     assert root.text_content() == "Back-end Node.js and Python only"
+
+
+def test_list_items_with_omitted_end_tags_stay_siblings() -> None:
+    features = HTMLAnalyzer().analyze("<html><body><ul><li>A<li>B<li>C</ul></body></html>")
+
+    assert features.content.lists == [["A", "B", "C"]]
+
+
+def test_table_cells_with_omitted_end_tags_stay_siblings() -> None:
+    features = HTMLAnalyzer().analyze("<html><body><table><tr><td>A<td>B<tr><td>C<td>D</table></body></html>")
+
+    assert features.content.tables == [[["A", "B"], ["C", "D"]]]
+
+
+def test_nested_list_item_does_not_close_outer_item() -> None:
+    root = parse_html("<ul><li>A<ul><li>B</ul><li>C</ul>")
+    outer = root.children[0]
+
+    assert [child.tag for child in outer.children] == ["li", "li"]
+    assert [child.tag for child in outer.children[0].children] == ["ul"]
+
+
+def test_form_fields_are_collected_from_nested_elements() -> None:
+    features = HTMLAnalyzer().analyze(
+        '<html><body><form action="/send"><div class="row">'
+        '<label>Email<input name="email"></label>'
+        '<fieldset><textarea id="message"></textarea></fieldset>'
+        '</div></form></body></html>'
+    )
+
+    assert features.structure.forms[0].fields == ["email", "message"]
+
+
+def test_phone_pattern_matches_real_numbers() -> None:
+    for number in ["02-1234-5678", "010-1234-5678", "+82 10 1234 5678", "(02) 1234-5678", "1588-1234"]:
+        assert PHONE_RE.findall(number) == [number]
+
+
+def test_phone_pattern_rejects_years_dates_and_zip_codes() -> None:
+    for text in ["© 1994-2024 Acme Corp", "2024.09.07", "12345-6789", "480-88-03967"]:
+        assert PHONE_RE.findall(text) == []

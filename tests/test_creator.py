@@ -123,6 +123,7 @@ def test_the_feature_model_carries_the_created_content() -> None:
     # What the creator decided is what the finished page must still say.
     assert "25년의 절삭공구 유통" in features.requirements.must_preserve
     assert "견적 문의" in features.requirements.must_preserve
+    assert "절삭공구 클로즈업" in features.requirements.must_preserve
 
 
 # --- discovery and wiring ---------------------------------------------------

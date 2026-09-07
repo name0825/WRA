@@ -189,7 +189,7 @@ def feature_model_for(draft: SiteDraft, page: CreatedPage, assets: list[AssetInf
         media=Media(images=images, urls=[image.src for image in images if image.src]),
         business=draft.business,
         # The creator wrote this page; nothing about it may be restated wrongly.
-        requirements=Requirements(must_preserve=[heading.text for heading in headings] + [button.text for button in buttons]),
+        requirements=Requirements(must_preserve=[heading.text for heading in headings] + [button.text for button in buttons] + [image.alt for image in images if image.alt]),
     )
     features.metadata.title = page.title or (headings[0].text if headings else page.slug)
     features.metadata.description = page.purpose or None
