@@ -193,9 +193,12 @@ logging:
 
 viewer:
   # Result viewer server (show-pages)
-  host: "0.0.0.0"
+  # Flask debug mode exposes an interactive Python console on any unhandled
+  # error. Keep host on the loopback interface and debug off unless you are
+  # deliberately debugging on a machine nobody else can reach.
+  host: "127.0.0.1"
   port: 5002
-  debug: true
+  debug: false
   output_root: "output"
   # Score badge thresholds (out of 10)
   score_high_threshold: 8.0

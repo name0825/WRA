@@ -57,12 +57,14 @@ def _href_is_malformed(href: str) -> bool:
     value = href.strip()
     if not value:
         return True
-    if value.startswith(("#", "/", "./", "../")):
+    if value.startswith(("#", "/", "./", "../", "?")):
         return False
     if value.startswith(("mailto:", "tel:", "javascript:")):
         return False
     parsed = urlparse(value)
-    return not bool(parsed.scheme and (parsed.netloc or parsed.scheme in {"file", "data"}))
+    if parsed.scheme:
+        return not (parsed.netloc or parsed.scheme in {"file", "data"})
+    return any(char.isspace() for char in value)
 
 
 def validate_content(html: str, features: FeatureModel) -> tuple[list[str], list[str]]:

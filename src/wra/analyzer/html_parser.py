@@ -74,9 +74,7 @@ class WRAHTMLParser(HTMLParser):
             self._stack.append(node)
 
     def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        node = HTMLNode(tag, {key: value or "" for key, value in attrs})
-        self._stack[-1].children.append(node)
-        self._stack[-1].parts.append(node)
+        self.handle_starttag(tag, attrs)
 
     def handle_endtag(self, tag: str) -> None:
         for index in range(len(self._stack) - 1, 0, -1):

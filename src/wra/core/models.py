@@ -249,9 +249,9 @@ class LoggingConfig(BaseModel):
 class ViewerConfig(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    host: str = "0.0.0.0"
+    host: str = "127.0.0.1"
     port: int = 5002
-    debug: bool = True
+    debug: bool = False
     output_root: str = "output"
     score_high_threshold: float = 8.0
     score_mid_threshold: float = 6.0
