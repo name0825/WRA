@@ -7,19 +7,29 @@ from .client import LLMClient
 
 logger = logging.getLogger(__name__)
 
+# A model with no configured timeout would otherwise inherit the ollama client's
+# own default of None, which httpx reads as "wait forever": one stalled request
+# then hangs a multi-hour iteration run with nothing to time it out.
+DEFAULT_TIMEOUT = 900.0
+
 
 class OllamaClient(LLMClient):
     """Ollama implementation backed by the official Python client."""
 
-    def __init__(self, base_url: str) -> None:
+    def __init__(self, base_url: str, default_timeout: float = DEFAULT_TIMEOUT) -> None:
         self._base_url = base_url
-        self._clients: dict[float | None, Client] = {None: Client(host=base_url)}
-        logger.debug("Initialized Ollama client: %s", base_url)
+        self._default_timeout = default_timeout
+        self._clients: dict[float, Client] = {}
+        logger.debug("Initialized Ollama client: %s timeout=%s", base_url, default_timeout)
+
+    def _resolve_timeout(self, timeout: float | None) -> float:
+        return self._default_timeout if timeout is None else timeout
 
     def _get_client(self, timeout: float | None) -> Client:
-        if timeout not in self._clients:
-            self._clients[timeout] = Client(host=self._base_url, timeout=timeout)
-        return self._clients[timeout]
+        resolved = self._resolve_timeout(timeout)
+        if resolved not in self._clients:
+            self._clients[resolved] = Client(host=self._base_url, timeout=resolved)
+        return self._clients[resolved]
 
     def generate(
         self,
@@ -37,7 +47,7 @@ class OllamaClient(LLMClient):
             len(prompt),
             len(images or []),
             think,
-            timeout,
+            self._resolve_timeout(timeout),
             options or {},
         )
         try:

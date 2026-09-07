@@ -6,7 +6,7 @@ import pytest
 import yaml
 
 from wra.core.inputs import discover
-from wra.core.models import Button, FeatureModel, Heading, Link, WRAConfig
+from wra.core.models import Button, FeatureModel, Heading, Link, PageImpression, ScriptDigest, SourceAssets, StyleDigest, WRAConfig
 from wra.core.preparation import InputPreparer, merge_feature_models, retarget_links
 from wra.designer.site_plan import SitePlanError, SitePlanner, identity_plan
 
@@ -125,6 +125,46 @@ def test_merge_feature_models_combines_content_and_keeps_the_new_title() -> None
     assert merged.metadata.keywords == ["history"]
     # The inputs are untouched: the same source may feed another page too.
     assert first.metadata.title == "About"
+
+
+def test_merge_feature_models_combines_source_assets() -> None:
+    """A merged page must keep every source's design context, not just the first's."""
+    first, second = FeatureModel(), FeatureModel()
+    first.source_assets = SourceAssets(
+        styles=StyleDigest(palette=["#111", "#222"], fonts=["Inter"], layout_signals={"flex": 3}),
+        scripts=ScriptDigest(libraries=["jquery"]),
+        impression=PageImpression(mood=["calm"], density="dense", layout="grid", strengths=["clear nav"]),
+    )
+    second.source_assets = SourceAssets(
+        styles=StyleDigest(palette=["#222", "#333"], fonts=["Lora"], layout_signals={"flex": 2, "grid": 5}),
+        scripts=ScriptDigest(libraries=["swiper"]),
+        impression=PageImpression(mood=["bold"], density="airy", layout="stack", weaknesses=["thin copy"]),
+    )
+
+    assets = merge_feature_models([first, second], "Company").source_assets
+    assert assets.styles.palette == ["#111", "#222", "#333"]
+    assert assets.styles.fonts == ["Inter", "Lora"]
+    assert assets.styles.layout_signals == {"flex": 5, "grid": 5}
+    assert assets.scripts.libraries == ["jquery", "swiper"]
+    assert assets.impression.mood == ["calm", "bold"]
+    assert assets.impression.strengths == ["clear nav"] and assets.impression.weaknesses == ["thin copy"]
+    # No single rendered page survives the merge, so the primary's prose stands.
+    assert assets.impression.density == "dense" and assets.impression.layout == "grid"
+
+
+def test_merged_source_assets_stay_within_the_single_page_caps() -> None:
+    """The digest rides in every prompt: merging sources must not grow it without bound."""
+    models = []
+    # Each source already fills the 14-colour cap, as a busy real page does.
+    for page in range(6):
+        features = FeatureModel()
+        features.source_assets = SourceAssets(styles=StyleDigest(palette=[f"#{page}{index:05x}" for index in range(14)]))
+        models.append(features)
+
+    palette = merge_feature_models(models, "Company").source_assets.styles.palette
+    assert len(palette) == 14
+    # A saturated first source must not spend the whole cap: every source is represented.
+    assert {colour[1] for colour in palette} == {"0", "1", "2", "3", "4", "5"}
 
 
 def test_two_pages_sharing_one_source_do_not_share_state() -> None:

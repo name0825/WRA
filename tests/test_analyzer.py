@@ -1,4 +1,8 @@
+import io
+import struct
+
 from wra.analyzer.analyzer import HTMLAnalyzer
+from wra.analyzer.assets import _jpeg_dimensions
 from wra.analyzer.extractor import PHONE_RE
 from wra.analyzer.html_parser import parse_html
 from wra.llm.client import LLMClient
@@ -284,3 +288,31 @@ def test_phone_pattern_matches_real_numbers() -> None:
 def test_phone_pattern_rejects_years_dates_and_zip_codes() -> None:
     for text in ["© 1994-2024 Acme Corp", "2024.09.07", "12345-6789", "480-88-03967"]:
         assert PHONE_RE.findall(text) == []
+
+
+SOI = bytes([0xFF, 0xD8])
+SOF0 = bytes([0xFF, 0xC0])
+APP1 = bytes([0xFF, 0xE1])
+
+
+def _jpeg(*segments: bytes) -> io.BytesIO:
+    sof = SOF0 + struct.pack(">H", 17) + bytes([8]) + struct.pack(">HH", 240, 320) + bytes(10)
+    return io.BytesIO(SOI + b"".join(segments) + sof)
+
+
+def test_jpeg_dimensions_reads_past_markers_that_carry_no_length() -> None:
+    """A standalone marker has no length field: mistaking one for a segment loses the size."""
+    restarts = bytes([0xFF, 0xD0, 0xFF, 0xD1])
+    padding = bytes([0xFF, 0xFF, 0xFF, 0xFF])
+    app0 = bytes([0xFF, 0xE0]) + struct.pack(">H", 16) + b"x" * 14
+
+    assert _jpeg_dimensions(_jpeg(restarts)) == (320, 240)
+    assert _jpeg_dimensions(_jpeg(padding)) == (320, 240)
+    assert _jpeg_dimensions(_jpeg(app0)) == (320, 240)
+
+
+def test_jpeg_dimensions_gives_up_on_a_segment_that_cannot_advance() -> None:
+    """A length below 2 would seek backwards, so the scan must stop instead."""
+    for length in (0, 1):
+        handle = io.BytesIO(SOI + APP1 + struct.pack(">H", length) + b"junk")
+        assert _jpeg_dimensions(handle) == (None, None)

@@ -19,11 +19,14 @@ _INDEX_RE = re.compile(r"\[(\d+)\]")
 
 # Collections a DesignSpec must reference when populated.
 #
-# `media.urls` and `media.icons` are intentionally excluded: `media.urls` is a
-# verbatim duplicate of the image/video `src` values already covered by
-# `media.images`/`media.videos`, and `media.icons` holds CSS class strings
-# rather than designable content. Requiring separate coverage for either forces
-# the planner to invent filler components.
+# `media.urls`, `media.icons` and `content.text` are intentionally excluded:
+# `media.urls` is a verbatim duplicate of the image/video `src` values already
+# covered by `media.images`/`media.videos`, `media.icons` holds CSS class
+# strings rather than designable content, and `content.text` restates the page
+# body that `content.paragraphs`/`content.headings` already carry -- requiring
+# it forced a second component that rendered the same prose again as one
+# undivided block. Requiring separate coverage for any of them forces the
+# planner to invent filler components.
 REQUIRED_COVERAGE_COLLECTIONS = (
     "content.headings",
     "content.paragraphs",
@@ -32,7 +35,6 @@ REQUIRED_COVERAGE_COLLECTIONS = (
     "content.buttons",
     "content.links",
     "content.labels",
-    "content.text",
     "structure.sections",
     "structure.forms",
     "media.images",

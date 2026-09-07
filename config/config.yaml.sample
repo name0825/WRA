@@ -4,7 +4,7 @@ ollama:
 # Multiple models may be configured for each role.
 # Each entry may be a model name string or an object with per-model options.
 # think: true/false enables/disables Ollama reasoning when supported by the model.
-# timeout: request timeout in seconds. Omit it to use the Ollama client default.
+# timeout: request timeout in seconds. Omit it to use the default of 900.
 models:
   analyzer:
     - name: "gemma4:26b"
@@ -193,9 +193,12 @@ logging:
 
 viewer:
   # Result viewer server (show-pages)
-  host: "0.0.0.0"
+  # Flask debug mode exposes an interactive Python console on any unhandled
+  # error. Keep host on the loopback interface and debug off unless you are
+  # deliberately debugging on a machine nobody else can reach.
+  host: "127.0.0.1"
   port: 5002
-  debug: true
+  debug: false
   output_root: "output"
   # Score badge thresholds (out of 10)
   score_high_threshold: 8.0

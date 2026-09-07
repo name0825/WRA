@@ -223,14 +223,29 @@ def _webp_dimensions(handle, header: bytes) -> tuple[int | None, int | None]:
     return None, None
 
 
+# Markers that stand alone: unlike a segment, they are followed by entropy-coded
+# data rather than a length. Reading two bytes as a length here misaligns the
+# scan, and a length below 2 then seeks backwards -- the loop would never end.
+_JPEG_STANDALONE = {0x01, 0xD8, 0xD9, *range(0xD0, 0xD8)}
+
+
 def _jpeg_dimensions(handle) -> tuple[int | None, int | None]:
     handle.seek(2)
     while True:
         marker = handle.read(2)
         if len(marker) < 2 or marker[0] != 0xFF:
             return None, None
+        code = marker[1]
+        if code == 0xFF:
+            # Any number of 0xFF bytes may pad the run-up to a marker.
+            handle.seek(-1, 1)
+            continue
+        if code in _JPEG_STANDALONE:
+            continue
         length = struct.unpack(">H", handle.read(2))[0]
-        if 0xC0 <= marker[1] <= 0xCF and marker[1] not in {0xC4, 0xC8, 0xCC}:
+        if length < 2:
+            return None, None
+        if 0xC0 <= code <= 0xCF and code not in {0xC4, 0xC8, 0xCC}:
             handle.read(1)
             height, width = struct.unpack(">HH", handle.read(4))
             return int(width), int(height)

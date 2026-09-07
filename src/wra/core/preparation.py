@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from itertools import zip_longest
 from pathlib import Path
 import json
 import logging
@@ -7,7 +8,7 @@ import shutil
 from wra.analyzer.assets import build_asset_infos, build_script_digest, build_style_digest
 from wra.analyzer.vision import VisionAnalyzer, render_source_page
 from wra.core.inputs import InputBundle, InputPage, collect_css, collect_js, copy_assets, page_map_for, rewrite_asset_paths
-from wra.core.models import BusinessInfo, Content, FeatureModel, Media, Requirements, SourceAssets, Structure, WRAConfig
+from wra.core.models import BusinessInfo, Content, FeatureModel, Media, PageImpression, Requirements, ScriptDigest, SourceAssets, StyleDigest, Structure, WRAConfig
 from wra.core.output import DATA_DIRECTORY
 from wra.creator.creator import feature_model_for
 from wra.designer.site_plan import SitePlan, SitePlanPage, identity_plan
@@ -112,6 +113,8 @@ def merge_feature_models(models: list[FeatureModel], title: str = "") -> Feature
             must_preserve=list(dict.fromkeys([*merged.requirements.must_preserve, *other.requirements.must_preserve])),
             optional=list(dict.fromkeys([*merged.requirements.optional, *other.requirements.optional])),
         )
+    if len(models) > 1:
+        merged.source_assets = _merge_source_assets([model.source_assets for model in models])
     return merged
 
 
@@ -152,6 +155,58 @@ def _unique_models(items: list) -> list:
             seen.add(key)
             unique.append(item)
     return unique
+
+
+# The digest rides in every designer and evaluator prompt, so merging sources
+# must not multiply its size: each field re-applies the cap `build_style_digest`
+# and `build_script_digest` set for a single page.
+_STYLE_CAPS = {"palette": 14, "fonts": 8, "type_scale": 12, "spacing": 10, "radii": 6, "shadows": 4, "breakpoints": 8}
+_INTERACTION_CAP = 12
+_IMPRESSION_CAP = 8
+
+
+def _interleave(groups: list[list[str]], cap: int | None = None) -> list[str]:
+    """Take one item from each source in turn, so a cap is never spent on the first source alone."""
+    ordered = [value for row in zip_longest(*groups) for value in row if value is not None]
+    unique = list(dict.fromkeys(ordered))
+    return unique if cap is None else unique[:cap]
+
+
+def _merge_source_assets(assets: list[SourceAssets]) -> SourceAssets:
+    """Combine the style, script and vision context of several source pages."""
+    styles = [item.styles.model_dump() for item in assets]
+    merged_styles: dict = {field: _interleave([style[field] for style in styles], cap) for field, cap in _STYLE_CAPS.items()}
+    signals: dict[str, int] = {}
+    for style in styles:
+        for name, count in style["layout_signals"].items():
+            signals[name] = signals.get(name, 0) + count
+    merged_styles["layout_signals"] = signals
+
+    return SourceAssets(
+        styles=StyleDigest(**merged_styles),
+        scripts=ScriptDigest(
+            libraries=_interleave([item.scripts.libraries for item in assets]),
+            interactions=_interleave([item.scripts.interactions for item in assets], _INTERACTION_CAP),
+        ),
+        # Every page of one input folder carries the same asset list, so this
+        # deduplicates back down to it rather than growing with the source count.
+        assets=_unique_models([info for item in assets for info in item.assets]),
+        impression=_merge_impression([item.impression for item in assets]),
+    )
+
+
+def _merge_impression(impressions: list[PageImpression | None]) -> PageImpression | None:
+    """Merged sources have no single rendered page: keep the primary's prose, take the union of the traits."""
+    present = [item for item in impressions if item is not None]
+    if not present:
+        return None
+    return PageImpression(
+        mood=_interleave([item.mood for item in present], _IMPRESSION_CAP),
+        density=present[0].density,
+        layout=present[0].layout,
+        strengths=_interleave([item.strengths for item in present], _IMPRESSION_CAP),
+        weaknesses=_interleave([item.weaknesses for item in present], _IMPRESSION_CAP),
+    )
 
 
 def _merge_business(base: BusinessInfo | None, other: BusinessInfo | None) -> BusinessInfo | None:
