@@ -4,7 +4,7 @@ ollama:
 # Multiple models may be configured for each role.
 # Each entry may be a model name string or an object with per-model options.
 # think: true/false enables/disables Ollama reasoning when supported by the model.
-# timeout: request timeout in seconds. Omit it to use the Ollama client default.
+# timeout: request timeout in seconds. Omit it to use the default of 900.
 models:
   analyzer:
     - name: "gemma4:26b"
