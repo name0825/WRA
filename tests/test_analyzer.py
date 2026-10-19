@@ -155,8 +155,8 @@ def test_analyzer_applies_llm_semantic_analysis() -> None:
     assert features.site.type == "corporate"
     assert features.site.industry == "technology"
     assert features.site.brand["name"] == "Example Company"
-    assert "AI web service" in features.business.services
-    assert "Technology company" in features.business.business_information
+    assert "AI web service" not in features.business.services
+    assert "Technology company" not in features.business.business_information
     assert "Example Company" in features.requirements.must_preserve
     assert "AI web service" in features.requirements.optional
     assert "Educational background and awards" in features.requirements.optional
@@ -202,7 +202,7 @@ def test_business_information_normalizes_object_items() -> None:
     ]
 
 
-def test_analyzer_accepts_structured_business_information_from_llm() -> None:
+def test_analyzer_rejects_unbacked_structured_business_information_from_llm() -> None:
     llm = FakeLLMClient(
         response='''{
           "business": {
@@ -216,7 +216,7 @@ def test_analyzer_accepts_structured_business_information_from_llm() -> None:
     features = HTMLAnalyzer(llm_client=llm, analyzer_model="test-model").analyze(HTML)
 
     assert features.business is not None
-    assert "biz_reg_no: 480-88-03967" in features.business.business_information
+    assert "biz_reg_no: 480-88-03967" not in features.business.business_information
 
 
 def test_analyzer_falls_back_to_deterministic_features_on_invalid_llm_json() -> None:
@@ -274,7 +274,7 @@ Wait, I see a slight error in my output stream. Let me provide the clean, correc
     features = HTMLAnalyzer(llm_client=llm, analyzer_model="test-model").analyze(HTML)
 
     assert features.site.type == "corrected"
-    assert "Business registration number: 480-88-03967" in features.business.business_information
+    assert "Business registration number: 480-88-03967" not in features.business.business_information
 
 
 def test_text_content_follows_document_order() -> None:
@@ -407,3 +407,43 @@ def test_jpeg_dimensions_gives_up_on_a_segment_that_cannot_advance() -> None:
     for length in (0, 1):
         handle = io.BytesIO(SOI + APP1 + struct.pack(">H", length) + b"junk")
         assert _jpeg_dimensions(handle) == (None, None)
+
+
+def test_semantic_business_facts_are_grounded_and_do_not_overwrite_extraction() -> None:
+    baseline = HTMLAnalyzer().analyze(HTML)
+    llm = FakeLLMClient(response='''{"site": {"brand": {"name": "Invented company"}}, "business": {"company_name": "Invented company", "address": "Invented address", "email": ["fake@example.org"], "phone": ["010-9999-0000"], "services": ["Service A", "Invented service"], "contact": ["fake@example.org"]}}''')
+
+    features = HTMLAnalyzer(llm_client=llm, analyzer_model="test-model").analyze(HTML)
+
+    assert features.business.company_name == baseline.business.company_name
+    assert "Invented company" not in features.site.brand.values()
+    assert features.business.address == baseline.business.address
+    assert features.business.email == baseline.business.email
+    assert features.business.phone == baseline.business.phone
+    assert "Service A" in features.business.services
+    assert "Invented service" not in features.business.services
+    assert "fake@example.org" not in features.business.contact
+
+
+def test_semantic_scalar_facts_cannot_replace_even_source_backed_extracted_values() -> None:
+    business = BusinessInfo(company_name="Original", address="Original address")
+
+    merged = HTMLAnalyzer._merge_business_info(business, BusinessInfo(company_name="Other", address="Other address"), {"other", "other address"})
+
+    assert merged.company_name == "Original"
+    assert merged.address == "Original address"
+
+
+def test_semantic_contacts_cannot_be_substrings_of_real_contacts() -> None:
+    html = "<html><body><p>admin@example.org</p><p>010-1234-5678</p></body></html>"
+    llm = FakeLLMClient(response='''{"business":{"email":["min@example.org"],"phone":["010-1234-567"],"contact":["min@example.org","010-1234-567","1234-5678","admin@example.org","010-1234-5678"]}}''')
+
+    features = HTMLAnalyzer(llm_client=llm, analyzer_model="test-model").analyze(html)
+
+    assert features.business.email == ["admin@example.org"]
+    assert features.business.phone == ["010-1234-5678"]
+    assert "min@example.org" not in features.business.contact
+    assert "010-1234-567" not in features.business.contact
+    assert "1234-5678" not in features.business.contact
+    assert "admin@example.org" in features.business.contact
+    assert "010-1234-5678" in features.business.contact

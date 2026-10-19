@@ -41,6 +41,8 @@ section ids from the design spec.
 `visual_findings`, when present, are confirmed visual defects: that the page has no applied
 CSS, or that none of the source images survived into the page. Fix each one within the rules
 below, e.g. by restoring the missing stylesheet reference or reinstating the dropped images.
+`Source image inventory` supplies the source image URLs and local asset paths. Use those exact
+references to restore dropped images; never infer a path from a basename or a DesignSpec index.
 
 When the evaluation evidence reports mobile `horizontal_overflow` or a `scroll_width` greater
 than its viewport, repair that concrete defect locally. Keep marquee, full-bleed, and horizontal
@@ -49,6 +51,8 @@ track overshoot inside their owning section or container, remove overflow-causin
 `html` or `body`.
 
 When fixing or adding styles, ensure each CSS `var()` reference resolves to a declaration in the applicable scope or a valid fallback, including every type-ramp step you use. Preserve existing design tokens: define a missing token with its intended value from the DesignSpec or use an appropriate existing declared token or valid fallback, never an arbitrary replacement or an assumed undeclared framework token.
+
+For a named local weakness, favor readable script-appropriate spacing, resilient text resizing, semantic keyboard/pointer controls, and visible focus/press feedback. Preserve click/release activation and cancellation. If a reported defect concerns existing motion or transparency, make that behavior interruptible and honor reduced-motion or solid-background fallbacks within the settled design. Static screenshots alone do not establish timing or gesture defects. Do not add effects, gestures, typefaces, or a new visual direction in pursuit of polish.
 
 ## Placeholder tokens
 
@@ -72,7 +76,9 @@ Return the **complete** HTML document, from `<!DOCTYPE html>` to `</html>`, with
 applied. Not a diff, not a fragment, not an explanation, not a Markdown fence around it.
 
 The document must remain a single self-contained file: styles in `<style>`, scripts in
-`<script>`, and no new external references beyond the ones already present.
+`<script>`, and no new external references beyond the ones already present, except source
+image references copied exactly from `Source image inventory` to repair a reported image defect.
 
-Keep every `src` and `url()` exactly as it is. Those paths point at files that exist; a
-path you invent points at nothing.
+Preserve existing `src` and `url()` references unless a reported image defect requires
+replacing one with an exact reference from `Source image inventory`. New image references
+must also come from that inventory. Never invent a path or URL.

@@ -340,6 +340,16 @@ def test_low_contrast_cap_scales_down_with_the_element_count(tmp_path):
     assert run(12) == 6.0
 
 
+def test_production_prompt_uses_the_count_based_contrast_ceilings(tmp_path):
+    client = FakeLLMClient(RuntimeError("unused"), _evaluation_response())
+    evaluator = LLMEvaluator(client, "evaluator-model", prompt_path=PROJECT_ROOT / "prompts/evaluator/llm.md")
+    evaluator.evaluate(FeatureModel(), make_spec(), "<html></html>", visual_findings=['Low contrast: 1 rendered text element(s) fall below the WCAG contrast minimum'])
+
+    prompt = client.calls[-1]["prompt"]
+    assert "at 8 for one affected element, 7 for two, and 6 for three or more" in prompt
+    assert "If the count is unavailable, use 6" in prompt
+
+
 def test_single_broken_image_applies_a_mild_cap_and_three_apply_the_full_cap(tmp_path):
     def run(count):
         evaluator = _evaluator_with_payload(tmp_path, _payload_with(visual_hierarchy={"score": 10, "feedback": ""}))

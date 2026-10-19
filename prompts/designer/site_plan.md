@@ -27,7 +27,7 @@ You may:
 - `content_focus` tells the later design step which part of the source material this page
   is responsible for. It matters most when several pages share one source: without it they
   will repeat each other.
-- Write `title` in the language the source content uses. Write the other fields in English.
+- Write `title` in the language the source content uses. Use `text_samples` as body-language evidence and `language` as a hint; English metadata alone must not override Korean body content. For mixed-language material, use the language of the material assigned to that output page. Write the other fields in English.
 
 ## Output
 

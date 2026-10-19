@@ -7,7 +7,7 @@ from typing import Any
 from wra.core.models import ContentFreedom, FeatureModel, FrameworkConfig
 from wra.designer.schema import DesignSpec
 from wra.llm.client import LLMClient
-from wra.llm.context import COMPACT_JSON, estimate_num_ctx
+from wra.llm.context import COMPACT_JSON, estimate_num_ctx, estimate_tokens
 from wra.utils.placeholders import protect_features, restore
 from wra.validator.anchors import repair_broken_anchors, repair_doubled_url_schemes
 from wra.validator.html import validate_html
@@ -72,6 +72,17 @@ class HTMLGenerator:
         last_error = None
 
         for attempt in range(self._recovery_policy.max_retries + 1):
+            num_ctx = estimate_num_ctx(prompt, num_ctx, self._recovery_policy.max_num_ctx, ceiling=None, headroom_tokens=self._recovery_policy.output_headroom_tokens)
+            if estimate_tokens(prompt) + self._recovery_policy.output_headroom_tokens > num_ctx and attempt:
+                prompt = (
+                    f"{original_prompt}\n\n# WRA HTML Generator Recovery\nFailure type: {error.value}\n"
+                    "Previous response omitted to preserve source input and output space. "
+                    "Regenerate the complete HTML document from the authoritative FeatureModel and DesignSpec. "
+                    "Keep CSS and JavaScript concise without dropping source content or required sections."
+                )
+                num_ctx = estimate_num_ctx(prompt, num_ctx, self._recovery_policy.max_num_ctx, ceiling=None, headroom_tokens=self._recovery_policy.output_headroom_tokens)
+            if estimate_tokens(prompt) + self._recovery_policy.output_headroom_tokens > num_ctx:
+                raise GeneratorError("Authoritative generation input and output headroom exceed the maximum context window")
             logger.info("HTML Generator attempt %d/%d: model=%s num_ctx=%d think=%s timeout=%s", attempt + 1, self._recovery_policy.max_retries + 1, selected_model, num_ctx, selected_think, selected_timeout)
             try:
                 # The generator returns HTML, not JSON. Ollama's structured-output

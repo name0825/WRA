@@ -4,6 +4,8 @@ from pathlib import Path
 from typing import Any
 
 from wra.analyzer.extractor import (
+    EMAIL_RE,
+    PHONE_RE,
     extract_business_info,
     extract_content,
     extract_media,
@@ -114,10 +116,16 @@ class HTMLAnalyzer:
         # null rather than omitting it, and JSON mode makes that the normal case:
         # the shape is satisfied, the content is empty. A null is an absent section.
         if semantic.get("site") is not None:
-            features.site = Site.model_validate(semantic["site"])
+            site = Site.model_validate(semantic["site"])
+            name = site.brand.get("name")
+            if features.site.brand.get("name"):
+                site.brand["name"] = features.site.brand["name"]
+            elif name is not None and (not isinstance(name, str) or not name.strip() or not any(" ".join(name.split()).casefold() in source for source in deterministic_strings)):
+                site.brand.pop("name", None)
+            features.site = site
         if semantic.get("business") is not None:
             semantic_business = BusinessInfo.model_validate(semantic["business"])
-            features.business = self._merge_business_info(features.business, semantic_business)
+            features.business = self._merge_business_info(features.business, semantic_business, deterministic_strings)
         if semantic.get("navigation") is not None:
             features.navigation = semantic["navigation"]
         if semantic.get("requirements") is not None:
@@ -143,13 +151,25 @@ class HTMLAnalyzer:
         return any([value.company_name, value.services, value.products, value.contact, value.address, value.email, value.phone, value.business_information, value.cta])
 
     @staticmethod
-    def _merge_business_info(base: BusinessInfo | None, semantic: BusinessInfo) -> BusinessInfo:
+    def _merge_business_info(base: BusinessInfo | None, semantic: BusinessInfo, deterministic_strings: set[str]) -> BusinessInfo:
         data = base.model_dump() if base is not None else BusinessInfo().model_dump()
         semantic_data = semantic.model_dump()
+        emails = {match.group(0) for source in deterministic_strings for match in EMAIL_RE.finditer(source)}
+        phones = {match.group(0) for source in deterministic_strings for match in PHONE_RE.finditer(source)}
+        def supported(item: str, key: str) -> bool:
+            normalized = " ".join(item.split()).casefold()
+            if key == "email":
+                return normalized in emails
+            if key == "phone":
+                return normalized in phones
+            if key == "contact":
+                return bool(normalized) and normalized in deterministic_strings | emails | phones
+            return bool(normalized) and any(normalized in source for source in deterministic_strings)
+
         for key, value in semantic_data.items():
             if isinstance(value, list):
-                data[key] = list(dict.fromkeys([*data[key], *value]))
-            elif value is not None:
+                data[key] = list(dict.fromkeys([*data[key], *(item for item in value if supported(item, key))]))
+            elif value is not None and not data[key] and supported(value, key):
                 data[key] = value
         return BusinessInfo.model_validate(data)
 

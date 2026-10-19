@@ -23,7 +23,9 @@ from wra.llm.client import LLMClient
 
 @pytest.fixture(autouse=True)
 def _skip_contrast_repair(monkeypatch):
-    monkeypatch.setattr("wra.generator.generator.repair_low_contrast", lambda html, asset_root=None: (html, []))
+    monkeypatch.setattr("wra.generator.js_repair.default_syntax_checker", lambda html: {})
+    for name in ("repair_unknown_apply_utilities", "repair_oversized_header_logo", "repair_trapped_fixed", "repair_squeezed_text", "repair_horizontal_overflow", "repair_edge_hugging_text", "repair_protruding_skip_link", "repair_overridden_root_theme", "repair_low_contrast"):
+        monkeypatch.setattr(f"wra.generator.generator.{name}", lambda html, asset_root=None: (html, []))
 
 
 class FakeLLMClient(LLMClient):
@@ -317,7 +319,7 @@ def test_generator_increases_context_on_token_error_without_previous_response(tm
             return "<!DOCTYPE html><html><head><meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\"></head><body></body></html>"
 
     client = TokenThenSuccess([])
-    generator = HTMLGenerator(client, "generator-model", FrameworkConfig(), prompt, recovery, RecoveryPolicy(max_retries=2, initial_num_ctx=100, max_num_ctx=400, growth_power=2.0))
+    generator = HTMLGenerator(client, "generator-model", FrameworkConfig(), prompt, recovery, RecoveryPolicy(max_retries=2, initial_num_ctx=100, max_num_ctx=8192, growth_power=2.0))
 
     generator.generate(FeatureModel(), make_spec())
 
@@ -335,7 +337,7 @@ def test_generator_increases_context_when_html_response_is_truncated(tmp_path):
     truncated = "<!DOCTYPE html><html><head><style>body { background: #111; color: #fff; } .panel { padding: 20px;"
     complete = "<!DOCTYPE html><html><head><meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\"></head><body></body></html>"
     client = FakeLLMClient([truncated, complete])
-    generator = HTMLGenerator(client, "generator-model", FrameworkConfig(), prompt, recovery, RecoveryPolicy(max_retries=2, initial_num_ctx=100, max_num_ctx=400, growth_power=2.0))
+    generator = HTMLGenerator(client, "generator-model", FrameworkConfig(), prompt, recovery, RecoveryPolicy(max_retries=2, initial_num_ctx=100, max_num_ctx=8192, growth_power=2.0))
 
     generator.generate(FeatureModel(), make_spec())
 
@@ -401,3 +403,41 @@ def test_prune_features_keeps_referenced_branch_whole():
     pruned = HTMLGenerator._prune_features(features, spec)
 
     assert pruned["content"] == {"text": ["body copy"]}
+
+
+@pytest.mark.parametrize("previous_chars,maximum,keeps_previous", [(12000, 16384, True), (60000, 4096, False)])
+def test_structure_recovery_sizes_the_assembled_prompt(tmp_path, previous_chars, maximum, keeps_previous):
+    from wra.llm.context import estimate_tokens
+
+    prompt_path = tmp_path / "system.md"
+    prompt_path.write_text("Generate HTML.", encoding="utf-8")
+    recovery_path = tmp_path / "recovery.md"
+    recovery_path.write_text("Fix {failure_type}. {validation_errors}\nPrevious: {previous_response}", encoding="utf-8")
+    broken = "<div>" + "x" * previous_chars + "</div>"
+    complete = '<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head><body></body></html>'
+    client = FakeLLMClient([broken, complete])
+    policy = RecoveryPolicy(max_retries=1, initial_num_ctx=2048, ceiling_num_ctx=2048, max_num_ctx=maximum, output_headroom_tokens=512)
+    features = FeatureModel(metadata={"description": "SOURCE_MUST_SURVIVE"})
+    HTMLGenerator(client, "generator-model", FrameworkConfig(), prompt_path, recovery_path, policy).generate(features, make_spec())
+
+    retry = client.calls[1]
+    assert estimate_tokens(retry["prompt"]) + policy.output_headroom_tokens <= retry["options"]["num_ctx"]
+    assert "SOURCE_MUST_SURVIVE" in retry["prompt"]
+    assert (broken in retry["prompt"]) is keeps_previous
+    if keeps_previous:
+        assert retry["options"]["num_ctx"] > client.calls[0]["options"]["num_ctx"]
+    else:
+        assert "Previous response omitted" in retry["prompt"]
+
+
+def test_generator_rejects_oversized_authoritative_input_without_calling_model(tmp_path):
+    prompt_path = tmp_path / "system.md"
+    prompt_path.write_text("Generate HTML.", encoding="utf-8")
+    client = FakeLLMClient([])
+    policy = RecoveryPolicy(initial_num_ctx=2048, max_num_ctx=2048, output_headroom_tokens=512)
+    features = FeatureModel(content={"text": ["source " * 2000]})
+
+    with pytest.raises(GeneratorError, match="Authoritative generation input"):
+        HTMLGenerator(client, "generator-model", FrameworkConfig(), prompt_path, recovery_policy=policy).generate(features, make_spec())
+
+    assert client.calls == []

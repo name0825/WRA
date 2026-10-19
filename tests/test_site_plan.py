@@ -364,3 +364,25 @@ def test_pages_with_colliding_slugs_both_reach_the_output(tmp_path: Path) -> Non
     assert len(slugs) == 3 and len(set(slugs)) == 3
     assert {page.relative for page in pages} == {"index.html", "a_b.html", "a-b.html"}
     assert len({page.data_dir for page in pages}) == 3
+
+
+@pytest.mark.parametrize("field", ["text", "paragraphs"])
+def test_site_planner_receives_body_language_evidence_despite_english_metadata(tmp_path, field):
+    from wra.core.preparation import SourcePage
+
+    source = SourcePage("index", "index.html", "", FeatureModel(metadata={"title": "About Us", "language": "en"}, content={field: ["우리 회사는 정밀 제조 서비스를 제공합니다."]}), tmp_path)
+    summary = source.summary()
+
+    class CaptureClient(ReplyClient):
+        def generate(self, prompt, model, options=None, images=None, **kwargs):
+            self.prompt = prompt
+            return super().generate(prompt, model, options, images, **kwargs)
+
+    client = CaptureClient(_plan_json([{"slug": "index", "title": "회사 소개", "entry": True, "sources": ["index"]}]))
+    plan = _planner(client).plan([summary])
+
+    sent = json.loads(client.prompt.split("Source pages:\n", 1)[1].split("\n\n", 1)[0])[0]
+    assert sent["title"] == "About Us"
+    assert sent["language"] == "en"
+    assert sent["text_samples"] == ["우리 회사는 정밀 제조 서비스를 제공합니다."]
+    assert plan.pages[0].title == "회사 소개"

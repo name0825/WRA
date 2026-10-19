@@ -630,3 +630,35 @@ def test_recovery_raises_after_retry_limit():
 
     with pytest.raises(RuntimeError, match="failed after 2 retries"):
         planner.plan(FeatureModel())
+
+
+def test_madmax_groups_thirteen_headed_blocks_within_section_budget():
+    from copy import deepcopy
+    from wra.core.models import content_freedom_policy
+
+    features = FeatureModel(content={"headings": [{"level": 2, "text": f"Headed block {index}"} for index in range(13)]})
+    data = make_design_spec()
+    template = data["sections"][0]
+    data["sections"] = []
+    for index in range(12):
+        section = deepcopy(template)
+        section["id"] = f"section-{index}"
+        section["components"][0]["content_source"] = f"content.headings.{index}"
+        if index == 11:
+            extra = deepcopy(section["components"][0])
+            extra["content_source"] = "content.headings.12"
+            section["components"].append(extra)
+        data["sections"].append(section)
+    client = FakeLLMClient([json.dumps(data)])
+    planner = DesignPlanner(client, "designer-model", content_freedom="madmax")
+    constraints = {"content_freedom": {"instruction": content_freedom_policy("madmax")["planning"]}}
+
+    result = planner.plan(features, constraints)
+
+    sent = client.calls[0]["prompt"]
+    assert "at most 12 sections" in sent
+    assert "group related headed blocks" in sent
+    assert "never silently drop blocks" in sent
+    assert all(f"Headed block {index}" in sent for index in range(13))
+    assert len(result.sections) == 12
+    assert {component.content_source for section in result.sections for component in section.components} == {f"content.headings.{index}" for index in range(13)}

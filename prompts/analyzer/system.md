@@ -69,6 +69,6 @@ Return exactly one complete JSON object matching this structure, and nothing els
 }
 ```
 
-Omit any top-level field you have nothing to add to. Never output a field outside these four.
+Always include all four top-level fields: `site`, `business`, `navigation`, and `requirements`. Use empty objects, arrays, or nullable nested values where you have nothing to add. Never output a field outside these four. Business facts must use source text verbatim; do not invent or paraphrase names, contacts, addresses, services, or other business facts.
 
 Do not output unsupported fields, HTML/CSS/JS, reasoning, Markdown, or prose.

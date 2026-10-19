@@ -315,6 +315,7 @@ class DesignPlanner:
             f"Available configured frameworks:\n{framework_context}\n\n"
             f"Design Constraints:\n{json.dumps(design_constraints or {}, ensure_ascii=False, separators=COMPACT_JSON)}\n\n"
             f"Generation Rules:\n{json.dumps(generation_rules or [], ensure_ascii=False, separators=COMPACT_JSON)}\n\n"
+            f"Section budget: at most {_MAX_SECTIONS} sections, including hero and contact/footer sections. If headed blocks exceed the available slots, group related blocks within sections and retain every block.\n\n"
             f"{prompt_template}"
         )
 

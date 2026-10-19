@@ -13,8 +13,11 @@ from support import sample_config_data
 
 
 @pytest.fixture(autouse=True)
-def _skip_contrast_repair(monkeypatch):
-    monkeypatch.setattr("wra.refiner.refiner.repair_low_contrast", lambda html, asset_root=None: (html, []))
+def _skip_browser_repairs(monkeypatch):
+    for name in ("repair_low_contrast", "repair_oversized_header_logo", "repair_trapped_fixed",
+                 "repair_horizontal_overflow", "repair_edge_hugging_text", "repair_protruding_skip_link",
+                 "repair_overridden_root_theme", "repair_unknown_apply_utilities"):
+        monkeypatch.setattr(f"wra.refiner.refiner.{name}", lambda html, asset_root=None: (html, []))
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 PROMPT = PROJECT_ROOT / "prompts" / "refiner" / "system.md"
@@ -328,6 +331,23 @@ def test_a_missing_design_spec_says_so() -> None:
     client = ReplyClient(BETTER)
     _refiner(client).refine(FeatureModel(), PAGE, _evaluation())
     assert "Current DesignSpec:\nnot available" in client.prompts[0]
+
+
+def test_refiner_can_restore_images_from_source_inventory() -> None:
+    features = FeatureModel(
+        media={"images": [{"src": "https://example.com/catalog/hero.jpg", "alt": "제품"}]},
+        source_assets={"assets": [{"path": "assets/catalog/detail.png", "kind": "image"}]},
+    )
+    restored = PAGE.replace("</main>", '<img src="https://example.com/catalog/hero.jpg" alt="제품"><img src="assets/catalog/detail.png" alt="상세"></main>')
+    client = ReplyClient(restored)
+
+    result = _refiner(client).refine(features, PAGE, _evaluation(), visual_findings=["Images dropped: none of the 2 source image(s) are referenced in the generated HTML"])
+
+    assert result == restored
+    inventory = client.prompts[0].split("Source image inventory:\n", 1)[1].split("\n\n", 1)[0]
+    assert '"src":"https://example.com/catalog/hero.jpg"' in inventory
+    assert '"image_assets":["assets/catalog/detail.png"]' in inventory
+    assert "except source\nimage references copied exactly" in client.prompts[0]
 
 
 def test_the_engine_hands_the_refiner_the_best_page_design_spec(tmp_path: Path, monkeypatch) -> None:

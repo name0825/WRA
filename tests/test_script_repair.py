@@ -278,3 +278,57 @@ def test_repair_does_not_rewrite_token_embedded_in_a_longer_word() -> None:
 
     assert repaired == "<!DOCTYPE html><html><body><p>빵집 x빵집福气y</p></body></html>"
     assert rewrites == ["'빵집幸福' -> '빵집'"]
+
+
+def test_repair_preserves_source_backed_latin_name_and_only_changes_hanja():
+    token = "Park의製造"
+    html = f"<p>{token}</p>"
+    features = FeatureModel(content={"text": ["Park의 제조"]})
+    client = FakeLLMClient(json.dumps({token: "Park의제조"}, ensure_ascii=False))
+
+    repaired, rewrites = repair_script_mixing(html, features, client, "generator-model")
+
+    assert repaired == "<p>Park의제조</p>"
+    assert rewrites
+    items = json.loads(client.calls[0]["prompt"].split("Tokens:\n", 1)[1])
+    assert items[0]["preserve_literals"] == ["Park"]
+
+
+def test_repair_rejects_replacement_that_removes_source_backed_latin_name():
+    token = "Park의製造"
+    html = f"<p>{token}</p>"
+    features = FeatureModel(content={"text": ["Park의 제조"]})
+    client = FakeLLMClient(json.dumps({token: "박의제조"}, ensure_ascii=False))
+
+    repaired, rewrites = repair_script_mixing(html, features, client, "generator-model")
+
+    assert repaired == html
+    assert rewrites == []
+
+
+def test_repair_preserves_source_backed_hanja_subspan_and_supplies_evidence():
+    token = "東京社製造"
+    source = "東京社 한국어 기업"
+    html = f"<p>{token}</p>"
+    features = FeatureModel(content={"text": [source]})
+    client = FakeLLMClient(json.dumps({token: "東京社제조"}, ensure_ascii=False))
+
+    repaired, rewrites = repair_script_mixing(html, features, client, "generator-model")
+
+    assert repaired == "<p>東京社제조</p>"
+    assert rewrites
+    items = json.loads(client.calls[0]["prompt"].split("Tokens:\n", 1)[1])
+    assert items[0]["preserve_literals"] == ["東京社"]
+    assert items[0]["source_context"] == [source]
+
+
+def test_repair_rejects_removing_or_translating_source_backed_hanja_subspan():
+    token = "東京社製造"
+    html = f"<p>{token}</p>"
+    features = FeatureModel(content={"text": ["東京社 한국어 기업"]})
+
+    for replacement in ("제조", "동경사제조"):
+        client = FakeLLMClient(json.dumps({token: replacement}, ensure_ascii=False))
+        repaired, rewrites = repair_script_mixing(html, features, client, "generator-model")
+        assert repaired == html
+        assert rewrites == []

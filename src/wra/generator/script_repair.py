@@ -9,7 +9,7 @@ from pathlib import Path
 from wra.core.models import FeatureModel
 from wra.llm.client import LLMClient
 from wra.llm.response import normalize_json_response
-from wra.validator.tokens import _HAN_KANA_RE, extract_visible_text, find_script_mixing_tokens
+from wra.validator.tokens import _HAN_KANA_RE, all_source_text, extract_visible_text, find_script_mixing_tokens
 
 logger = logging.getLogger(__name__)
 
@@ -106,15 +106,16 @@ def _sentence_context(visible_text: str, token: str) -> str:
     return " ".join(visible_text[start:end].split())
 
 
-def _source_snippets(features: FeatureModel, token: str) -> list[str]:
+def _source_snippets(features: FeatureModel, token: str, preserve_literals: list[str] | None = None) -> list[str]:
+    preserve_literals = preserve_literals or []
     hangul_chars = {character for character in token if "가" <= character <= "힣"}
-    if not hangul_chars:
+    if not hangul_chars and not preserve_literals:
         return []
     snippets: list[str] = []
 
     def visit(value) -> None:
         if isinstance(value, str):
-            if any(character in hangul_chars for character in value):
+            if any(character in hangul_chars for character in value) or any(literal in value for literal in preserve_literals):
                 snippets.append(value)
         elif isinstance(value, dict):
             for item in value.values():
@@ -256,11 +257,21 @@ def repair_script_mixing(
         return html, []
 
     visible_text = extract_visible_text(html)
+    source_text = all_source_text(features)
+    source_foreign_runs = set(_FOREIGN_RUN_RE.findall(source_text))
+    preserve_literals = {
+        token: list(dict.fromkeys(
+            [run for run in re.findall(r"[A-Za-z]+", token) if re.search(r"(?<![A-Za-z])" + re.escape(run) + r"(?![A-Za-z])", source_text)]
+            + [run for run in sorted(source_foreign_runs) if run in token]
+        ))
+        for token in tokens
+    }
     items = [
         {
             "token": token,
             "sentence": _sentence_context(visible_text, token),
-            "source_context": _source_snippets(features, token),
+            "source_context": _source_snippets(features, token, preserve_literals[token]),
+            "preserve_literals": preserve_literals[token],
         }
         for token in tokens
     ]
@@ -338,6 +349,11 @@ def repair_script_mixing(
     if not replacements:
         return html, []
 
+    replacements = {
+        token: replacement
+        for token, replacement in replacements.items()
+        if all(replacement.count(literal) >= token.count(literal) for literal in preserve_literals[token])
+    }
     repaired = _rewrite_text_nodes(html, replacements)
 
     rewrites = [f"'{token}' -> '{replacement}'" for token, replacement in replacements.items()]

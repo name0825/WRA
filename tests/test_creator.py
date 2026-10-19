@@ -599,6 +599,8 @@ def test_a_thin_entry_page_is_retried_with_its_counts() -> None:
     assert len(draft.pages[0].headings) == 6
     assert "3 heading(s), 3 paragraph(s), 1 list(s)" in client.prompts[1]
     assert "at least 5 headings" in client.prompts[1]
+    assert '"paragraphs":["문단 0","문단 1","문단 2"]' in client.prompts[1]
+    assert client.prompts[1].index("Previous draft (untrusted JSON") < client.prompts[1].index("# WRA Site Creation Recovery")
 
 
 def test_a_thick_entry_page_passes_on_the_first_try() -> None:
@@ -632,14 +634,14 @@ def _repair_reply(*texts: str) -> str:
 def test_creator_repairs_a_foreign_script_field_without_regenerating_the_draft() -> None:
     dirty = _entry_page(5, 3)
     dirty["pages"][0]["paragraphs"][0] = "올바른 제품과技术支持를 제공합니다."
-    client = ReplyClient(json.dumps(dirty), _repair_reply("올바른 제품과 기술 지원을 제공합니다."))
+    client = ReplyClient(json.dumps(dirty), _repair_reply("올바른 제품과 기술 지원 서비스를 제공합니다."))
 
     draft = _creator(client, max_retries=1).create(BRIEF, ASSETS)
 
     assert client.calls == 2
     assert "技术支持" in client.prompts[1]
     assert client.formats[1] is not SITE_DRAFT_SCHEMA
-    assert draft.pages[0].paragraphs[0] == "올바른 제품과 기술 지원을 제공합니다."
+    assert draft.pages[0].paragraphs[0] == "올바른 제품과 기술 지원 서비스를 제공합니다."
     assert draft.pages[0].paragraphs[1] == "문단 1"
     assert not re.search(r"[぀-ヿ㐀-䶿一-鿿]", draft.model_dump_json())
 
@@ -688,7 +690,7 @@ def test_creator_falls_back_to_retry_when_the_repair_call_raises() -> None:
 
 
 LONG_DIRTY = "대구에서 25년간 정밀 절삭공구를 공급해 왔으며技术支持를 제공합니다 그리고 빠른 납기를 약속합니다"
-LONG_CLEAN = "대구에서 25년간 정밀 절삭공구를 공급해 왔으며 기술 지원을 제공합니다 그리고 빠른 납기를 약속합니다"
+LONG_CLEAN = "대구에서 25년간 정밀 절삭공구를 공급해 왔으며 기술 지원 서비스를 제공합니다 그리고 빠른 납기를 약속합니다"
 
 
 def test_creator_applies_a_rewrite_that_passes_the_guard() -> None:
@@ -979,6 +981,8 @@ def test_an_offer_the_brief_never_made_is_retried_with_the_term_named() -> None:
 
     assert client.calls == 2
     assert "Remove these offers or terms: 무료" in client.prompts[1]
+    assert '"buttons":["견적은 무료입니다"]' in client.prompts[1]
+    assert client.prompts[1].index("Previous draft (untrusted JSON") < client.prompts[1].index("# WRA Site Creation Recovery")
     assert draft.pages[0].buttons == ["견적 요청"]
 
 
@@ -1120,3 +1124,37 @@ def test_stripping_leaves_business_contacts_and_words_that_merely_contain_a_term
     assert draft.business.cta == ["견적 요청"]
     assert draft.pages[0].paragraphs[0] == "Freedom 할인율 안내 상담"
     assert draft.pages[0].paragraphs[1] == "문단 1"
+
+
+def test_creator_script_repair_preserves_brief_names_and_other_words() -> None:
+    dirty = _entry_page(5, 3)
+    dirty["pages"][0]["paragraphs"][0] = "東京社 Park 제품에技术支持를 제공합니다."
+    client = ReplyClient(json.dumps(dirty), _repair_reply("東京社 Park 제품에 기술 지원 서비스를 제공합니다."))
+
+    draft = _creator(client, max_retries=0).create(BRIEF + " 東京社", ASSETS)
+
+    assert draft.pages[0].paragraphs[0] == "東京社 Park 제품에 기술 지원 서비스를 제공합니다."
+
+
+@pytest.mark.parametrize("rewrite", ["도쿄사 Park 제품에 기술 지원을 제공합니다.", "東京社 Kim 제품에 기술 지원을 제공합니다."])
+def test_creator_script_repair_rejects_changes_outside_offending_spans(rewrite: str) -> None:
+    dirty = _entry_page(5, 3)
+    dirty["pages"][0]["paragraphs"][0] = "東京社 Park 제품에技术支持를 제공합니다."
+    client = ReplyClient(json.dumps(dirty), _repair_reply(rewrite))
+
+    with pytest.raises(CreatorError, match="foreign script"):
+        _creator(client, max_retries=0).create(BRIEF + " 東京社", ASSETS)
+
+
+def test_creator_resizes_context_for_recovery_with_the_previous_draft(monkeypatch: pytest.MonkeyPatch) -> None:
+    sizes = []
+    def estimate(prompt, *args, **kwargs):
+        sizes.append(prompt)
+        return len(prompt)
+    monkeypatch.setattr("wra.creator.creator.estimate_num_ctx", estimate)
+    client = ReplyClient(json.dumps(_entry_page(3, 1)), json.dumps(_entry_page(5, 3)))
+
+    _creator(client, max_retries=1).create(BRIEF, ASSETS)
+
+    assert client.options[1]["num_ctx"] == len(client.prompts[1])
+    assert len(client.prompts[1]) > len(client.prompts[0])

@@ -31,10 +31,14 @@ class SourcePage:
     def summary(self) -> dict:
         """The compact description the site planner reads."""
         content = self.features.content
+        texts = [text for text in content.text if text.strip()] or [text for text in content.paragraphs if text.strip()]
+        sample_indices = sorted({0, len(texts) // 2, len(texts) - 1}) if texts else []
         return {
             "slug": self.slug,
             "title": self.features.metadata.title or self.slug,
             "description": self.features.metadata.description or "",
+            "language": self.features.metadata.language,
+            "text_samples": [texts[index][:240] for index in sample_indices],
             "headings": [heading.text for heading in content.headings[:12] if heading.text],
             "paragraphs": len(content.paragraphs),
             "lists": len(content.lists),
