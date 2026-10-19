@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="420" height="320" viewBox="0 0 420 320">
+  <defs>
+    <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#c9d6ff"/>
+      <stop offset="100%" stop-color="#5b6ee1"/>
+    </linearGradient>
+  </defs>
+  <rect width="420" height="320" fill="url(#g)"/>
+  <circle cx="84.0" cy="96.0" r="38.4" fill="#ffffff" fill-opacity="0.35"/>
+  <rect x="231.00000000000003" y="176.0" width="126.0" height="80.0" fill="#ffffff" fill-opacity="0.25"/>
+  <text x="50%" y="50%" font-family="sans-serif" font-size="23" fill="#1a1a2e" text-anchor="middle" dominant-baseline="middle">FlowStack</text>
+</svg>

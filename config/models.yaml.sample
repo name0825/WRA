@@ -1,0 +1,48 @@
+ollama:
+  base_url: "http://localhost:11434"
+  # Ollama unloads an idle model after 5 minutes, and a browser evaluation or a
+  # save step easily runs longer than that between two LLM calls.
+  keep_alive: "30m"
+  # The server decodes greedily unless temperature is set, so the same input
+  # reproduced byte-identical sites across runs. Set an integer seed for
+  # reproducible benchmarks; null sends nothing.
+  temperature: 0.7
+  seed: "random"
+
+# Multiple models may be configured for each role.
+# Each entry may be a model name string or an object with per-model options.
+# think: true/false enables/disables Ollama reasoning when supported by the model.
+# timeout: request timeout in seconds. Omit it to use the default of 900.
+models:
+  # Run everything on one model with one fixed context window. Ollama rebuilds
+  # its runner whenever the model or num_ctx changes, so per-role models and
+  # per-prompt window sizing make it reload between stages. Enabling this
+  # overrides every role pool below and pins recovery's whole num_ctx range to
+  # single.num_ctx, which means recovery can no longer grow the window on a
+  # truncated response; it retries with concision guidance instead.
+  # num_ctx: null keeps the per-prompt sizing and only pins the model.
+  single:
+    enabled: false
+    name: "gemma4:26b"
+    think: false
+    timeout: 900
+    num_ctx: 32768
+
+  analyzer: []
+  designer: []
+  generator: []
+
+  # Model that edits a finished page during a refinement pass. Left empty it
+  # falls back to the generator pool, where a small model damages the source
+  # text as often as it improves the design. Use designer-grade models here.
+  refiner: []
+
+  # Model that scores a finished page.
+  evaluator: []
+
+  # Vision model used to read the source images and the source page screenshot.
+  # Leave empty to skip media vision entirely.
+  vision: []
+
+  # Model that writes a site from a brief. Left empty it falls back to designer.
+  creator: []

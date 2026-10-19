@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Tool caches, editor settings, worktrees and test/review scratch dirs
+.*/
+.DS_Store
+*.bak
+
+# Local config (copy from the *.sample files)
+config/config.yaml
+config/models.yaml
+
+# Local agent instructions
+AGENTS.md
+CLAUDE.md
+
+# Run data
+input/*
+!input/PUT HTML, CSS, JS AND IMAGES IN THIS FOLDER
+output/
+log/
+bench/
+work/

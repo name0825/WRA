@@ -1,0 +1,29 @@
+body {
+    font-family: "Times New Roman", Times, serif;
+    font-size: 13px;
+    color: #000000;
+    background-color: #ffffff;
+    margin: 0;
+}
+
+h2 {
+    color: #003366;
+    border-bottom: 1px solid #003366;
+}
+
+h3 {
+    color: #333333;
+}
+
+a {
+    color: #0000cc;
+}
+
+table {
+    font-size: 12px;
+}
+
+.date {
+    font-weight: bold;
+    color: #666666;
+}

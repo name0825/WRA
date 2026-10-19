@@ -1,0 +1,34 @@
+body {
+    font-family: Verdana, Geneva, sans-serif;
+    font-size: 13px;
+    color: #222222;
+    margin: 0;
+}
+
+h1 {
+    color: #333333;
+}
+
+h2 {
+    color: #5b6ee1;
+}
+
+a {
+    color: #5b6ee1;
+}
+
+.faq-question {
+    font-weight: bold;
+    cursor: pointer;
+    background-color: #eeeeee;
+    padding: 6px;
+}
+
+.faq-answer {
+    display: none;
+    padding: 6px;
+}
+
+.faq-answer.open {
+    display: block;
+}

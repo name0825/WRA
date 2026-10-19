@@ -1,0 +1,151 @@
+# Where the source site comes from and how much of it is redesigned.
+#   entry : redesign the entry page only
+#   pages : redesign every HTML file independently
+#   site  : redesign every HTML file, sharing one site context between them
+# entry selection order: input.entry, then index.html, input.html, the largest HTML.
+# Files and folders starting with "_" or "." are ignored.
+input:
+  directory: "input"
+  mode: "entry"
+  entry: null
+  asset_directory: "assets"
+  # Upper bound on the source CSS/JS read for the style and script digests.
+  # The source text is never sent to a model; only the distilled digest is.
+  max_css_bytes: 512000
+  max_js_bytes: 512000
+  vision:
+    enabled: true
+    # Images below either threshold are skipped (favicons, sprite icons).
+    min_bytes: 4096
+    min_dimension: 64
+    max_images: 20
+    # Render the source page and read its overall impression. Needs Playwright.
+    screenshot: true
+    # Scroll-reveal animations start at opacity 0, so an untouched screenshot is
+    # mostly blank. Scroll the page first, then force whatever is still
+    # transparent into view.
+    reveal_animations: true
+    # Images analysed at once. Raise this only if the Ollama server actually has
+    # more than one parallel slot (OLLAMA_NUM_PARALLEL); otherwise the requests
+    # queue and nothing is gained.
+    concurrency: 1
+    # Keyed by file content, so re-running the same input costs no vision calls.
+    cache_directory: ".cache/vision"
+
+# Building a site from a brief instead of redesigning one. This runs when input/
+# holds no HTML but does hold a .md/.txt/.yaml brief; content freedom is forced
+# to madmax there, because there is no source to preserve.
+creator:
+  max_pages: 4
+
+design:
+  mode: "auto"
+
+# How far the pipeline may depart from the source content.
+#   low    : keep the source content as-is
+#   medium : minor additions/deletions/rewording, meaning preserved
+#   high   : rewrite, drop, and add content on the source basis
+#   ultra  : free authoring; source content is reference material
+#   madmax : the page is written from scratch for the subject; only its
+#            identity and factual record are fixed
+# low and medium require every populated content collection to be placed.
+# Dates, numbers, names, and their pairings must stay accurate at every level.
+content:
+  freedom: "low"
+
+browser:
+  enabled: false
+  timeout_ms: 10000
+  screenshot: true
+  viewports:
+    - name: desktop
+      width: 1440
+      height: 900
+    - name: tablet
+      width: 768
+      height: 1024
+    - name: mobile
+      width: 390
+      height: 844
+
+pipeline:
+  max_iterations: 3
+  evaluation_threshold: 8.0
+  # Disabled, pages skip the threshold/patience early stop but still end at max_iterations.
+  termination:
+    enabled: true
+    # 최고 점수가 이만큼의 회차 동안 갱신되지 않으면 그 페이지를 마친다.
+    # 0이면 max_iterations만으로 제한한다. enabled가 false면 무시된다.
+    patience: 2
+  # 2회차부터 디자인을 새로 세우는 대신 최고 결과를 국소 수정한다.
+  # 전체 재생성은 잘 나온 부분까지 버리므로 후퇴가 잦다.
+  refine:
+    enabled: false
+    # 국소 수정이 이만큼 연속으로 개선에 실패하면 한 번은 전체 재설계로 돌아간다.
+    # 0이면 절대 돌아가지 않아, 막힌 페이지가 막힌 채로 남는다.
+    redesign_after_stalls: 2
+    # 한 번의 수정이 겨냥하는 최저점 항목 수.
+    weakest_dimensions: 3
+  output:
+    save_mode: "all"
+
+# models.single.num_ctx overrides initial_num_ctx, initial_ceiling_num_ctx and
+# max_num_ctx when single-model mode is on.
+recovery:
+  max_retries: 3
+  initial_num_ctx: 8192
+  # Upper bound on the *initial* estimate. This is the VRAM guard: a larger
+  # window means a larger KV cache. Recovery escalates beyond it up to
+  # max_num_ctx.
+  initial_ceiling_num_ctx: 32768
+  max_num_ctx: 131072
+  # Shape of the retry escalation from the initial window to max_num_ctx. The
+  # final attempt always lands on max_num_ctx; growth_power decides how much of
+  # the growth is deferred to it. Above 1.0 keeps the early retries small and
+  # cheap, 1.0 is linear, below 1.0 jumps large immediately.
+  growth_power: 2.0
+  # The designer's revision prompt carries the previous spec, an HTML
+  # excerpt and the evaluation on top of the Feature Model, and its own
+  # DesignSpec output runs long, so it needs more room than a first plan.
+  designer_output_headroom_tokens: 8192
+  # The generator emits a whole HTML document, so its context estimate must
+  # reserve far more output room than the JSON-producing roles.
+  generator_output_headroom_tokens: 16384
+
+logging:
+  level: "INFO"
+  console_level: "INFO"
+  directory: "log"
+
+viewer:
+  # Result viewer + admin console server (show-pages)
+  # Flask debug mode exposes an interactive Python console on any unhandled
+  # error. Keep host on the loopback interface and debug off unless you are
+  # deliberately debugging on a machine nobody else can reach.
+  host: "127.0.0.1"
+  port: 5002
+  debug: false
+  output_root: "output"
+  # Score badge thresholds (out of 10)
+  score_high_threshold: 8.0
+  score_mid_threshold: 6.0
+  # 어드민 콘솔(/admin): 로그 열람, 설정 편집, 보안 상태, 파이프라인 실행.
+  admin:
+    enabled: true
+    # 비밀번호를 두면 어디서 접속하든 로그인을 요구한다.
+    # 비워 두면 로그인은 없고 루프백(127.0.0.1)에서만 열린다.
+    # 이 파일은 저장소에 들어가고 콘솔 설정 화면에 그대로 보이므로,
+    # 실제 비밀번호는 WRA_ADMIN_PASSWORD 환경변수로 두는 편이 좋다. 환경변수가 이 값보다 우선한다.
+    password: null
+    session_hours: 12
+    # 콘솔에서 config/*.yaml 을 고쳐 쓸 수 있게 할지.
+    allow_config_edit: false
+    # 콘솔에서 파이프라인 프로세스를 띄울 수 있게 할지.
+    allow_run: false
+    # 콘솔에서 입력 폴더의 파일을 올리거나 고치거나 지울 수 있게 할지.
+    # 끄면 목록·내용 보기·내려받기만 남는다.
+    allow_input_edit: false
+    # 로그·실행 출력 화면이 한 번에 읽는 마지막 줄 수.
+    log_tail_lines: 500
+    # 실행 버튼이 띄우는 명령. 비우면 현재 파이썬으로 `-m wra.cli` 를 띄운다.
+    run_command: []
