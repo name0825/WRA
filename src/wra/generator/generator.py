@@ -10,6 +10,7 @@ from wra.llm.client import LLMClient
 from wra.llm.context import COMPACT_JSON, estimate_num_ctx, estimate_tokens
 from wra.utils.placeholders import protect_features, restore
 from wra.validator.anchors import repair_broken_anchors, repair_doubled_url_schemes
+from wra.validator.facts import business_facts
 from wra.validator.html import validate_html
 from wra.validator.tokens import repair_corrupted_tokens, repair_dropped_numerals, repair_email_substitutions, repair_mid_token_substitutions, repair_particle_swaps, repair_translated_proper_nouns
 from wra.validator.structure import repair_structure
@@ -54,7 +55,7 @@ class HTMLGenerator:
         self._recovery_prompt_path = Path(recovery_prompt_path)
         self._recovery_policy = recovery_policy or RecoveryPolicy()
 
-    def generate(self, features: FeatureModel, design_spec: DesignSpec, generation_rules: list[str] | None = None, model: str | None = None, think: bool | None = None, timeout: float | None = None, asset_root: str | Path | None = None) -> str:
+    def generate(self, features: FeatureModel, design_spec: DesignSpec, generation_rules: list[str] | None = None, model: str | None = None, think: bool | None = None, timeout: float | None = None, asset_root: str | Path | None = None, preserve_facts: bool = False) -> str:
         selected_model = model or self._generator_model
         selected_think = self._generator_think if think is None else think
         selected_timeout = self._generator_timeout if timeout is None else timeout
@@ -64,7 +65,7 @@ class HTMLGenerator:
         prompt_template = self._prompt_path.read_text(encoding="utf-8")
         revision_template = self._recovery_prompt_path.read_text(encoding="utf-8")
         protected_features, placeholder_map = protect_features(features)
-        original_prompt = self._build_prompt(prompt_template, protected_features, design_spec, generation_rules, cdn_tags, self._frameworks)
+        original_prompt = self._build_prompt(prompt_template, protected_features, design_spec, generation_rules, cdn_tags, self._frameworks, preserve_facts)
         prompt = original_prompt
         previous_response = None
         base_num_ctx = estimate_num_ctx(original_prompt, self._recovery_policy.initial_num_ctx, self._recovery_policy.max_num_ctx, ceiling=self._recovery_policy.ceiling_num_ctx, headroom_tokens=self._recovery_policy.output_headroom_tokens)
@@ -223,7 +224,15 @@ class HTMLGenerator:
         return pruned
 
     @staticmethod
-    def _build_prompt(prompt_template, features, design_spec, generation_rules, cdn_tags, frameworks=None):
+    def _required_facts_block(features: FeatureModel) -> str:
+        facts = business_facts(features.business) if features.business else []
+        if not facts:
+            return ""
+        lines = "\n".join(f"- {label}: {value}" for label, value in facts)
+        return f"Required facts, every one must appear verbatim in the visible text of the page:\n{lines}\n\n"
+
+    @staticmethod
+    def _build_prompt(prompt_template, features, design_spec, generation_rules, cdn_tags, frameworks=None, preserve_facts=False):
         """Assemble the generator prompt with input data first and instructions last.
 
         Ollama discards the front of an over-long prompt, so the role, quality
@@ -241,6 +250,7 @@ class HTMLGenerator:
             f"Generation Rules:\n{json.dumps(generation_rules or [], ensure_ascii=False, separators=COMPACT_JSON)}\n\n"
             f"Available configured frameworks:\n{framework_catalog}\n\n"
             f"Framework CDN dependencies WRA will inject after generation, do not output them:\n{cdn_tags or '(none)'}\n\n"
+            f"{HTMLGenerator._required_facts_block(features) if preserve_facts else ''}"
             f"{prompt_template}"
         )
 

@@ -233,7 +233,7 @@ class _Generator:
     def __init__(self) -> None:
         self.calls = 0
 
-    def generate(self, features, design_spec, generation_rules, model, think=None, timeout=None, asset_root=None):
+    def generate(self, features, design_spec, generation_rules, model, think=None, timeout=None, asset_root=None, preserve_facts=False):
         self.calls += 1
         return PAGE.replace("본문", f"생성 {self.calls}")
 

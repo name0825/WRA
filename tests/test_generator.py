@@ -441,3 +441,20 @@ def test_generator_rejects_oversized_authoritative_input_without_calling_model(t
         HTMLGenerator(client, "generator-model", FrameworkConfig(), prompt_path, recovery_policy=policy).generate(features, make_spec())
 
     assert client.calls == []
+
+
+def test_generator_prompt_lists_required_facts_only_when_preserving(tmp_path):
+    prompt = tmp_path / "system.md"
+    prompt.write_text("Generate HTML.", encoding="utf-8")
+    html = "<!DOCTYPE html><html><head><meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\"></head><body></body></html>"
+    client = FakeLLMClient(html)
+    generator = HTMLGenerator(client, "generator-model", FrameworkConfig(), prompt)
+    features = FeatureModel(business={"address": "대구광역시 중구 달구벌대로 100", "contact": ["팩스: 053-242-7499"]})
+
+    generator.generate(features, make_spec())
+    generator.generate(features, make_spec(), preserve_facts=True)
+
+    assert "Required facts" not in client.calls[0]["prompt"]
+    assert "Required facts" in client.calls[1]["prompt"]
+    assert "- 주소: 대구광역시 중구 달구벌대로 100" in client.calls[1]["prompt"]
+    assert "- 팩스: WRAREF" in client.calls[1]["prompt"]

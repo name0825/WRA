@@ -237,7 +237,7 @@ class IterationEngine:
                 design_spec = self._designer.revise(features=features, previous_design_spec=previous_result.design_spec, previous_html=previous_result.html, evaluation=previous_result.evaluation, design_constraints=design_constraints, model=designer_model.name, think=designer_model.think, timeout=designer_model.timeout)
 
             logger.info("Current task: HTML generation")
-            html = self._generator.generate(features, design_spec, generation_rules=self._build_generation_rules(), model=generator_model.name, think=generator_model.think, timeout=generator_model.timeout, asset_root=output_manager.run_dir)
+            html = self._generator.generate(features, design_spec, generation_rules=self._build_generation_rules(), model=generator_model.name, think=generator_model.think, timeout=generator_model.timeout, asset_root=output_manager.run_dir, preserve_facts=iteration > 1)
         logger.info("Current task: HTML validation")
         validation = validate_html(html, features, content_freedom=self._config.content.freedom)
         browser_result = BrowserEvaluationResult(enabled=False)
