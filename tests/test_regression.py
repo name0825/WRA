@@ -113,6 +113,8 @@ def _linked(href: str, source: str) -> list[str]:
 def test_equivalent_spellings_of_a_source_link_are_not_regressions() -> None:
     assert _linked("tel:01012345678", "tel:010-1234-5678") == []
     assert _linked("tel:+82-10-1234-5678", "tel:+821012345678") == []
+    assert _linked("tel:+82269520418", "tel:02-6952-0418") == []
+    assert _linked("tel:02-6952-0418", "tel:+82-2-6952-0418") == []
     assert _linked("mailto:A@B.com?subject=x", "mailto:a@b.com") == []
     assert _linked("https://example.com/x", "HTTPS://Example.com/x") == []
     assert _linked("https://example.com/p?a=1&amp;b=2", "https://example.com/p?a=1&b=2") == []
@@ -121,6 +123,7 @@ def test_equivalent_spellings_of_a_source_link_are_not_regressions() -> None:
 def test_a_genuinely_removed_or_changed_link_is_still_a_regression() -> None:
     assert _linked("#top", "https://example.com/x")
     assert _linked("tel:01099999999", "tel:010-1234-5678")
+    assert _linked("tel:+82269520418", "tel:02-6952-0419")
     assert _linked("https://example.com/y", "https://example.com/x")
 
 

@@ -22,7 +22,10 @@ def _normalize_href(href: str) -> str:
     lowered = href.lower()
     if lowered.startswith("tel:"):
         number = href[4:].strip()
-        return "tel:" + ("+" if number.startswith("+") else "") + re.sub(r"\D", "", number)
+        digits = re.sub(r"\D", "", number)
+        if number.startswith("+") and digits.startswith("82"):
+            return "tel:0" + digits[2:]
+        return "tel:" + ("+" if number.startswith("+") else "") + digits
     if lowered.startswith("mailto:"):
         return "mailto:" + href[7:].split("?", 1)[0].strip().lower()
     origin = re.match(r"https?://[^/?#]*", href, re.IGNORECASE)
