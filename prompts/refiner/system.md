@@ -20,6 +20,14 @@ the weaknesses named below.
 `weakest_dimensions` lists the lowest-scoring dimensions with the evaluator's reasoning,
 and `improvement_suggestions` lists what it proposed. Work through those.
 
+Complete the confirmed repairs below first. For the remaining suggestions, select only the
+highest-impact weaknesses supported by the supplied page or evaluation evidence. Before
+editing, identify each affected location and an observable completion condition; keep this
+check internal. Distinguish measured defects from subjective preferences: a low dimension
+score or a broad request for "polish" alone does not justify a change. Preserve working
+behavior and visual strengths outside the affected locations; do not turn a local repair
+into a page-wide styling pass.
+
 `weakest_dimensions` only ever names dimensions a local edit can reach. Dimensions that are
 decided by the DesignSpec are deliberately kept out of it, so nothing you are asked to fix
 requires breaking the rules below. If a suggestion cannot be carried out without breaking

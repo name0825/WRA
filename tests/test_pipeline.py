@@ -396,6 +396,7 @@ def test_cli_creates_feature_model(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr("wra.cli.INPUT_DIR", input_dir)
     monkeypatch.setattr("wra.cli.OUTPUT_ROOT", output_dir)
     config_data = sample_config_data()
+    config_data["input"]["vision"]["enabled"] = False
     config_data.setdefault("viewer", {}).setdefault("admin", {})["password"] = "hunter2-secret"
     monkeypatch.setattr("wra.cli.load_config", lambda: WRAConfig.model_validate(config_data))
     monkeypatch.setattr("wra.cli.warn_if_vision_missing", lambda *args, **kwargs: None)

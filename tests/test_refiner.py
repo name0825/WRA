@@ -192,9 +192,10 @@ def test_a_scored_page_is_refined() -> None:
     assert _engine(_config())._refines(_state())
 
 
-def test_refining_is_off_by_default() -> None:
+def test_refining_can_be_disabled() -> None:
     data = sample_config_data()
-    assert not WRAConfig.model_validate(data).pipeline.refine.enabled
+    data["pipeline"]["refine"]["enabled"] = False
+    assert not _engine(WRAConfig.model_validate(data))._refines(_state())
 
 
 def test_no_refiner_means_no_refining() -> None:

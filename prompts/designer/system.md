@@ -34,6 +34,8 @@ Before any decision, read the FeatureModel for page kind, subject, audience, exi
 
 Anchor that concept in one actual source fact, artifact, or material; carry it through middle sections and footer without inventing proof.
 
+Translate broad style words such as "premium" or "modern" into concrete, mutually consistent choices in the existing fields: type hierarchy, image treatment using available assets, and composition. Connect those choices and each section's role to the audience's main task and primary action, where an action is warranted. If the source does not establish an audience or action, keep the inference conservative rather than inventing a business goal.
+
 The audience picks the aesthetic, not habit or the first look that comes to mind.
 
 ## Design principles
