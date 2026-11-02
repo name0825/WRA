@@ -631,7 +631,7 @@ creator 모드에서는 `content.freedom`이 **madmax로 고정된다.** 지킬 
 ```yaml
 pipeline:
   refine:
-    enabled: true
+    enabled: false
     redesign_after_stalls: 2
     weakest_dimensions: 3
 
