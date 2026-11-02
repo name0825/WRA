@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 import logging
@@ -13,6 +14,7 @@ from wra.validator.browser_errors import find_browser_errors
 from wra.validator.claims import find_unsupported_claims
 from wra.validator.facts import find_missing_business_facts
 from wra.validator.html import HTMLValidationResult, validate_html
+from wra.validator.regression import find_regressions
 from wra.validator.syntax import find_syntax_defects
 from wra.validator.tokens import find_corrupted_tokens
 from wra.validator.visual import find_visual_defects
@@ -35,6 +37,7 @@ class IterationResult:
     validation_path: Path | None
     final_path: Path
     visual_inspection_findings: list[str] = field(default_factory=list)
+    regressions: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -57,19 +60,19 @@ class _PageRun:
     def best_score(self) -> float | None:
         return self.best.evaluation.overall_score if self.best and self.best.evaluation else None
 
-    def record(self, result: IterationResult) -> bool:
-        """Take the result as the new base if it improved on the best so far."""
+    def record(self, result: IterationResult, regressions: Sequence[str] = ()) -> bool:
+        """Take the result as the new base if it improved on the best so far and lost nothing the best had."""
         self.last = result
         score = result.evaluation.overall_score if result.evaluation else None
         best = self.best_score
-        improved = self.best is None or (score is not None and (best is None or score > best))
+        improved = (self.best is None or (score is not None and (best is None or score > best))) and not regressions
         if improved:
             self.best = result
             self.stalled = 0
             self.setback = None
         else:
             self.stalled += 1
-            self.setback = _describe_setback(result, self.best)
+            self.setback = _describe_setback(result, self.best, regressions)
         return improved
 
 
@@ -77,7 +80,7 @@ def _brief_fact_findings(page: PreparedPage, html: str) -> list[str]:
     return find_missing_business_facts(html, page.features) if page.is_entry and page.created else []
 
 
-def _describe_setback(rejected: IterationResult, best: IterationResult | None) -> dict:
+def _describe_setback(rejected: IterationResult, best: IterationResult | None, regressions: Sequence[str] = ()) -> dict:
     """What the discarded attempt got wrong, for the next attempt to avoid."""
     note: dict = {
         "iteration": rejected.iteration,
@@ -89,6 +92,14 @@ def _describe_setback(rejected: IterationResult, best: IterationResult | None) -
             "repeating the regression."
         ),
     }
+    if regressions:
+        note["regressions"] = list(regressions)
+        if note["score"] is not None and note["best_score"] is not None and note["score"] >= note["best_score"]:
+            note["instruction"] = (
+                "An attempt from this same starting point lost something the better page had and was discarded, "
+                "whatever it scored; you are revising the better page again, not that one. Keep what the better page "
+                "does well and do not repeat the losses listed under regressions."
+            )
     if rejected.evaluation is None:
         note["regressed"] = ["the attempt produced no valid HTML to score"]
         return note
@@ -154,11 +165,13 @@ class IterationEngine:
                     logger.info("Iteration %d, page %d/%d: slug=%s", iteration, index, len(pending), state.page.slug)
                     design_system = self._design_system(states, state)
                     result = self._run_one_iteration(state, iteration, site_context, output_manager, browser_tmp, models, design_system)
-                    if state.record(result):
+                    regressions = getattr(result, "regressions", [])
+                    if state.record(result, regressions):
                         logger.info("Page '%s' improved at iteration %d: best=%s", state.page.slug, iteration, f"{state.best_score:.2f}" if state.best_score is not None else "n/a")
                     else:
-                        logger.info("Page '%s' did not improve at iteration %d (%s vs best %s); reverting to the best result as the base", state.page.slug, iteration,
-                                    f"{result.evaluation.overall_score:.2f}" if result.evaluation else "invalid", f"{state.best_score:.2f}" if state.best_score is not None else "n/a")
+                        logger.info("Page '%s' did not improve at iteration %d (%s vs best %s%s); reverting to the best result as the base", state.page.slug, iteration,
+                                    f"{result.evaluation.overall_score:.2f}" if result.evaluation else "invalid", f"{state.best_score:.2f}" if state.best_score is not None else "n/a",
+                                    f", {len(regressions)} regression(s)" if regressions else "")
                     if self._should_terminate(iteration, state):
                         state.done = True
                 iteration += 1
@@ -169,6 +182,15 @@ class IterationEngine:
         except Exception:
             logger.exception("Pipeline failed")
             raise
+
+    @staticmethod
+    def _regressions(state: _PageRun, iteration: int, html: str, browser: BrowserEvaluationResult | None, evaluation: EvaluationResult | None) -> list[str]:
+        if state.best is None or state.best.evaluation is None or evaluation is None:
+            return []
+        regressions = find_regressions(state.best.html, getattr(state.best, "browser", None), html, browser, state.page.features, check_brief_facts=state.page.is_entry and state.page.created)
+        if regressions:
+            logger.warning("Page '%s' iteration %d regressed against the best: %s", state.page.slug, iteration, regressions)
+        return regressions
 
     def _start_page(self, page: PreparedPage) -> _PageRun:
         data_dir = Path(page.data_dir)
@@ -223,7 +245,7 @@ class IterationEngine:
         if self._refines(state):
             logger.info("Current task: refining the best page (score=%.2f)", previous_result.evaluation.overall_score)
             try:
-                html = self._refiner.refine(features, previous_result.html, previous_result.evaluation, design_spec=previous_result.design_spec, content_findings=find_corrupted_tokens(previous_result.html, features, content_freedom=self._config.content.freedom) + find_unsupported_claims(previous_result.html, features),ux_findings=find_broken_anchors(previous_result.html) + find_browser_errors(previous_result.browser) + find_syntax_defects(previous_result.html) + _brief_fact_findings(state.page, previous_result.html), visual_findings=find_visual_defects(previous_result.html, features, previous_result.browser) + previous_result.visual_inspection_findings, model=refiner_model.name, think=refiner_model.think, timeout=refiner_model.timeout, asset_root=output_manager.run_dir)
+                html = self._refiner.refine(features, previous_result.html, previous_result.evaluation, design_spec=previous_result.design_spec, content_findings=find_corrupted_tokens(previous_result.html, features, content_freedom=self._config.content.freedom) + find_unsupported_claims(previous_result.html, features),ux_findings=find_broken_anchors(previous_result.html) + find_browser_errors(previous_result.browser) + find_syntax_defects(previous_result.html) + _brief_fact_findings(state.page, previous_result.html), visual_findings=find_visual_defects(previous_result.html, features, previous_result.browser) + previous_result.visual_inspection_findings, model=refiner_model.name, think=refiner_model.think, timeout=refiner_model.timeout, asset_root=output_manager.run_dir, regressions=(state.setback or {}).get("regressions"))
                 route = "refine"
             except Exception as exc:
                 # A refinement that will not come out valid is not worth an
@@ -267,13 +289,14 @@ class IterationEngine:
             logger.warning("Skipping browser/evaluation because HTML validation failed")
 
         logger.info("Current task: saving iteration %d for page '%s'", iteration, slug)
-        saved = output_manager.save_iteration(iteration=iteration, slug=slug, html=html, design_spec=design_spec, validation=validation, evaluation=evaluation, browser=browser_result, score=evaluation.overall_score if evaluation else None, path=route, refine_failed=refine_failed)
+        regressions = self._regressions(state, iteration, html, browser_result, evaluation)
+        saved = output_manager.save_iteration(iteration=iteration, slug=slug, html=html, design_spec=design_spec, validation=validation, evaluation=evaluation, browser=browser_result, score=evaluation.overall_score if evaluation else None, path=route, refine_failed=refine_failed, adoptable=not regressions)
         logger.info("Iteration %d completed for page '%s': validation=%s score=%s", iteration, slug, validation.valid, f"{evaluation.overall_score:.2f}" if evaluation else "n/a")
         if evaluation_error is not None:
             # The page was saved above; re-raise so an evaluator failure still
             # surfaces instead of silently looping unscored pages forever.
             raise evaluation_error
-        return IterationResult(slug=slug, iteration=iteration, features=features, design_spec=design_spec, html=html, validation=validation, browser=browser_result, evaluation=evaluation, html_path=saved.html_path, validation_path=saved.validation_path, final_path=output_manager.run_dir / f"{slug}.html", visual_inspection_findings=inspection_findings)
+        return IterationResult(slug=slug, iteration=iteration, features=features, design_spec=design_spec, html=html, validation=validation, browser=browser_result, evaluation=evaluation, html_path=saved.html_path, validation_path=saved.validation_path, final_path=output_manager.run_dir / f"{slug}.html", visual_inspection_findings=inspection_findings, regressions=regressions)
 
     def _select_models(self) -> dict:
         """One model choice per iteration.

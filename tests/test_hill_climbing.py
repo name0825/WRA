@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from wra.browser.models import BrowserEvaluationResult
+from wra.browser.models import BrowserEvaluationResult, BrowserViewportResult
 from wra.core.iteration import IterationEngine, _PageRun
 from wra.core.models import EvaluationResult, FeatureModel, WRAConfig
 from wra.core.preparation import PreparedPage
@@ -337,3 +337,135 @@ def test_siblings_follow_the_entry_pages_best_design_not_its_latest() -> None:
 def test_no_design_system_before_the_entry_page_has_run() -> None:
     lead, sibling = _state(), _state()
     assert IterationEngine._design_system([lead, sibling], sibling) is None
+
+
+# --- a higher score does not adopt a page that lost something the best had ---
+
+PHONE = "02-1234-5678"
+FULL = f'<html><body><section><p>전화 {PHONE}</p><a href="mailto:a@b.com">메일</a><img src="assets/a.jpg"><img src="assets/b.jpg"></section></body></html>'
+NO_PHONE = FULL.replace(PHONE, "")
+RESTRUCTURED = f'<html><body><footer><a href="mailto:a@b.com">메일</a></footer><main><p>전화 {PHONE}</p><img src="assets/a.jpg"></main></body></html>'
+
+
+class _NoteDesigner(_Designer):
+    def __init__(self) -> None:
+        super().__init__()
+        self.constraints: list[dict] = []
+
+    def revise(self, features, previous_design_spec, previous_html, evaluation, design_constraints, model, think=None, timeout=None):
+        self.constraints.append(design_constraints)
+        return super().revise(features, previous_design_spec, previous_html, evaluation, design_constraints, model, think, timeout)
+
+
+class _HtmlGenerator:
+    def __init__(self, pages) -> None:
+        self.pages = list(pages)
+        self.calls = 0
+
+    def generate(self, features, design_spec, generation_rules, model, think=None, timeout=None, asset_root=None, preserve_facts=False):
+        page = self.pages[min(self.calls, len(self.pages) - 1)]
+        self.calls += 1
+        return page
+
+
+class _ScriptedEvaluator:
+    def __init__(self, evaluations) -> None:
+        self.evaluations = list(evaluations)
+        self.calls = 0
+
+    def evaluate(self, features, design_spec, html, browser_result, content_findings, ux_findings=None, visual_findings=None, model=None, think=None, timeout=None):
+        evaluation = self.evaluations[min(self.calls, len(self.evaluations) - 1)]
+        self.calls += 1
+        return evaluation
+
+
+class _ScriptedBrowser:
+    def __init__(self, results) -> None:
+        self.results = list(results)
+        self.calls = 0
+
+    def evaluate(self, html, output_dir, iteration, asset_root):
+        result = self.results[min(self.calls, len(self.results) - 1)]
+        self.calls += 1
+        return result
+
+
+class _NoteRefiner:
+    def __init__(self, pages) -> None:
+        self.pages = list(pages)
+        self.regressions: list = []
+
+    def refine(self, features, html, evaluation, design_spec=None, content_findings=None, ux_findings=None, visual_findings=None, model=None, think=None, timeout=None, asset_root=None, regressions=None):
+        self.regressions.append(regressions)
+        return self.pages[min(len(self.regressions) - 1, len(self.pages) - 1)]
+
+
+def _run_engine(tmp_path: Path, monkeypatch, pages, evaluations, max_iterations=3, refiner=None, browsers=None, designer=None):
+    monkeypatch.setattr("wra.core.iteration.validate_html", lambda html, features, content_freedom="low": SimpleNamespace(valid=True, errors=[], warnings=[]))
+    monkeypatch.setattr("wra.core.iteration.find_corrupted_tokens", lambda html, features, content_freedom="low": [])
+    config = _config(patience=0)
+    pipeline = config.pipeline.model_copy(update={
+        "max_iterations": max_iterations, "evaluation_threshold": 99.0,
+        "refine": config.pipeline.refine.model_copy(update={"enabled": refiner is not None, "redesign_after_stalls": 0}),
+        "output": config.pipeline.output.model_copy(update={"save_mode": "best"}),
+    })
+    config = config.model_copy(update={"pipeline": pipeline, "browser": config.browser.model_copy(update={"enabled": browsers is not None})})
+    designer = designer or _NoteDesigner()
+    engine = IterationEngine(config=config, designer=designer, generator=_HtmlGenerator(pages), evaluator=_ScriptedEvaluator(evaluations),
+                             browser_evaluator=_ScriptedBrowser(browsers) if browsers is not None else None, refiner=refiner)
+    features = FeatureModel(
+        business={"phone": [PHONE]},
+        content={"links": [{"text": "메일", "href": "mailto:a@b.com"}]},
+        media={"images": [{"src": "assets/a.jpg"}, {"src": "assets/b.jpg"}]},
+    )
+    page = PreparedPage(slug="index", relative="index.html", html="", features=features, run_root=tmp_path,
+                        data_dir=tmp_path / "data" / "index", is_entry=True, created=True)
+    return engine.run_pages([page]), designer
+
+
+def _assert_published_v1(tmp_path: Path) -> None:
+    import json
+
+    assert (tmp_path / "index.html").read_text(encoding="utf-8") == FULL
+    assert json.loads((tmp_path / "result.json").read_text(encoding="utf-8"))["pages"]["index"]["best_iteration"] == 1
+
+
+def test_a_redesign_that_drops_a_brief_fact_is_not_adopted_despite_a_higher_score(tmp_path: Path, monkeypatch) -> None:
+    results, designer = _run_engine(tmp_path, monkeypatch, [FULL, NO_PHONE, FULL], [_evaluation(6.0), _evaluation(9.0), _evaluation(5.0)])
+
+    assert results[0].html == FULL
+    _assert_published_v1(tmp_path)
+    assert designer.revised_from == [FULL, FULL]
+    rejected = designer.constraints[1]["rejected_attempt"]
+    assert any(PHONE in item for item in rejected["regressions"])
+    assert "lost something" in rejected["instruction"]
+
+
+def test_a_refinement_that_drops_a_brief_fact_is_not_adopted_and_the_loss_reaches_the_next_refinement(tmp_path: Path, monkeypatch) -> None:
+    refiner = _NoteRefiner([NO_PHONE, FULL])
+    results, _ = _run_engine(tmp_path, monkeypatch, [FULL], [_evaluation(7.0, readability=3.0), _evaluation(9.0), _evaluation(5.0)], refiner=refiner)
+
+    assert results[0].html == FULL
+    _assert_published_v1(tmp_path)
+    assert len(refiner.regressions) == 2
+    assert not refiner.regressions[0]
+    assert any(PHONE in item for item in refiner.regressions[1])
+
+
+def test_a_higher_scoring_restructure_that_keeps_facts_and_links_is_adopted(tmp_path: Path, monkeypatch) -> None:
+    results, _ = _run_engine(tmp_path, monkeypatch, [FULL, RESTRUCTURED], [_evaluation(6.0), _evaluation(9.0)], max_iterations=2)
+    assert results[0].html == RESTRUCTURED
+
+
+def test_an_equal_score_still_keeps_the_first_page(tmp_path: Path, monkeypatch) -> None:
+    results, _ = _run_engine(tmp_path, monkeypatch, [FULL, RESTRUCTURED], [_evaluation(8.0), _evaluation(8.0)], max_iterations=2)
+    assert results[0].html == FULL
+
+
+def test_a_higher_scoring_page_with_a_new_broken_image_is_not_adopted(tmp_path: Path, monkeypatch) -> None:
+    def browser(broken=()):
+        return BrowserEvaluationResult(enabled=True, viewports=[BrowserViewportResult(name="desktop", width=1280, height=800, viewport_width=1280, scroll_width=1280, broken_images=list(broken))])
+
+    results, _ = _run_engine(tmp_path, monkeypatch, [FULL, RESTRUCTURED], [_evaluation(6.0), _evaluation(9.0)], max_iterations=2, browsers=[browser(), browser(["assets/a.jpg"])])
+    assert results[0].html == FULL
+    _assert_published_v1(tmp_path)

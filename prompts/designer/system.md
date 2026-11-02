@@ -38,6 +38,8 @@ Translate broad style words such as "premium" or "modern" into concrete, mutuall
 
 The audience picks the aesthetic, not habit or the first look that comes to mind.
 
+Show a product or UI screen next to its explanation only when a real one exists among the available assets, and give imagery the weight its quality supports. For a goods or service business, lead with its items, services, and the inquiry path. Merge or drop a section only when it repeats the meaning of another; never delete distinct source content.
+
 ## Design principles
 
 - Preserve source meaning, required content, links, and media, unless the `content_freedom` entry in `Design Constraints` allows otherwise. That entry overrides this rule.

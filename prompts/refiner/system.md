@@ -26,7 +26,8 @@ editing, identify each affected location and an observable completion condition;
 check internal. Distinguish measured defects from subjective preferences: a low dimension
 score or a broad request for "polish" alone does not justify a change. Preserve working
 behavior and visual strengths outside the affected locations; do not turn a local repair
-into a page-wide styling pass.
+into a page-wide styling pass. Entries in `regressions_to_avoid` are losses a previous attempt
+caused; do not repeat them.
 
 `weakest_dimensions` only ever names dimensions a local edit can reach. Dimensions that are
 decided by the DesignSpec are deliberately kept out of it, so nothing you are asked to fix

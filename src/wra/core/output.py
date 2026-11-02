@@ -101,7 +101,7 @@ class OutputManager:
     def page_data_dir(self, slug: str) -> Path:
         return self.run_dir / DATA_DIRECTORY / slug
 
-    def save_iteration(self, iteration: int, slug: str, html: str, design_spec: Any | None = None, validation: Any | None = None, evaluation: Any | None = None, browser: Any | None = None, score: float | None = None, path: str | None = None, refine_failed: bool = False) -> IterationOutput:
+    def save_iteration(self, iteration: int, slug: str, html: str, design_spec: Any | None = None, validation: Any | None = None, evaluation: Any | None = None, browser: Any | None = None, score: float | None = None, path: str | None = None, refine_failed: bool = False, adoptable: bool = True) -> IterationOutput:
         logger.info("Saving iteration artifacts: iteration=%d page=%s mode=%s score=%s", iteration, slug, self.save_mode, score if score is not None else "n/a")
         html_path = design_spec_path = validation_path = evaluation_path = browser_path = None
         if self.save_mode == "all":
@@ -133,7 +133,7 @@ class OutputManager:
         # It must not replace a scored page: `_publish` writes the best straight
         # to the run root, so accepting it overwrites the good page with a
         # broken one -- and disagrees with the loop, which keeps the old best.
-        if best is None or (score is not None and (best.score is None or score > best.score)):
+        if best is None or (adoptable and score is not None and (best.score is None or score > best.score)):
             self._best[slug] = _Best(iteration=iteration, score=score, html=html, browser_source=self._browser_source(browser))
             logger.info("New best iteration for page '%s': iteration=%d score=%s", slug, iteration, score if score is not None else "n/a")
             # Publish now rather than at the end of the run. Termination is

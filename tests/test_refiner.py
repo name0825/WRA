@@ -261,7 +261,7 @@ class _Refiner:
         self.models: list[str | None] = []
         self.fail = fail
 
-    def refine(self, features, html, evaluation, design_spec=None, content_findings=None, ux_findings=None, visual_findings=None, model=None, think=None, timeout=None, asset_root=None):
+    def refine(self, features, html, evaluation, design_spec=None, content_findings=None, ux_findings=None, visual_findings=None, model=None, think=None, timeout=None, asset_root=None, regressions=None):
         self.calls += 1
         self.received.append(html)
         self.specs.append(design_spec)
@@ -419,3 +419,19 @@ def test_refining_uses_the_refiner_pool_not_the_generator_pool(tmp_path: Path, m
 
     assert refiner.models, "the refiner ran"
     assert set(refiner.models) == {"gemma4:26b"}, "models.refiner, not models.generator"
+
+
+def test_regressions_to_avoid_reach_the_prompt_before_the_instructions() -> None:
+    client = ReplyClient(BETTER)
+    _refiner(client).refine(FeatureModel(), PAGE, _evaluation(), regressions=["regression: brief fact missing from page: 전화 02-1234-5678"])
+
+    prompt = client.prompts[0]
+    assert 'regressions_to_avoid:\n["regression: brief fact missing from page: 전화 02-1234-5678"]' in prompt
+    assert prompt.index("regressions_to_avoid") > prompt.index("visual_findings")
+    assert prompt.index("regressions_to_avoid") < prompt.index(PROMPT.read_text(encoding="utf-8")[:40])
+
+
+def test_no_regressions_leaves_an_empty_block() -> None:
+    client = ReplyClient(BETTER)
+    _refiner(client).refine(FeatureModel(), PAGE, _evaluation())
+    assert "regressions_to_avoid:\n[]" in client.prompts[0]

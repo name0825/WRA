@@ -57,7 +57,7 @@ class HTMLRefiner:
         self._ceiling_num_ctx = ceiling_num_ctx
         self._output_headroom_tokens = output_headroom_tokens
 
-    def refine(self, features: FeatureModel, html: str, evaluation: EvaluationResult, design_spec: DesignSpec | None = None, content_findings: list[str] | None = None, ux_findings: list[str] | None = None, visual_findings: list[str] | None = None, model: str | None = None, think: bool | None = None, timeout: float | None = None, asset_root: str | Path | None = None) -> str:
+    def refine(self, features: FeatureModel, html: str, evaluation: EvaluationResult, design_spec: DesignSpec | None = None, content_findings: list[str] | None = None, ux_findings: list[str] | None = None, visual_findings: list[str] | None = None, model: str | None = None, think: bool | None = None, timeout: float | None = None, asset_root: str | Path | None = None, regressions: list[str] | None = None) -> str:
         selected_model = model or self._model
         selected_think = self._think if think is None else think
         selected_timeout = self._timeout if timeout is None else timeout
@@ -81,6 +81,7 @@ class HTMLRefiner:
             f"content_repairs:\n{json.dumps(self.content_repairs(html, content_findings or []), ensure_ascii=False, separators=COMPACT_JSON)}\n\n"
             f"ux_findings:\n{json.dumps(ux_findings or [], ensure_ascii=False, separators=COMPACT_JSON)}\n\n"
             f"visual_findings:\n{json.dumps(visual_findings or [], ensure_ascii=False, separators=COMPACT_JSON)}\n\n"
+            f"regressions_to_avoid:\n{json.dumps(regressions or [], ensure_ascii=False, separators=COMPACT_JSON)}\n\n"
             f"{self._prompt_path.read_text(encoding='utf-8')}"
         )
         prompt = base_prompt
