@@ -1145,3 +1145,121 @@ def test_rewording_with_title_like_words_but_no_changed_person_name_stays_reword
 )
 def test_changed_titled_person_name_is_not_rewording(source_head, rendered_head):
     assert not _is_pure_rewording(source_head + _SOURCE_TAIL, rendered_head + _RENDERED_TAIL)
+
+
+_MISSING_IMAGE_SENTENCE = "The missing image is a significant defect."
+_OVERFLOW_SENTENCE = "Weak: The deterministic findings indicate a horizontal overflow on the desktop viewport (1440px), hurting layout."
+_CLEAN_HTML = '<html><body><img src="assets/lab-photo.png" alt="Lab"></body></html>'
+
+
+def _claims_payload(extra: str = "") -> dict:
+    return _payload_with(
+        visual_hierarchy={"score": 6, "feedback": f"Clear headings. {_MISSING_IMAGE_SENTENCE} {extra}".strip()},
+        responsive_design={"score": 7, "feedback": f"Layout adapts well. {_OVERFLOW_SENTENCE}"},
+        summary=f"Good page. {_MISSING_IMAGE_SENTENCE}",
+        improvement_suggestions=[_MISSING_IMAGE_SENTENCE, f"Tighten spacing. {_OVERFLOW_SENTENCE}"],
+    )
+
+
+def _browser(**viewport_overrides) -> BrowserEvaluationResult:
+    return BrowserEvaluationResult(enabled=True, viewports=[BrowserViewportResult(name="desktop", width=1440, height=900, **viewport_overrides)])
+
+
+def test_claims_contradicted_by_clean_measurement_are_dropped(tmp_path):
+    evaluator = _evaluator_with_payload(tmp_path, _claims_payload())
+
+    result = evaluator.evaluate(FeatureModel(), make_spec(), _CLEAN_HTML, browser_result=_browser())
+
+    assert result.visual_hierarchy.feedback == "Clear headings."
+    assert result.responsive_design.feedback == "Layout adapts well."
+    assert result.summary == "Good page."
+    assert result.improvement_suggestions == ["Tighten spacing."]
+    assert result.visual_hierarchy.score == 6.0
+    assert result.responsive_design.score == 7.0
+
+
+@pytest.mark.parametrize(
+    "browser_result,visual_findings,html",
+    [
+        (_browser(broken_images=["assets/lab-photo.png"]), [], _CLEAN_HTML),
+        (_browser(), ["Broken image: assets/lab-photo.png failed to load"], _CLEAN_HTML),
+        (_browser(), [], '<html><body><img alt="Lab"></body></html>'),
+    ],
+)
+def test_image_failure_claim_is_kept_when_measurement_shows_a_broken_image(tmp_path, browser_result, visual_findings, html):
+    evaluator = _evaluator_with_payload(tmp_path, _claims_payload())
+
+    result = evaluator.evaluate(FeatureModel(), make_spec(), html, browser_result=browser_result, visual_findings=visual_findings)
+
+    assert _MISSING_IMAGE_SENTENCE in result.summary
+    assert _MISSING_IMAGE_SENTENCE in result.improvement_suggestions
+    assert _OVERFLOW_SENTENCE not in result.responsive_design.feedback
+
+
+@pytest.mark.parametrize(
+    "browser_result,visual_findings",
+    [
+        (_browser(horizontal_overflow=True, scroll_width=1600, viewport_width=1440), []),
+        (_browser(), ["Horizontal overflow: desktop 1440px: page is 1600px wide (+160px), caused by section.hero"]),
+    ],
+)
+def test_overflow_claim_is_kept_when_measurement_shows_overflow(tmp_path, browser_result, visual_findings):
+    evaluator = _evaluator_with_payload(tmp_path, _claims_payload())
+
+    result = evaluator.evaluate(FeatureModel(), make_spec(), _CLEAN_HTML, browser_result=browser_result, visual_findings=visual_findings)
+
+    assert _OVERFLOW_SENTENCE in result.responsive_design.feedback
+    assert _MISSING_IMAGE_SENTENCE not in result.summary
+
+
+def test_image_quality_and_edge_padding_claims_are_kept_with_clean_measurement(tmp_path):
+    kept = "The hero image feels generic. Body text hugs the left edge on mobile with no side padding. The page has no horizontal overflow. See assets/hero.v2.png for the source."
+    payload = _payload_with(visual_hierarchy={"score": 6, "feedback": kept}, improvement_suggestions=[kept])
+    evaluator = _evaluator_with_payload(tmp_path, payload)
+
+    result = evaluator.evaluate(FeatureModel(), make_spec(), _CLEAN_HTML, browser_result=_browser())
+
+    assert result.visual_hierarchy.feedback == kept
+    assert result.improvement_suggestions == [kept]
+
+
+def test_claims_are_unchanged_without_a_browser_result(tmp_path):
+    evaluator = _evaluator_with_payload(tmp_path, _claims_payload())
+
+    result = evaluator.evaluate(FeatureModel(), make_spec(), _CLEAN_HTML)
+
+    assert _MISSING_IMAGE_SENTENCE in result.summary
+    assert _OVERFLOW_SENTENCE in result.responsive_design.feedback
+    assert len(result.improvement_suggestions) == 2
+
+
+_FIX_SENTENCES = ["Fix the broken image path for the hero.", "Prevent the horizontal overflow on mobile.", "Resolve the missing hero image."]
+
+
+def test_fix_requests_about_unmeasured_defects_are_dropped(tmp_path):
+    evaluator = _evaluator_with_payload(tmp_path, _payload_with(improvement_suggestions=[*_FIX_SENTENCES, "Tighten spacing."]))
+
+    result = evaluator.evaluate(FeatureModel(), make_spec(), _CLEAN_HTML, browser_result=_browser())
+
+    assert result.improvement_suggestions == ["Tighten spacing."]
+
+
+def test_fix_requests_are_kept_when_the_defect_is_measured(tmp_path):
+    evaluator = _evaluator_with_payload(tmp_path, _payload_with(improvement_suggestions=list(_FIX_SENTENCES)))
+    browser_result = _browser(horizontal_overflow=True, scroll_width=1600, viewport_width=1440, broken_images=["assets/hero.png"])
+
+    result = evaluator.evaluate(FeatureModel(), make_spec(), _CLEAN_HTML, browser_result=browser_result)
+
+    assert result.improvement_suggestions == _FIX_SENTENCES
+
+
+def test_pipeline_ux_note_and_non_image_load_failures_are_kept(tmp_path):
+    note = "Deterministic UX findings: Failed to load resource: the server responded with a status of 404 (fonts/a.woff2); Missing image alt on hero."
+    feedback = f"The web fonts fail to load. The about section is missing a team photo. {note}"
+    evaluator = _evaluator_with_payload(tmp_path, _payload_with(ux={"score": 8, "feedback": feedback}))
+
+    result = evaluator.evaluate(FeatureModel(), make_spec(), _CLEAN_HTML, browser_result=_browser(), ux_findings=["Failed to load resource: the server responded with a status of 404 (fonts/a.woff2)"])
+
+    assert result.ux.feedback.startswith(feedback.split(" Deterministic UX")[0])
+    assert "Failed to load resource" in result.ux.feedback
+    assert "Missing image alt on hero." in result.ux.feedback

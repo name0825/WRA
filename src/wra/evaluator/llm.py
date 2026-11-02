@@ -16,11 +16,21 @@ from wra.llm.recovery import is_token_limit_message
 from wra.llm.response import normalize_json_response
 from wra.llm.schema import bound_strings
 from wra.evaluator.screenshots import MIN_SCREENSHOT_PIXELS, PIXELS_PER_IMAGE_TOKEN, fit_screenshots, screenshot_pixels
-from wra.evaluator.visual_check import CAPPED_DEFECT_KINDS, VISUAL_INSPECTION_PREFIX
+from wra.evaluator.visual_check import _OVERFLOW_WORDING, CAPPED_DEFECT_KINDS, VISUAL_INSPECTION_PREFIX
 from wra.validator.tokens import extract_visible_text, normalize_for_match
-from wra.validator.visual import BROKEN_IMAGE_PREFIX, EXPOSED_MARKUP_PREFIX, IMAGES_DROPPED_PREFIX, IMAGES_MISSING_PREFIX, LOW_CONTRAST_PREFIX, OVERFLOW_PREFIX, RENDER_COLLAPSE_PREFIX, UNSTYLED_PREFIX
+from wra.validator.visual import BROKEN_IMAGE_PREFIX, EXPOSED_MARKUP_PREFIX, IMAGES_DROPPED_PREFIX, IMAGES_MISSING_PREFIX, LOW_CONTRAST_PREFIX, OVERFLOW_PREFIX, RENDER_COLLAPSE_PREFIX, UNSTYLED_PREFIX, find_broken_image_markup
 
 logger = logging.getLogger(__name__)
+
+_PIPELINE_NOTE_PREFIX = "Deterministic UX findings:"
+_SENTENCE_BOUNDARY = re.compile(r"(?<=[.!?。])\s+")
+_IMAGE_NOUN = r"(?:images?|photos?|pictures?|img)"
+_IMAGE_LOAD_FAILURE_WORDING = re.compile(
+    rf"\b(?:broken|missing)\s+(?!(?:a|an|any|some|the)\s)(?:\w+\s+)?{_IMAGE_NOUN}\b(?!\s+(?:alt|caption))"
+    rf"|\b{_IMAGE_NOUN}\b[^.,;]{{0,30}}\b(?:missing|broken|fail(?:s|ed|ing)?\s+to\s+(?:load|render|display)|not\s+(?:load(?:ing|ed)?|display(?:ing|ed)?|render(?:ing|ed)?|found))\b(?!\s+(?:alt|caption))",
+    re.IGNORECASE,
+)
+_CLAIM_NEGATION = re.compile(r"\b(?:no|without|never|none|zero|free of)\b|\bnot\s+(?:\w+\s+)?(?:have|has|show|cause|overflow)\b", re.IGNORECASE)
 
 _UX_FINDINGS_CAP = 6.0
 _UNSTYLED_CAP = 3.0
@@ -377,6 +387,60 @@ def _verify_content_gate(parsed: dict, html: str, content_findings: list[str], c
     entry["feedback"] = note
     logger.warning("Content gate lifted: %s %s", note, refuted)
 
+
+def _drop_refuted_claims(parsed: dict, html: str, browser_result: BrowserEvaluationResult | None, visual_findings: list[str]) -> None:
+    """Drop prose sentences that assert a loading failure or overflow the browser measurement contradicts.
+
+    Applies to dimension `feedback`, `summary`, and `improvement_suggestions`. A no-op
+    without an enabled browser measurement. Scores are left alone: the model's score
+    cannot be attributed to one sentence.
+    """
+    if not isinstance(parsed, dict) or browser_result is None or not browser_result.enabled or not browser_result.viewports:
+        return
+
+    patterns = []
+    if (
+        not any(viewport.broken_images for viewport in browser_result.viewports)
+        and not any(finding.startswith((BROKEN_IMAGE_PREFIX, IMAGES_MISSING_PREFIX, IMAGES_DROPPED_PREFIX)) or "] broken_image:" in finding for finding in visual_findings)
+        and not find_broken_image_markup(html)
+    ):
+        patterns.append(_IMAGE_LOAD_FAILURE_WORDING)
+    if (
+        not any(viewport.horizontal_overflow or viewport.overflow_elements for viewport in browser_result.viewports)
+        and not any(finding.startswith(OVERFLOW_PREFIX) or "] horizontal_overflow:" in finding for finding in visual_findings)
+    ):
+        patterns.append(_OVERFLOW_WORDING)
+    if not patterns:
+        return
+
+    dropped: list[str] = []
+
+    def refuted(sentence: str) -> bool:
+        return not _CLAIM_NEGATION.search(sentence) and any(pattern.search(sentence) for pattern in patterns)
+
+    def filtered(text: str) -> str:
+        sentences = _SENTENCE_BOUNDARY.split(text)
+        kept, noted = [], False
+        for sentence in sentences:
+            noted = noted or sentence.startswith(_PIPELINE_NOTE_PREFIX)
+            if noted or not refuted(sentence):
+                kept.append(sentence)
+            else:
+                dropped.append(sentence)
+        return " ".join(kept) if len(kept) != len(sentences) else text
+
+    for entry in parsed.values():
+        if isinstance(entry, dict) and isinstance(entry.get("feedback"), str):
+            entry["feedback"] = filtered(entry["feedback"])
+    if isinstance(parsed.get("summary"), str):
+        parsed["summary"] = filtered(parsed["summary"])
+    suggestions = parsed.get("improvement_suggestions")
+    if isinstance(suggestions, list):
+        parsed["improvement_suggestions"] = [kept for item in suggestions if (kept := filtered(item) if isinstance(item, str) else item)]
+
+    if dropped:
+        logger.warning("Dropped evaluator claims contradicted by measurement: %s", dropped)
+
 _REPAIR_INSTRUCTION = (
     "# WRA Evaluation Recovery\n"
     "The previous evaluation response did not match the required schema.\n"
@@ -509,6 +573,7 @@ class LLMEvaluator:
                     parsed["content_freedom"] = self._content_freedom
                     _apply_deterministic_caps(parsed, ux_findings or [], visual_findings or [])
                     _verify_content_gate(parsed, html, content_findings or [], self._content_freedom)
+                    _drop_refuted_claims(parsed, html, browser_result, visual_findings or [])
                 result = EvaluationResult.model_validate(parsed)
             except LLMTransportError:
                 logger.error("Evaluation aborted by LLM transport failure: model=%s", selected_model)
