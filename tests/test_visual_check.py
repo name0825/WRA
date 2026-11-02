@@ -450,3 +450,80 @@ def test_a_transport_error_is_not_swallowed(tmp_path) -> None:
 
     with pytest.raises(LLMTransportError):
         _inspector(tmp_path, client).inspect(_browser(), "<html></html>", model="vision-model")
+
+
+_BAKERY_IMAGE_HTML = '<div class="highlight-gallery"><img src="../../assets/bread-1.png" alt="우유식빵"></div>'
+
+
+def _single_defect(kind: str, description: str, viewport: str = "desktop") -> str:
+    return json.dumps({"defects": [{"viewport": viewport, "kind": kind, "description": description, "severity": "high"}]})
+
+
+def test_broken_image_claim_dropped_when_browser_reports_no_broken_images(tmp_path) -> None:
+    response = _single_defect("broken_image", "The image placeholder for '우유식빵' (Milk Bread) is empty and missing the actual image.")
+
+    findings = _inspector(tmp_path, FakeClient(response)).inspect(_browser(), _BAKERY_IMAGE_HTML, model="vision-model")
+
+    assert findings == []
+
+
+def test_broken_image_claim_kept_with_browser_broken_images_evidence(tmp_path) -> None:
+    browser_result = BrowserEvaluationResult(enabled=True, viewports=[
+        BrowserViewportResult(name="desktop", width=1440, height=900, screenshot_path="desktop.png", broken_images=["file:///x/bread-1.png"]),
+        BrowserViewportResult(name="mobile", width=390, height=844, screenshot_path="mobile.png"),
+    ])
+    response = _single_defect("broken_image", "The image for '우유식빵' shows a missing-image icon.")
+
+    findings = _inspector(tmp_path, FakeClient(response)).inspect(browser_result, _BAKERY_IMAGE_HTML, model="vision-model")
+
+    assert findings == [f"{VISUAL_INSPECTION_PREFIX} [desktop] broken_image: The image for '우유식빵' shows a missing-image icon."]
+
+
+def test_broken_image_claim_kept_for_img_tag_without_src(tmp_path) -> None:
+    response = _single_defect("broken_image", "An empty image frame appears in the gallery.")
+
+    findings = _inspector(tmp_path, FakeClient(response)).inspect(_browser(), '<img alt="x">', model="vision-model")
+
+    assert len(findings) == 1
+
+
+def test_broken_image_evidence_scoped_to_claimed_viewport(tmp_path) -> None:
+    browser_result = BrowserEvaluationResult(enabled=True, viewports=[
+        BrowserViewportResult(name="desktop", width=1440, height=900, screenshot_path="desktop.png"),
+        BrowserViewportResult(name="mobile", width=390, height=844, screenshot_path="mobile.png", broken_images=["file:///x/bread-1.png"]),
+    ])
+    response = _single_defect("broken_image", "The product image is missing.")
+
+    findings = _inspector(tmp_path, FakeClient(response)).inspect(browser_result, _BAKERY_IMAGE_HTML, model="vision-model")
+
+    assert findings == []
+
+
+def test_raw_markup_placeholder_label_is_kept(tmp_path) -> None:
+    response = _single_defect("raw_markup", "The literal text '[Visual Detail]' is shown under the product heading.")
+
+    findings = _inspector(tmp_path, FakeClient(response)).inspect(_browser(), "<span>[Visual Detail]</span>", model="vision-model")
+
+    assert findings == [f"{VISUAL_INSPECTION_PREFIX} [desktop] raw_markup: The literal text '[Visual Detail]' is shown under the product heading."]
+
+
+def test_broken_layout_overflow_claim_dropped_when_only_wrapped_text_is_measured(tmp_path) -> None:
+    browser_result = BrowserEvaluationResult(enabled=True, viewports=[
+        BrowserViewportResult(name="mobile", width=390, height=844, screenshot_path="mobile.png", wrapped_text_elements=[WrappedTextElement(selector="h1", text="Title", line_count=9, char_count=18)]),
+    ])
+    response = _single_defect("broken_layout", "The hero content runs past the screen edge and causes horizontal overflow.", viewport="mobile")
+
+    findings = _inspector(tmp_path, FakeClient(response)).inspect(browser_result, "<html></html>", model="vision-model")
+
+    assert findings == []
+
+
+def test_broken_layout_overflow_claim_kept_with_measured_horizontal_overflow(tmp_path) -> None:
+    browser_result = BrowserEvaluationResult(enabled=True, viewports=[
+        BrowserViewportResult(name="mobile", width=390, height=844, screenshot_path="mobile.png", horizontal_overflow=True, scroll_width=520),
+    ])
+    response = _single_defect("broken_layout", "The hero content runs past the screen edge.", viewport="mobile")
+
+    findings = _inspector(tmp_path, FakeClient(response)).inspect(browser_result, "<html></html>", model="vision-model")
+
+    assert len(findings) == 1

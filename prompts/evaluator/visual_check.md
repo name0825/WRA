@@ -8,8 +8,8 @@ Report every rendering defect you can actually see, of these kinds:
 - `overlapping_elements`: elements drawn on top of each other so that one covers part of another, especially a heading or text covered by a card, image, or header.
 - `clipped_text`: text cut off at a container edge or the screen edge, or truncated mid-word.
 - `empty_gap`: a large blank area that is clearly unintended, such as a section-sized empty band between content blocks.
-- `broken_image`: a missing-image icon, an empty image frame, or alt text shown in place of an image.
-- `raw_markup`: text rendered as raw code or markup, such as visible HTML tags, CSS, template placeholders, or escaped entities.
+- `broken_image`: a missing-image icon, an empty image frame, or alt text shown in place of an image. An image that loaded but shows unsuitable content, or is badly cropped, sized, or placed, is not `broken_image`; report it as `low` or not at all.
+- `raw_markup`: text rendered as raw code or markup, such as visible HTML tags, CSS, template placeholders (literal labels such as `[Visual Detail]`), or escaped entities. An image that loaded normally is never a placeholder.
 - `broken_layout`: content squeezed into a narrow strip or pushed below so most of the screen is empty, text wrapping one or a few characters per line, or content running past the screen edge.
 
 For each defect give the viewport name from the list below, the kind, a one-sentence description naming the affected element and its visible text, and a severity:

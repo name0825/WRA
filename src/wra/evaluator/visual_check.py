@@ -8,7 +8,7 @@ from wra.llm.client import LLMClient
 from wra.llm.ollama import LLMTransportError
 from wra.llm.response import normalize_json_response
 from wra.llm.schema import bound_strings
-from wra.validator.visual import find_render_collapse_defects
+from wra.validator.visual import find_broken_image_markup, find_render_collapse_defects
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +41,8 @@ VISUAL_CHECK_SCHEMA = bound_strings({
 # Kinds an LLM visual read commonly hallucinates without a matching layout or
 # contrast defect (see plan_114a); dropped unless the claimed viewport has deterministic
 # DOM evidence for it.
-DOM_CHECKED_KINDS = ("overlapping_elements", "broken_layout", "clipped_text", "unreadable_text")
+DOM_CHECKED_KINDS = ("overlapping_elements", "broken_layout", "clipped_text", "unreadable_text", "broken_image", "horizontal_overflow")
+_OVERFLOW_WORDING = re.compile(r"\bhorizontal(?:ly)?\s+(?:overflow|scroll)|\boverflow(?:s|ing)?\b[^.]{0,30}\b(?:viewport|screen|page)\b|\b(?:run(?:s|ning)?|extend(?:s|ing)?|spill(?:s|ing)?|bleed(?:s|ing)?)\s+(?:out\s+)?(?:past|beyond|off)\b[^.]{0,30}\b(?:viewport|screen|page)\b", re.IGNORECASE)
 _OCCLUSION_WORDING = re.compile(r"\b(?:covered|obscured|overlapped|hidden) by\b|\bhidden behind\b", re.IGNORECASE)
 _BOTTOM_EDGE_WORDING = re.compile(r"\b(?:cut(?:s)? off|cut|clipped|truncated|cropped)\b(?:\s+\w+){0,2}?\s+(?:at|by|below|beyond|past)\s+(?:the\s+)?(?:bottom(?: edge)? of the (?:viewport|screen|window)\b|viewport(?:'s)? bottom(?: edge)?\b|fold\b)", re.IGNORECASE)
 
@@ -57,6 +58,10 @@ def _has_dom_evidence(kind: str, viewport_hint: str, browser_result: BrowserEval
     if kind not in DOM_CHECKED_KINDS:
         return True
     matched = _matching_viewports(viewport_hint, browser_result.viewports)
+    if kind == "broken_image":
+        return not matched or any(viewport.broken_images for viewport in matched) or bool(find_broken_image_markup(html))
+    if kind == "horizontal_overflow":
+        return any(viewport.horizontal_overflow or viewport.overflow_elements for viewport in matched)
     if kind == "overlapping_elements":
         return any(viewport.occluded_text_elements or viewport.header_overlap_pairs for viewport in matched)
     if kind == "clipped_text":
@@ -122,6 +127,8 @@ class VisualInspector:
                 viewport_hint = str(defect.get("viewport") or "")
                 finding = f"{VISUAL_INSPECTION_PREFIX} [{viewport_hint}] {kind}: {description}"
                 checked_kind = "overlapping_elements" if kind == "clipped_text" and _OCCLUSION_WORDING.search(description) else kind
+                if kind == "broken_layout" and _OVERFLOW_WORDING.search(description):
+                    checked_kind = "horizontal_overflow"
                 if (kind == "clipped_text" and not _OCCLUSION_WORDING.search(description) and _BOTTOM_EDGE_WORDING.search(description)) or not _has_dom_evidence(checked_kind, viewport_hint, browser_result, html):
                     dropped.append(finding)
                     continue

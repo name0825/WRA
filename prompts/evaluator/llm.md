@@ -76,7 +76,7 @@ Source text rendered in a different language than the FeatureModel supplies is a
 Whenever this score is lowered for a missing or altered date, number, proper noun, or item, list each instance in `content_defects`: `kind` (`missing` or `altered`), `source_text` quoted verbatim from the FeatureModel, and `rendered_text` quoted exactly as a reader sees it on screen — visible text, not HTML markup. Leave `rendered_text` empty for `missing`.
 
 ### `ux`
-Navigation, controls, interactions, usability, overflow, layout problems, and browser/runtime errors when evidenced. Look for unclear action priority, unusable labels or navigation, competing section purposes, missing keyboard access, and untruthful success feedback. Immediate press/focus feedback with click/release activation is desirable; missing feedback, input locks, or broken cancellation require code or runtime evidence. Do not demand rewording of protected source labels for stylistic reasons.
+Navigation, controls, interactions, usability, overflow, layout problems, and browser/runtime errors when evidenced. Look for unclear action priority, unusable labels or navigation, competing section purposes, missing keyboard access, and untruthful success feedback. For a form with no real backend (such as a `mailto:` form), never suggest a fake "sent" or success state; clarifying the email-contact behavior it actually supports is acceptable. Immediate press/focus feedback with click/release activation is desirable; missing feedback, input locks, or broken cancellation require code or runtime evidence. Do not demand rewording of protected source labels for stylistic reasons.
 
 `deterministic_ux_findings` in the input lists UX defects already confirmed by deterministic checking (e.g. broken in-page anchors, or a brief contact fact missing from the page). Treat every entry as a defect you have observed. Cap `ux` at 6 when the list is non-empty, and name each finding in the `ux` feedback. These are usability defects only: they must not lower `content_preservation` or any dimension other than `ux`, and a link whose target id was renamed is not lost or changed content.
 
@@ -84,7 +84,7 @@ Navigation, controls, interactions, usability, overflow, layout problems, and br
 
 - An unstyled-page or render-collapse finding caps `visual_hierarchy`, `design_consistency`, `originality`, and `readability` at 3.
 - A dropped-images finding caps `visual_hierarchy` at 6. For partial image loss, its ceiling is `10 - 4 * missing_images / provided_images`.
-- A low-contrast finding caps `visual_hierarchy` and `readability` at 8 for one affected element, 7 for two, and 6 for three or more. A broken-image finding uses the same count-based ceilings for `visual_hierarchy` only. If the count is unavailable, use 6.
+- A low-contrast finding caps `visual_hierarchy` and `readability` at 8 for one affected element, 7 for two, and 6 for three or more. A broken-image finding uses the same count-based ceilings for `visual_hierarchy` only. If the count is unavailable, use 6. Call an image broken only when a broken-image or dropped-images finding lists it; an image visible in the screenshots has loaded, so do not demand path fixes for it, and unsuitable image content or placement is a design observation, not a broken image.
 - A visual-inspection finding of `unreadable_text`, `overlapping_elements`, `broken_image`, or `raw_markup` caps `visual_hierarchy` at 6. Other inspection kinds are observations without this automatic ceiling.
 - A horizontal-overflow finding caps `responsive_design` at 6. An exposed-markup finding caps `visual_hierarchy` at 6 and means only the listed text nodes show a stray fragment; it is not evidence that CSS failed to apply.
 
@@ -94,7 +94,7 @@ These are ceilings, not mandatory scores: judge the observed severity within the
 Typography, contrast, line length, density, wrapping, hierarchy, and scanability. Judge size, weight, leading, and tracking together for the script and task: Latin prose may suit 65-75 characters per line, while Korean/CJK needs its own spacing. Do not reward tight Latin tracking on every script or sparse layouts for reference-heavy content.
 
 ### `responsive_design`
-When `browser_evaluation` is present, judge from it. The screenshots show the page laid out at each viewport, and `horizontal_overflow`, `scroll_width`, and `page_height` are measured facts rather than claims.
+When `browser_evaluation` is present, judge from it. The screenshots show the page laid out at each viewport, and `horizontal_overflow`, `scroll_width`, and `page_height` are measured facts rather than claims. Do not state horizontal overflow as confirmed unless a viewport has `horizontal_overflow: true`; tight edge padding is a separate spacing observation.
 
 When any viewport has `horizontal_overflow: true`, name that viewport's width and scroll width in `responsive_design.feedback`. Add an impact-ordered improvement suggestion requiring the next revision to keep the responsible marquee, full-bleed element, or horizontal track locally contained so the document does not overflow there. Global `html` or `body` overflow hiding is not a valid correction.
 
@@ -128,6 +128,10 @@ Return at most 5 suggestions, ordered by impact.
 Prioritize the three most consequential evidenced problems; check them at supplied viewport widths. An absence of measured defects does not by itself establish design quality.
 
 Each suggestion must describe a concrete change that the DesignSpec revision stage can apply: a change to composition, hierarchy, typography, color roles, responsive behavior, or interaction. Suggestions that only a code editor could act on (a hex value, a font import) belong last, if at all.
+
+Within each suggestion string, identify the affected section or element using evidence supplied in the input, state the concrete change, and give an observable completion condition. Include the viewport when the issue is viewport-specific. Use supplied labels or visible text to locate elements; do not invent selectors, measurements, runtime behavior, or screenshot observations.
+
+Distinguish confirmed defects from subjective design preferences in the suggestion wording. For a preference, explain how the proposed change serves the evidenced audience, page purpose, or DesignSpec intent; do not present taste as a measured failure. Keep changes localized and preserve the page's evidenced strengths.
 
 Avoid vague suggestions such as `Improve the design.`
 
