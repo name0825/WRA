@@ -3,6 +3,7 @@
 import argparse
 import json
 import sys
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -41,9 +42,14 @@ def aggregate_run(sample: str, run_name: str | None, log_dir: Path) -> dict:
             browser = BrowserEvaluationResult.model_validate(read_json(browser_path)) if browser_path.exists() else None
             content_score = evaluation["content_preservation"]["score"]
             freedom = evaluation.get("content_freedom", "low")
+            route_path = data_dir / "route.json"
+            route = read_json(route_path) if route_path.exists() else {}
             pages.append({
                 "page": page,
                 "iteration": int(iteration_dir.name[4:]),
+                "path": route.get("path", "unrecorded"),
+                "refine_failed": route.get("refine_failed"),
+                "evaluation_mtime": evaluation_path.stat().st_mtime,
                 "overall_score": evaluation["overall_score"],
                 "criteria": {name: evaluation[name]["score"] for name in EVALUATION_DIMENSIONS},
                 "total_le_4": evaluation["overall_score"] <= 4,
@@ -70,11 +76,33 @@ def aggregate_run(sample: str, run_name: str | None, log_dir: Path) -> dict:
     return {"sample": sample, "run": run_name, "exit_code": None, "repair_log_lines": repair_count, "iterations": pages}
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("log_dir", type=Path)
-    args = parser.parse_args()
-    log_dir = args.log_dir.resolve()
+def path_summary(runs: list[dict]) -> dict:
+    seen = set()
+    groups: dict[str, list[dict]] = {}
+    for run in runs:
+        for item in run["iterations"]:
+            key = (run["run"], item["page"], item["iteration"])
+            if key in seen:
+                continue
+            seen.add(key)
+            groups.setdefault(item["path"], []).append(item)
+    return {
+        path: {
+            "count": len(items),
+            "mean_overall": sum(item["overall_score"] for item in items) / len(items),
+            "refine_failed_count": sum(item["refine_failed"] is True for item in items),
+        }
+        for path, items in sorted(groups.items())
+    }
+
+
+def path_text(summary: dict) -> str:
+    return "; ".join(f"{path} n={value['count']} mean={value['mean_overall']:.3f} refine_failed={value['refine_failed_count']}" for path, value in summary.items()) or "no saved evaluations"
+
+
+def collect(log_dir: Path) -> tuple[str, list[dict]]:
+    meta_path = log_dir / "bench_meta.json"
+    mode = read_json(meta_path)["mode"] if meta_path.exists() else "unrecorded"
     runs = []
     for line in (log_dir / "bench.log").read_text(encoding="utf-8").splitlines():
         sample, exit_text, _, run_names = line.split("\t", 3)
@@ -82,7 +110,15 @@ def main() -> None:
             run = aggregate_run(sample, run_name, log_dir)
             run["exit_code"] = int(exit_text.removeprefix("exit="))
             runs.append(run)
+    return mode, runs
+
+
+def write_report(log_dir: Path, mode: str, runs: list[dict]) -> None:
     iterations = [item for run in runs for item in run["iterations"]]
+    mtimes = [item["evaluation_mtime"] for item in iterations]
+    time_format = "%Y-%m-%d %H:%M:%S"
+    score_files = f"{time.strftime(time_format, time.localtime(min(mtimes)))} .. {time.strftime(time_format, time.localtime(max(mtimes)))}" if mtimes else "unavailable"
+    findings_computed_at = time.strftime(time_format)
     scores = [item["overall_score"] for item in iterations]
     summary = {
         "run_count": len(runs),
@@ -92,17 +128,23 @@ def main() -> None:
         "total_le_4_count": sum(item["total_le_4"] for item in iterations),
         "content_gate_le_4_count": sum(item["content_gate_le_4"] is True for item in iterations),
     }
+    paths = path_summary(runs)
     report = {
+        "mode": mode,
         "provenance": {
             "scores": "stored evaluation.json",
+            "score_runs": sorted({run["run"] for run in runs if run["run"]}),
+            "score_files_modified": score_files,
             "findings": "recalculated with current validators from saved HTML and browser.json; no rerender",
+            "findings_computed_at": findings_computed_at,
         },
         "summary": summary,
+        "path_summary": paths,
         "runs": runs,
     }
     (log_dir / "aggregate.json").write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     mean_text = f"{summary['average_overall_score']:.3f}" if scores else "unavailable"
-    lines = ["Scores: stored evaluation.json; findings: current validators on saved HTML/browser.json (no rerender).", f"Runs: {summary['run_count']}; failed: {summary['failed_run_count']}; iterations: {summary['iteration_count']}; mean overall: {mean_text}; total<=4: {summary['total_le_4_count']}; content gate<=4: {summary['content_gate_le_4_count']}"]
+    lines = [f"Scores: stored evaluation.json (files written {score_files}); findings: current validators on saved HTML/browser.json (no rerender), computed {findings_computed_at}.", f"Mode: {mode}; paths: {path_text(paths)}", f"Runs:{summary['run_count']}; failed: {summary['failed_run_count']}; iterations: {summary['iteration_count']}; mean overall: {mean_text}; total<=4: {summary['total_le_4_count']}; content gate<=4: {summary['content_gate_le_4_count']}"]
     for run in runs:
         scores_text = ", ".join(f"i{item['iteration']}={item['overall_score']:g}" for item in run["iterations"])
         lines.append(f"{run['sample']} {run['run'] or 'no run directory'}: exit={run['exit_code']}; {scores_text or 'no saved evaluations'}; repair log lines={run['repair_log_lines']}")
@@ -110,9 +152,28 @@ def main() -> None:
             findings = item["visual_findings"]
             counts = ", ".join(f"{name}={len(values)}" for name, values in findings.items())
             mixed = item["foreign_script_mixed_tokens"]
-            lines.append(f"  i{item['iteration']}: total<=4={item['total_le_4']}, content_gate<=4={item['content_gate_le_4']}, mixed_tokens={len(mixed) if mixed is not None else 'unavailable'}, {counts}, first_screen_measured={item['first_screen_measurements_available']}, overflow_px={item['viewport_overflow_px']}")
+            lines.append(f"  i{item['iteration']}: path={item['path']}, refine_failed={item['refine_failed']}, total<=4={item['total_le_4']}, content_gate<=4={item['content_gate_le_4']}, mixed_tokens={len(mixed) if mixed is not None else 'unavailable'}, {counts}, first_screen_measured={item['first_screen_measurements_available']}, overflow_px={item['viewport_overflow_px']}")
     (log_dir / "aggregate.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
     print("\n".join(lines))
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("log_dir", type=Path, nargs="+")
+    args = parser.parse_args()
+    log_dirs = [path.resolve() for path in args.log_dir]
+    collected = []
+    for log_dir in log_dirs:
+        mode, runs = collect(log_dir)
+        write_report(log_dir, mode, runs)
+        collected.append((log_dir, mode, runs))
+    if len(collected) > 1:
+        lines = ["mode / path comparison (initial results are not merged across modes)"]
+        for log_dir, mode, runs in collected:
+            for path, value in path_summary(runs).items():
+                lines.append(f"{mode}\t{path}\tn={value['count']}\tmean={value['mean_overall']:.3f}\trefine_failed={value['refine_failed_count']}\t{log_dir.name}")
+        (log_dirs[0] / "compare.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
+        print("\n".join(lines))
 
 
 if __name__ == "__main__":

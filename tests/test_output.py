@@ -22,6 +22,16 @@ def test_saves_each_page_of_each_iteration(tmp_path: Path) -> None:
     assert (tmp_path / "iterations" / "iter1" / "data" / "about" / "evaluation.json").is_file()
 
 
+def test_route_json_is_written_only_when_a_path_is_given(tmp_path: Path) -> None:
+    manager = OutputManager(tmp_path, "all")
+    manager.save_iteration(iteration=1, slug="index", html="<html>a</html>", score=7.0, path="redesign", refine_failed=True)
+    manager.save_iteration(iteration=2, slug="index", html="<html>b</html>", score=8.0)
+
+    route = json.loads((tmp_path / "iterations" / "iter1" / "data" / "index" / "route.json").read_text(encoding="utf-8"))
+    assert route == {"path": "redesign", "refine_failed": True}
+    assert not (tmp_path / "iterations" / "iter2" / "data" / "index" / "route.json").exists()
+
+
 def test_finalize_writes_the_best_iteration_per_page(tmp_path: Path) -> None:
     manager = OutputManager(tmp_path, "all")
     manager.save_iteration(iteration=1, slug="index", html="<html>first</html>", score=7.0)

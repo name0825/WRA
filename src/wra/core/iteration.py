@@ -216,24 +216,30 @@ class IterationEngine:
         design_constraints = self._build_design_constraints(iteration, site_context, state.page, design_system, state.setback)
         logger.debug("Design constraints: %s", design_constraints)
         html = None
+        route = None
+        refine_failed = False
         design_spec = previous_result.design_spec if previous_result is not None else None
 
         if self._refines(state):
             logger.info("Current task: refining the best page (score=%.2f)", previous_result.evaluation.overall_score)
             try:
                 html = self._refiner.refine(features, previous_result.html, previous_result.evaluation, design_spec=previous_result.design_spec, content_findings=find_corrupted_tokens(previous_result.html, features, content_freedom=self._config.content.freedom) + find_unsupported_claims(previous_result.html, features),ux_findings=find_broken_anchors(previous_result.html) + find_browser_errors(previous_result.browser) + find_syntax_defects(previous_result.html) + _brief_fact_findings(state.page, previous_result.html), visual_findings=find_visual_defects(previous_result.html, features, previous_result.browser) + previous_result.visual_inspection_findings, model=refiner_model.name, think=refiner_model.think, timeout=refiner_model.timeout, asset_root=output_manager.run_dir)
+                route = "refine"
             except Exception as exc:
                 # A refinement that will not come out valid is not worth an
                 # iteration; fall through and rebuild the page properly.
                 logger.warning("Refinement failed, falling back to a full redesign: %s", exc)
                 html = None
+                refine_failed = True
 
         if html is None:
             if previous_result is None or previous_result.evaluation is None:
                 logger.info("Current task: design planning")
+                route = "initial"
                 design_spec = self._designer.plan(features, design_constraints=design_constraints, model=designer_model.name, think=designer_model.think, timeout=designer_model.timeout)
             else:
                 logger.info("Current task: design revision based on score=%.2f", previous_result.evaluation.overall_score)
+                route = "redesign"
                 design_spec = self._designer.revise(features=features, previous_design_spec=previous_result.design_spec, previous_html=previous_result.html, evaluation=previous_result.evaluation, design_constraints=design_constraints, model=designer_model.name, think=designer_model.think, timeout=designer_model.timeout)
 
             logger.info("Current task: HTML generation")
@@ -261,7 +267,7 @@ class IterationEngine:
             logger.warning("Skipping browser/evaluation because HTML validation failed")
 
         logger.info("Current task: saving iteration %d for page '%s'", iteration, slug)
-        saved = output_manager.save_iteration(iteration=iteration, slug=slug, html=html, design_spec=design_spec, validation=validation, evaluation=evaluation, browser=browser_result, score=evaluation.overall_score if evaluation else None)
+        saved = output_manager.save_iteration(iteration=iteration, slug=slug, html=html, design_spec=design_spec, validation=validation, evaluation=evaluation, browser=browser_result, score=evaluation.overall_score if evaluation else None, path=route, refine_failed=refine_failed)
         logger.info("Iteration %d completed for page '%s': validation=%s score=%s", iteration, slug, validation.valid, f"{evaluation.overall_score:.2f}" if evaluation else "n/a")
         if evaluation_error is not None:
             # The page was saved above; re-raise so an evaluator failure still

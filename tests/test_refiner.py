@@ -7,6 +7,7 @@ import pytest
 
 from wra.core.iteration import IterationEngine, _PageRun
 from wra.core.models import EvaluationResult, FeatureModel, WRAConfig
+from wra.core.output import OutputManager
 from wra.core.preparation import PreparedPage
 from wra.refiner.refiner import HTMLRefiner, RefinerError
 from support import sample_config_data
@@ -306,6 +307,32 @@ def test_a_failing_refinement_falls_back_to_a_full_redesign(tmp_path: Path, monk
     assert refiner.calls == 2
     assert designer.revisions == 2, "each failed refinement became a redesign"
     assert generator.calls == 3
+
+
+def _record_routes(monkeypatch) -> list[tuple[int, str | None, bool]]:
+    routes = []
+    original = OutputManager.save_iteration
+
+    def spy(self, *args, **kwargs):
+        routes.append((kwargs["iteration"], kwargs["path"], kwargs["refine_failed"]))
+        return original(self, *args, **kwargs)
+
+    monkeypatch.setattr(OutputManager, "save_iteration", spy)
+    return routes
+
+
+def test_each_iteration_records_the_path_it_took(tmp_path: Path, monkeypatch) -> None:
+    routes = _record_routes(monkeypatch)
+    _run(_Refiner(), monkeypatch, tmp_path, [7.0, 8.0, 9.0], redesign_after_stalls=0)
+
+    assert routes == [(1, "initial", False), (2, "refine", False), (3, "refine", False)]
+
+
+def test_a_failed_refinement_is_recorded_as_a_redesign(tmp_path: Path, monkeypatch) -> None:
+    routes = _record_routes(monkeypatch)
+    _run(_Refiner(fail=True), monkeypatch, tmp_path, [7.0, 8.0, 9.0], redesign_after_stalls=0)
+
+    assert routes == [(1, "initial", False), (2, "redesign", True), (3, "redesign", True)]
 
 
 def test_refining_stops_after_it_stops_helping(tmp_path: Path, monkeypatch) -> None:

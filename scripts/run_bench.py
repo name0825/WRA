@@ -1,8 +1,10 @@
 """Run the quality benchmark: every sample through `redesign` with benchmark config.
 
 config/config.yaml is swapped per sample and always restored from a backup.
-Usage: python scripts/run_bench.py <log_dir> [sample ...]
+Usage: python scripts/run_bench.py <log_dir> [sample ...] [--mode rewrite|refine] [--check]
 """
+import argparse
+import json
 import ollama
 import re
 import shutil
@@ -41,22 +43,101 @@ OVERRIDES = [
 ]
 
 
-def bench_config(text: str, input_dir: Path) -> str:
+def bench_config(text: str, input_dir: Path, mode: str = "rewrite") -> str:
     for pattern, value in OVERRIDES:
         value = value or f'"{input_dir.as_posix()}"'
         text, count = re.subn(pattern, lambda m: m.group(1) + value, text, count=1)
         if count != 1:
             raise SystemExit(f"config key not found: {pattern}")
-    return re.sub(r"(\n  refine:\n    enabled: )\S+", r"\1false", text, count=1)
+    refine = "true" if mode == "refine" else "false"
+    return re.sub(r"(\n  refine:\n    enabled: )\S+", lambda m: m.group(1) + refine, text, count=1)
+
+
+def copied_sources(sample: str) -> list[tuple[str, Path]]:
+    sources = []
+    for name in COPIED_INPUTS[sample]:
+        candidates = (ROOT / "input" / f"_{name}", ROOT / "input" / name)
+        sources.append((name, next((p for p in candidates if p.exists()), candidates[-1])))
+    return sources
 
 
 def copied_input(log_dir: Path, sample: str) -> Path:
     target = log_dir / f"{sample}_input"
     target.mkdir(parents=True, exist_ok=True)
-    for name in COPIED_INPUTS[sample]:
-        source = next(p for p in (ROOT / "input" / f"_{name}", ROOT / "input" / name) if p.exists())
+    for name, source in copied_sources(sample):
         shutil.copy(source, target / name)
     return target
+
+
+def input_path(log_dir: Path, sample: str) -> Path:
+    return SAMPLES[sample] or log_dir / f"{sample}_input"
+
+
+def check(names: list[str], modes: list[str], log_dir: Path) -> None:
+    sys.path.insert(0, str(ROOT / "src"))
+    from wra.core.config import load_raw
+    from wra.core.models import WRAConfig
+
+    original = CONFIG.read_text(encoding="utf-8")
+    models = yaml.safe_load(MODELS.read_text(encoding="utf-8"))
+    errors = []
+    for name in names:
+        input_dir = input_path(log_dir, name)
+        if SAMPLES[name]:
+            if not input_dir.is_dir():
+                errors.append(f"{name}: input directory missing: {input_dir}")
+            elif not (input_dir / "index.html").is_file():
+                errors.append(f"{name}: index.html missing in {input_dir}")
+        else:
+            for _, source in copied_sources(name):
+                if not source.is_file():
+                    errors.append(f"{name}: source file missing: {source}")
+        for mode in modes:
+            text = bench_config(original, input_dir, mode)
+            config = WRAConfig.model_validate(load_raw(overrides={"config.yaml": yaml.safe_load(text), "models.yaml": models}))
+            pipeline = config.pipeline
+            termination = pipeline.termination
+            if pipeline.max_iterations != 3:
+                errors.append(f"{name}/{mode}: max_iterations={pipeline.max_iterations}")
+            if config.content.freedom != "madmax":
+                errors.append(f"{name}/{mode}: freedom={config.content.freedom}")
+            if pipeline.refine.enabled != (mode == "refine"):
+                errors.append(f"{name}/{mode}: refine.enabled={pipeline.refine.enabled}")
+            if termination.enabled and not (pipeline.evaluation_threshold > 10 and termination.patience == 0):
+                errors.append(f"{name}/{mode}: early termination is effective")
+            if Path(config.input.directory) != input_dir:
+                errors.append(f"{name}/{mode}: input.directory={config.input.directory}")
+            asset_directory = (input_dir / config.input.asset_directory).is_dir()
+            single = config.models.single
+            print(f"{name}\t{mode}\tfreedom={config.content.freedom}\tmax_iterations={pipeline.max_iterations}\trefine={pipeline.refine.enabled}\tredesign_after_stalls={pipeline.refine.redesign_after_stalls}\ttermination={termination.enabled}/{pipeline.evaluation_threshold}/{termination.patience}\ttemperature={config.ollama.temperature}\tseed={config.ollama.seed}\tviewports={','.join(v.name for v in config.browser.viewports)}\tsingle={single.enabled}:{single.name}\tinput={input_dir}\tasset_directory_exists={asset_directory}")
+    if errors:
+        raise SystemExit("check failed:\n" + "\n".join(errors))
+    print("check ok")
+
+
+def git_info() -> dict:
+    def git(*args: str) -> str:
+        return subprocess.run(["git", *args], cwd=ROOT, capture_output=True, text=True, encoding="utf-8").stdout.strip()
+
+    return {
+        "git_commit": git("rev-parse", "HEAD"),
+        "prompts_commit": git("log", "-1", "--format=%H", "--", "prompts"),
+        "dirty_files": [line for line in git("status", "--porcelain").splitlines() if line],
+    }
+
+
+def write_bench_meta(log_dir: Path, mode: str, names: list[str]) -> None:
+    ollama_settings = yaml.safe_load(MODELS.read_text(encoding="utf-8")).get("ollama", {})
+    meta = {
+        "mode": mode,
+        "started_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+        **git_info(),
+        "inputs": {name: str(input_path(log_dir, name)) for name in names},
+        "ollama_seed": ollama_settings.get("seed"),
+        "seed_reproducible": "unverified",
+        "models": "see run_<timestamp>/config.json",
+    }
+    (log_dir / "bench_meta.json").write_text(json.dumps(meta, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
 def probe_target() -> tuple[str, str] | None:
@@ -93,10 +174,20 @@ def wait_for_model(base_url: str, model: str, client_factory=ollama.Client, slee
             return failed, clock() - started
 
 
-def main() -> None:
-    log_dir = Path(sys.argv[1]).resolve()
+def main(argv: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("log_dir", type=Path)
+    parser.add_argument("samples", nargs="*")
+    parser.add_argument("--mode", choices=("rewrite", "refine"), default="rewrite")
+    parser.add_argument("--check", action="store_true")
+    args = parser.parse_args(argv)
+    log_dir = args.log_dir.resolve()
+    names = args.samples or list(SAMPLES)
+    if args.check:
+        check(names, ["rewrite", "refine"], log_dir)
+        return
     log_dir.mkdir(parents=True, exist_ok=True)
-    names = sys.argv[2:] or list(SAMPLES)
+    write_bench_meta(log_dir, args.mode, names)
     original = CONFIG.read_text(encoding="utf-8")
     backup = log_dir / "config.yaml.bak"
     backup.write_text(original, encoding="utf-8")
@@ -112,7 +203,7 @@ def main() -> None:
                     with open(log_dir / "wait.log", "a", encoding="utf-8") as log:
                         log.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')}\t{name}\tfailed_probes={failed}\twaited={waited:.0f}s\n")
             input_dir = SAMPLES[name] or copied_input(log_dir, name)
-            CONFIG.write_text(bench_config(original, input_dir), encoding="utf-8")
+            CONFIG.write_text(bench_config(original, input_dir, args.mode), encoding="utf-8")
             before = set((ROOT / "output").glob("run_*"))
             start = time.time()
             with open(log_dir / f"run_{name}.out", "w", encoding="utf-8") as out:

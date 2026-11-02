@@ -101,7 +101,7 @@ class OutputManager:
     def page_data_dir(self, slug: str) -> Path:
         return self.run_dir / DATA_DIRECTORY / slug
 
-    def save_iteration(self, iteration: int, slug: str, html: str, design_spec: Any | None = None, validation: Any | None = None, evaluation: Any | None = None, browser: Any | None = None, score: float | None = None) -> IterationOutput:
+    def save_iteration(self, iteration: int, slug: str, html: str, design_spec: Any | None = None, validation: Any | None = None, evaluation: Any | None = None, browser: Any | None = None, score: float | None = None, path: str | None = None, refine_failed: bool = False) -> IterationOutput:
         logger.info("Saving iteration artifacts: iteration=%d page=%s mode=%s score=%s", iteration, slug, self.save_mode, score if score is not None else "n/a")
         html_path = design_spec_path = validation_path = evaluation_path = browser_path = None
         if self.save_mode == "all":
@@ -124,6 +124,8 @@ class OutputManager:
                 browser_path = data_dir / "browser"
                 self._copy_browser_artifacts(browser, browser_path)
                 self._write_json(data_dir / "browser.json", browser)
+            if path is not None:
+                self._write_json(data_dir / "route.json", {"path": path, "refine_failed": refine_failed})
             logger.debug("Iteration artifacts saved: %s", iteration_dir)
 
         best = self._best.get(slug)
