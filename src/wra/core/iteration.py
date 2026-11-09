@@ -12,6 +12,7 @@ from wra.designer.schema import DesignSpec
 from wra.validator.anchors import find_broken_anchors
 from wra.validator.browser_errors import find_browser_errors
 from wra.validator.claims import find_unsupported_claims
+from wra.validator.craft import find_refinable_craft_defects
 from wra.validator.facts import find_missing_business_facts
 from wra.validator.html import HTMLValidationResult, validate_html
 from wra.validator.regression import find_regressions
@@ -245,7 +246,7 @@ class IterationEngine:
         if self._refines(state):
             logger.info("Current task: refining the best page (score=%.2f)", previous_result.evaluation.overall_score)
             try:
-                html = self._refiner.refine(features, previous_result.html, previous_result.evaluation, design_spec=previous_result.design_spec, content_findings=find_corrupted_tokens(previous_result.html, features, content_freedom=self._config.content.freedom) + find_unsupported_claims(previous_result.html, features),ux_findings=find_broken_anchors(previous_result.html) + find_browser_errors(previous_result.browser) + find_syntax_defects(previous_result.html) + _brief_fact_findings(state.page, previous_result.html), visual_findings=find_visual_defects(previous_result.html, features, previous_result.browser) + previous_result.visual_inspection_findings, model=refiner_model.name, think=refiner_model.think, timeout=refiner_model.timeout, asset_root=output_manager.run_dir, regressions=(state.setback or {}).get("regressions"))
+                html = self._refiner.refine(features, previous_result.html, previous_result.evaluation, design_spec=previous_result.design_spec, content_findings=find_corrupted_tokens(previous_result.html, features, content_freedom=self._config.content.freedom) + find_unsupported_claims(previous_result.html, features),ux_findings=find_broken_anchors(previous_result.html) + find_browser_errors(previous_result.browser) + find_syntax_defects(previous_result.html) + _brief_fact_findings(state.page, previous_result.html) + find_refinable_craft_defects(previous_result.html, features), visual_findings=find_visual_defects(previous_result.html, features, previous_result.browser) + previous_result.visual_inspection_findings, model=refiner_model.name, think=refiner_model.think, timeout=refiner_model.timeout, asset_root=output_manager.run_dir, regressions=(state.setback or {}).get("regressions"))
                 route = "refine"
             except Exception as exc:
                 # A refinement that will not come out valid is not worth an
