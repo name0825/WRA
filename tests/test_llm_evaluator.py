@@ -1273,6 +1273,34 @@ def test_praise_matching_a_clean_measurement_is_kept(tmp_path):
     assert result.improvement_suggestions == _PRAISE_SENTENCES
 
 
+_NON_CLAIM_SENTENCES = [
+    "Strong: The layout correctly collapses to a single column and maintains horizontal overflow protection.",
+    "Strong: The layout is fluid, tables are properly responsive with horizontal overflow, and the navigation collapses correctly on smaller screens.",
+    "Weak: The semantic structure is good, but the mobile menu toggle uses an SVG icon which lacks a text alternative if the image fails to load (though it has aria-label).",
+]
+_PREVENTIVE_SENTENCES = [
+    "Ensure the hero image has a `max-width: 100%` rule to prevent horizontal overflow on mobile viewports.",
+    "Verify that the 'Robot Demo' image does not introduce horizontal overflow on mobile viewports.",
+    "Weak: The desktop viewport shows a horizontal overflow.",
+]
+
+
+def test_labelled_praise_and_hypothetical_sentences_are_kept(tmp_path):
+    evaluator = _evaluator_with_payload(tmp_path, _payload_with(improvement_suggestions=list(_NON_CLAIM_SENTENCES)))
+
+    result = evaluator.evaluate(FeatureModel(), make_spec(), _CLEAN_HTML, browser_result=_browser())
+
+    assert result.improvement_suggestions == _NON_CLAIM_SENTENCES
+
+
+def test_preventive_requests_and_weak_labelled_claims_are_dropped(tmp_path):
+    evaluator = _evaluator_with_payload(tmp_path, _payload_with(improvement_suggestions=[*_PREVENTIVE_SENTENCES, "Tighten spacing."]))
+
+    result = evaluator.evaluate(FeatureModel(), make_spec(), _CLEAN_HTML, browser_result=_browser())
+
+    assert result.improvement_suggestions == ["Tighten spacing."]
+
+
 def test_unmeasured_defect_claims_are_dropped_with_clean_measurement(tmp_path):
     evaluator = _evaluator_with_payload(tmp_path, _payload_with(improvement_suggestions=[*_UNMEASURED_CLAIM_SENTENCES, "Tighten spacing."]))
 

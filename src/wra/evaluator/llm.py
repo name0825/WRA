@@ -31,6 +31,8 @@ _IMAGE_LOAD_FAILURE_WORDING = re.compile(
     re.IGNORECASE,
 )
 _CLAIM_NEGATION = re.compile(r"\b(?:no|without|never|none|zero|free of|avoids|avoided|gracefully)\b|\b(?:tables?|containers?)\b[^.]{0,30}\bscrollable\b|\bnot\s+(?:\w+\s+)?(?:have|has|show|cause|overflow)\b", re.IGNORECASE)
+_PRAISE_LABEL = re.compile(r"\s*Strong:", re.IGNORECASE)
+_HYPOTHETICAL_LEAD = re.compile(r"\b(?:if|in case|unless|should)\b", re.IGNORECASE)
 
 _UX_FINDINGS_CAP = 6.0
 _UNSTYLED_CAP = 3.0
@@ -416,7 +418,13 @@ def _drop_refuted_claims(parsed: dict, html: str, browser_result: BrowserEvaluat
     dropped: list[str] = []
 
     def refuted(sentence: str) -> bool:
-        return not _CLAIM_NEGATION.search(sentence) and any(pattern.search(sentence) for pattern in patterns)
+        if _PRAISE_LABEL.match(sentence) or _CLAIM_NEGATION.search(sentence):
+            return False
+        for pattern in patterns:
+            match = pattern.search(sentence)
+            if match and not _HYPOTHETICAL_LEAD.search(sentence[:match.start()]):
+                return True
+        return False
 
     def filtered(text: str) -> str:
         sentences = _SENTENCE_BOUNDARY.split(text)
