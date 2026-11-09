@@ -1261,7 +1261,6 @@ _PRAISE_SENTENCES = [
 _UNMEASURED_CLAIM_SENTENCES = [
     "Fix the horizontal overflow on mobile.",
     "The desktop viewport shows a horizontal overflow.",
-    "The table requires horizontal scrolling on mobile.",
     "The hero image is missing on mobile.",
 ]
 
@@ -1296,6 +1295,22 @@ def test_labelled_praise_and_hypothetical_sentences_are_kept(tmp_path):
     result = evaluator.evaluate(FeatureModel(), make_spec(), _CLEAN_HTML, browser_result=_browser())
 
     assert result.improvement_suggestions == _NON_CLAIM_SENTENCES
+
+
+_HORIZONTAL_SCROLL_SENTENCES = [
+    "The table requires horizontal scrolling on mobile.",
+    "Improve mobile navigation by replacing the wrapping list with a collapsible hamburger menu or a horizontally scrolling bar to maintain the header's visual integrity.",
+    "Weak: The pricing table might require horizontal scrolling on very small screens if not stacked.",
+    "Weak: The table cells on mobile may require horizontal scrolling which can be slightly disruptive for reading flow.",
+]
+
+
+def test_horizontal_scroll_sentences_are_kept(tmp_path):
+    evaluator = _evaluator_with_payload(tmp_path, _payload_with(improvement_suggestions=list(_HORIZONTAL_SCROLL_SENTENCES)))
+
+    result = evaluator.evaluate(FeatureModel(), make_spec(), _CLEAN_HTML, browser_result=_browser())
+
+    assert result.improvement_suggestions == _HORIZONTAL_SCROLL_SENTENCES
 
 
 def test_image_attribute_critiques_are_kept(tmp_path):

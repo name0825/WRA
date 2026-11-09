@@ -16,7 +16,7 @@ from wra.llm.recovery import is_token_limit_message
 from wra.llm.response import normalize_json_response
 from wra.llm.schema import bound_strings
 from wra.evaluator.screenshots import MIN_SCREENSHOT_PIXELS, PIXELS_PER_IMAGE_TOKEN, fit_screenshots, screenshot_pixels
-from wra.evaluator.visual_check import _OVERFLOW_WORDING, CAPPED_DEFECT_KINDS, VISUAL_INSPECTION_PREFIX
+from wra.evaluator.visual_check import CAPPED_DEFECT_KINDS, VISUAL_INSPECTION_PREFIX
 from wra.validator.tokens import extract_visible_text, normalize_for_match
 from wra.validator.visual import BROKEN_IMAGE_PREFIX, EXPOSED_MARKUP_PREFIX, IMAGES_DROPPED_PREFIX, IMAGES_MISSING_PREFIX, LOW_CONTRAST_PREFIX, OVERFLOW_PREFIX, RENDER_COLLAPSE_PREFIX, UNSTYLED_PREFIX, find_broken_image_markup
 
@@ -30,6 +30,7 @@ _IMAGE_LOAD_FAILURE_WORDING = re.compile(
     rf"|\b{_IMAGE_NOUN}\b[^.,;]{{0,30}}\b(?:missing|broken|fail(?:s|ed|ing)?\s+to\s+(?:load|render|display)|not\s+(?:load(?:ing|ed)?|display(?:ing|ed)?|render(?:ing|ed)?|found))\b(?!\s+(?:(?:an?|the|its)\s+)?(?:explicit\s+|proper\s+|descriptive\s+)?(?:alt|caption|height|width|dimensions?|aspect[- ]ratio|srcset|sizes|loading|lazy|title|\w+\s+attributes?|attributes?))",
     re.IGNORECASE,
 )
+_REFUTABLE_OVERFLOW_WORDING = re.compile(r"\bhorizontal(?:ly)?\s+overflow|\boverflow(?:s|ing)?\b[^.]{0,30}\b(?:viewport|screen|page)\b|\b(?:run(?:s|ning)?|extend(?:s|ing)?|spill(?:s|ing)?|bleed(?:s|ing)?)\s+(?:out\s+)?(?:past|beyond|off)\b[^.]{0,30}\b(?:viewport|screen|page)\b", re.IGNORECASE)
 _CLAIM_NEGATION = re.compile(r"\b(?:no|without|never|none|zero|free of|avoids|avoided|gracefully)\b|\b(?:tables?|containers?)\b[^.]{0,30}\bscrollable\b|\bnot\s+(?:\w+\s+)?(?:have|has|show|cause|overflow)\b", re.IGNORECASE)
 _PRAISE_LABEL = re.compile(r"\s*Strong:", re.IGNORECASE)
 _HYPOTHETICAL_LEAD = re.compile(r"\b(?:if|in case|unless|should)\b", re.IGNORECASE)
@@ -411,7 +412,7 @@ def _drop_refuted_claims(parsed: dict, html: str, browser_result: BrowserEvaluat
         not any(viewport.horizontal_overflow or viewport.overflow_elements for viewport in browser_result.viewports)
         and not any(finding.startswith(OVERFLOW_PREFIX) or "] horizontal_overflow:" in finding for finding in visual_findings)
     ):
-        patterns.append(_OVERFLOW_WORDING)
+        patterns.append(_REFUTABLE_OVERFLOW_WORDING)
     if not patterns:
         return
 
