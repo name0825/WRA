@@ -221,6 +221,8 @@ recovery:
 
 Browser Evaluation이 활성화되어 있으면 screenshot, overflow, console/page error 등의 browser evidence도 평가 모델에 전달한다.
 
+브라우저 측정과 결정론적 점검에서 깨진 이미지나 가로 overflow가 확인되지 않았는데 평가 모델이 영문으로 그것을 주장하면, 그 문장은 `feedback`, `summary`, `improvement_suggestions`에서 제거된다. 점수는 바뀌지 않으며, 제거된 문장은 `Dropped evaluator claims contradicted by measurement` 경고 로그로 남는다. 한국어 문장은 이 필터의 대상이 아니다.
+
 ## Browser Evaluation
 
 선택적으로 Playwright/Chromium을 사용해 생성된 HTML을 실제 브라우저에서 렌더링한다.
@@ -274,6 +276,20 @@ pipeline:
 `termination.enabled: true`이면 평가 점수가 threshold 이상이거나 최대 iteration에 도달하면 종료한다.
 
 `termination.enabled: false`이면 종료 조건을 적용하지 않고 계속 iteration을 수행한다. 실행 중 `Ctrl+C`로 중단할 수 있다.
+
+### 회귀 차단
+
+회차 결과는 점수가 최고 기록을 넘더라도, 최고 결과에 있던 것을 잃었거나 새로 깨뜨렸으면 채택(다음 회차의 기준)과 발행 대상에서 제외된다. 검사 항목은 `src/wra/validator/regression.py`의 `find_regressions`에 있다.
+
+- 최고 결과에 있던 원본 링크(`mailto:`, `tel:`, `http(s)://`)가 사라짐
+- 원본에 없던 `[Name]` 형태 placeholder나 메타 메모가 새로 생김
+- 원본이 사용하던 이미지가 모두 사라짐
+- 브라우저 평가가 켜진 경우: 새로 깨진 이미지, 새 가로 overflow, 새 스크립트 오류
+- 생성 모드의 진입 페이지: 사업 사실 누락
+
+`tel:` 링크는 `+82`로 시작하는 번호와 국내 `0`으로 시작하는 번호를 같은 번호로 취급한다. 예를 들어 `tel:+82-2-1234-5678`과 `tel:02-1234-5678`은 같은 링크로 비교된다.
+
+회귀한 회차가 있으면 다음 회차의 리파이너와 디자이너에게 잃은 항목이 `regressions`로 전달되어, 최고 결과를 기준으로 같은 손실을 반복하지 않도록 한다.
 
 ### Model Pool 및 선택 정책
 
@@ -612,6 +628,8 @@ creator 모드에서는 `content.freedom`이 **madmax로 고정된다.** 지킬 
 프롬프트는 바꾸지 말아야 할 것을 명시한다: 섹션 구조·색상·서체·간격·프레임워크는 이미 정해졌고,
 지적되지 않은 문구는 손대지 않는다. 모든 편집은 지목된 약점으로 추적되어야 한다.
 
+**검증 한계**: 6개 입력에 대한 blind 사람 비교(2026-11-02)에서 refine 결과는 3/6건만 선호되어 기준 4/6에 못 미쳤다. 또 2회차 이후 refine 회차 12건 중 4건만 실제로 국소 수정을 수행했고, 나머지는 가장 약한 항목이 `visual_hierarchy` 또는 `originality`여서 재설계로 넘어갔다. 따라서 국소 수정의 효과는 아직 검증되지 않았으며, 이것이 기본값이 `enabled: false`인 이유다. 이 결과는 탐색용 표본 6건이며 통계적 결론이 아니다.
+
 **고칠 수 없는 약점은 겨냥하지 않는다.** 평가 항목은 두 갈래다.
 
 | 갈래 | 항목 | 어디서 정해지는가 |
@@ -858,7 +876,10 @@ input:
 
 `scripts/`의 측정 스크립트:
 
-- `run_bench.py <log_dir> [sample ...]` — 샘플을 벤치마크 설정으로 차례로 돌린다. 샘플마다 `config/config.yaml`을 바꾸고 원래 파일은 백업에서 복원한다.
+- `run_bench.py <log_dir> [sample ...] [--mode rewrite|refine] [--check]` — 샘플을 벤치마크 설정으로 차례로 돌린다. 샘플마다 `config/config.yaml`을 바꾸고 원래 파일은 백업에서 복원한다.
+  - `--mode` (기본 `rewrite`) — `refine`이면 `pipeline.refine.enabled: true`로 돌리고, 실행 메타에 모드를 기록한다.
+  - `--check` — 실행하지 않고, 샘플·모드별 설정이 벤치마크 조건(회차 수, refine, 종료 조건 등)에 맞는지 검증해 요약을 출력한다.
+  - 회차마다 경로(`initial`, `refine`, `redesign`)가 저장 결과에 함께 기록된다.
 - `aggregate_quality_bench.py <log_dir>` — 저장된 벤치마크 실행을 모델·브라우저 호출 없이 집계한다.
 - `reevaluate_bench.py <bench_dir> [--out] [--limit] [--dry-run] [--force-resume]` — 저장된 회차를 현재 평가기로 다시 채점한다.
 - `discrimination.py [반복 수] [--legacy-ref GIT_REF]` — 원본과 망가뜨린 변형을 같은 조건으로 채점해 평가기의 변별력을 확인한다.
