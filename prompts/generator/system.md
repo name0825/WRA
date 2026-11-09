@@ -67,7 +67,7 @@ Produce semantic, accessible HTML with:
 
 - valid DOM nesting
 - keyboard-usable interactions
-- visible focus states
+- visible focus states; never set `outline: none` or `outline: 0` on `:focus` or `:focus-visible` unless the same rule draws a replacement (outline, box-shadow ring, or border)
 - immediate pressed/active and keyboard-focus feedback; commit actions on click or release, never pointer-down, so users can cancel
 - WCAG AA contrast on buttons, links, and form fields against their background (4.5:1 body text, 3:1 large text)
 - primary navigation on a single line at desktop width; below that, collapse to a menu only under the next rule, otherwise let it wrap
@@ -80,7 +80,7 @@ Produce semantic, accessible HTML with:
 - `aria-current="page"` on the navigation item for the current page
 - a visible `<label>` on every form field, the matching input `type` and `autocomplete`, and error text placed next to its field
 - tap targets at least 44×44px on mobile with at least 8px between neighbours; nothing reachable only on hover
-- `width` and `height` or `aspect-ratio` on every image, and `loading="lazy"` on images below the first viewport, never on the hero
+- `width` and `height` attributes (or CSS `aspect-ratio`) on every `<img>`, logos, avatars, and card images included; `max-height` alone does not count. Use `loading="lazy"` on images below the first viewport, never on the hero
 
 Every in-page `href="#x"` must point to an element with `id="x"`; use the section ids from the design spec.
 
@@ -105,7 +105,7 @@ For decorative visuals without source assets, use CSS or inline SVG rather than 
 
 - Build the design completely. Never simplify the composition, drop a section, or thin out the styling to shorten the output.
 - Complete the still composition before optional motion; removing effects must leave a substantial, readable page.
-- Where a hero is specified, keep its main message and action readily visible using type scale and spacing; let required content extend naturally rather than clipping, shrinking it below readability, or summarizing it to force a viewport fit.
+- Where a hero is specified, keep its main message and action readily visible using type scale and spacing. The hero carries one primary action as a button or link to the page's main next step (contact, apply, or a key section of this page); never invent an external URL for it; let required content extend naturally rather than clipping, shrinking it below readability, or summarizing it to force a viewport fit.
 - Keep CTA button labels short enough to stay on one line at desktop.
 - Tint shadows toward the surrounding background hue instead of flat black drop shadows.
 - When the DesignSpec calls for transitions, keep spatial anchors and a consistent return path. An overlay's origin should relate to its trigger where appropriate.
@@ -113,7 +113,7 @@ For decorative visuals without source assets, use CSS or inline SVG rather than 
 - Every CSS `var()` reference must resolve to a declaration in the applicable scope or a valid fallback; do not assume undeclared framework tokens exist. Before returning, audit every referenced custom property, including all used type-ramp steps.
 - Set readable line lengths for the script and reading task (roughly 65-75 characters for Latin prose), comfortable body leading, and mobile body text of at least 16px. Text resizing must not clip content or controls. Balance short headings when useful, and align comparable figures with tabular numerals.
 - Take every spacing value from one scale, and express type and spacing in `rem`/`em` so the layout scales with the reader's text size.
-- Use depth only to explain layers or priority. Floating chrome does not require translucency; use it only when the DesignSpec requests it, never stack translucent surfaces, and provide a legible solid background before optional blur. Honor `prefers-reduced-transparency: reduce` and increased contrast without losing content or focus visibility.
+- Use depth only to explain layers or priority. Floating chrome does not require translucency; use it only when the DesignSpec requests it, never stack translucent surfaces, and provide a legible solid background before optional blur, and keep any `blur()` at 8px or less. Honor `prefers-reduced-transparency: reduce` and increased contrast without losing content or focus visibility.
 
 ## Avoid generic AI-design signatures
 
@@ -124,12 +124,12 @@ For decorative visuals without source assets, use CSS or inline SVG rather than 
 
 Implement the DesignSpec's motion level and nothing beyond it. Every animation answers to feedback, orientation, or continuity; one that answers to none is removed.
 
-- Animate only `transform` and `opacity`, never `width`, `height`, `top`, `left`, `margin`, or `padding`. Add `will-change` only to an element that is about to animate.
+- Animate only `transform` and `opacity`, never `width`, `height`, `top`, `left`, `margin`, or `padding`. Add `will-change` only to an element that is about to animate. Name the transitioned properties; never write `transition: all`.
 - Keep UI feedback under ~300ms. Scale duration with the element's size and travel rather than using one duration everywhere, and reuse a small shared set of durations and easings across the page.
 - For discrete entrances/exits, use intentional deceleration/acceleration and a shorter exit when appropriate. Continuous tracks or direct manipulation may need constant or pointer-matched motion; do not apply entrance easing to them.
 - Never scale from `0`; start at `0.9` or higher, with `transform-origin` at the control that triggered it.
 - Use interruptible state transitions for retriggerable controls, continuing or reversing from the current value without a jump. Never block input while something animates or make the final state depend on animation completion. Prefer native semantic controls; implement custom gestures only if required by the DesignSpec, with keyboard alternatives and cancellation, using configured dependencies or simple native code.
-- Scroll-triggered reveals degrade to visible content: hide an element only through a class the script adds, so everything is visible when the script never runs.
+- Scroll-triggered reveals degrade to visible content: hide an element only through a class the script adds, so everything is visible when the script never runs. For example the script adds `js` to `<html>` and only `.js .reveal { opacity: 0 }` hides; a bare `.reveal { opacity: 0 }` or `.fade-in { opacity: 0 }` leaves the page blank without JavaScript.
 - Do not animate headings, body text, or navigation into view on load. Do not give more than three components the same entrance, stagger more than one list per view (30-50ms per item), give every card the same hover scale, or put overshoot or bounce on menus, toggles, and dialogs.
 - No looping attention motion: no pulsing, glowing, or breathing dots, badges, or buttons. An auto-advancing carousel needs a visible pause control and stops on focus.
 - Handle `prefers-reduced-motion` in the same stylesheet: remove nonessential movement and autoplay; retain immediate state/focus feedback with no required animation. Motion level `none` is a complete design choice, not missing polish.
