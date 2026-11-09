@@ -1253,6 +1253,34 @@ def test_fix_requests_are_kept_when_the_defect_is_measured(tmp_path):
     assert result.improvement_suggestions == _FIX_SENTENCES
 
 
+_PRAISE_SENTENCES = [
+    "The layout avoids any horizontal overflow or text clipping.",
+    "Strong: The sticky sidebar ensures navigation is always accessible, and the responsive tables handle horizontal overflow gracefully on smaller screens.",
+    "Tables become horizontally scrollable, preventing content loss.",
+]
+_UNMEASURED_CLAIM_SENTENCES = [
+    "Fix the horizontal overflow on mobile.",
+    "The desktop viewport shows a horizontal overflow.",
+    "The table requires horizontal scrolling on mobile.",
+]
+
+
+def test_praise_matching_a_clean_measurement_is_kept(tmp_path):
+    evaluator = _evaluator_with_payload(tmp_path, _payload_with(improvement_suggestions=list(_PRAISE_SENTENCES)))
+
+    result = evaluator.evaluate(FeatureModel(), make_spec(), _CLEAN_HTML, browser_result=_browser())
+
+    assert result.improvement_suggestions == _PRAISE_SENTENCES
+
+
+def test_unmeasured_defect_claims_are_dropped_with_clean_measurement(tmp_path):
+    evaluator = _evaluator_with_payload(tmp_path, _payload_with(improvement_suggestions=[*_UNMEASURED_CLAIM_SENTENCES, "Tighten spacing."]))
+
+    result = evaluator.evaluate(FeatureModel(), make_spec(), _CLEAN_HTML, browser_result=_browser())
+
+    assert result.improvement_suggestions == ["Tighten spacing."]
+
+
 def test_pipeline_ux_note_and_non_image_load_failures_are_kept(tmp_path):
     note = "Deterministic UX findings: Failed to load resource: the server responded with a status of 404 (fonts/a.woff2); Missing image alt on hero."
     feedback = f"The web fonts fail to load. The about section is missing a team photo. {note}"

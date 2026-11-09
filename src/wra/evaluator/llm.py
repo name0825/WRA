@@ -30,7 +30,7 @@ _IMAGE_LOAD_FAILURE_WORDING = re.compile(
     rf"|\b{_IMAGE_NOUN}\b[^.,;]{{0,30}}\b(?:missing|broken|fail(?:s|ed|ing)?\s+to\s+(?:load|render|display)|not\s+(?:load(?:ing|ed)?|display(?:ing|ed)?|render(?:ing|ed)?|found))\b(?!\s+(?:alt|caption))",
     re.IGNORECASE,
 )
-_CLAIM_NEGATION = re.compile(r"\b(?:no|without|never|none|zero|free of)\b|\bnot\s+(?:\w+\s+)?(?:have|has|show|cause|overflow)\b", re.IGNORECASE)
+_CLAIM_NEGATION = re.compile(r"\b(?:no|without|never|none|zero|free of|avoids|avoided|gracefully)\b|\b(?:tables?|containers?)\b[^.]{0,30}\bscrollable\b|\bnot\s+(?:\w+\s+)?(?:have|has|show|cause|overflow)\b", re.IGNORECASE)
 
 _UX_FINDINGS_CAP = 6.0
 _UNSTYLED_CAP = 3.0
