@@ -537,7 +537,7 @@ class LLMEvaluator:
             "feature_model": _drop_in_page_anchor_hrefs(features.model_dump(mode="json")),
             "design_spec": design_spec.model_dump(mode="json"),
             "generated_html": html,
-            "browser_evaluation": browser_result.model_dump(mode="json", exclude={"wide_text_width_median": True, "viewports": {"__all__": {"screenshot_path"}}}) if browser_result is not None else None,
+            "browser_evaluation": browser_result.model_dump(mode="json", exclude={"wide_text_width_median": True, "craft": True,"viewports": {"__all__": {"screenshot_path"}}}) if browser_result is not None else None,
             "deterministic_content_findings": content_findings or [],
             "deterministic_ux_findings": ux_findings or [],
             "deterministic_visual_findings": visual_findings or [],

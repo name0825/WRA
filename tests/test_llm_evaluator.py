@@ -1011,6 +1011,24 @@ def test_the_narrow_text_finding_reaches_the_prompt_only_when_flagged(tmp_path):
     assert "wide_text_width_median" not in unflagged_prompt
 
 
+def test_the_craft_measurement_is_not_in_the_evaluation_payload(tmp_path):
+    from wra.browser.models import BrowserCraftMeasurements
+
+    prompt_path = tmp_path / "system.md"
+    prompt_path.write_text("Evaluate this page.", encoding="utf-8")
+    client = FakeLLMClient(RuntimeError("unused"), _evaluation_response())
+    evaluator = LLMEvaluator(client, "evaluator-model", prompt_path=prompt_path, min_num_ctx=1000, max_num_ctx=32768, ceiling_num_ctx=32768, max_retries=1, growth_power=2.0)
+    craft = BrowserCraftMeasurements(js_off_text_chars=900, js_off_hidden_chars=800, js_off_hidden_selectors=["div.secretmark"], first_screen_h1=True)
+
+    evaluator.evaluate(FeatureModel(), make_spec(), "<html></html>", browser_result=BrowserEvaluationResult(enabled=True, craft=craft))
+
+    prompt = client.calls[0]["prompt"]
+    assert "browser_evaluation" in prompt
+    assert "craft" not in prompt
+    assert "secretmark" not in prompt
+    assert "js_off_hidden_chars" not in prompt
+
+
 def test_content_gate_stays_when_title_alone_holds_the_missing_text(tmp_path):
     defects = [{"kind": "missing", "source_text": "제 3회 청소년 ICT창업가 캠프"}]
     html = "<html><head><title>제 3회 청소년 ICT창업가 캠프</title></head><body><p>다른 내용</p></body></html>"

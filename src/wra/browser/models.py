@@ -95,10 +95,20 @@ class BrowserViewportResult(BaseModel):
     occluded_text_elements: list[OccludedTextElement] = Field(default_factory=list)
 
 
+class BrowserCraftMeasurements(BaseModel):
+    js_off_text_chars: int = 0
+    js_off_hidden_chars: int = 0
+    js_off_hidden_selectors: list[str] = Field(default_factory=list)
+    first_screen_h1: bool = False
+    first_screen_cta: bool = False
+    wrapped_button_labels: list[WrappedTextElement] = Field(default_factory=list)
+
+
 class BrowserEvaluationResult(BaseModel):
     enabled: bool
     viewports: list[BrowserViewportResult] = Field(default_factory=list)
     failed_viewports: list[str] = Field(default_factory=list)
     blocked_external_resources: list[str] = Field(default_factory=list)
     wide_text_width_median: int | None = None
+    craft: BrowserCraftMeasurements | None = None
 

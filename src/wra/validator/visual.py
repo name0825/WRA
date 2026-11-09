@@ -23,6 +23,9 @@ OVERSIZED_HEADER_LOGO_PREFIX = "Oversized header image:"
 EDGE_HUGGING_TEXT_PREFIX = "Text at viewport edge:"
 HEADER_OVERLAP_PREFIX = "Header overlap:"
 OCCLUDED_TEXT_PREFIX = "Occluded text:"
+JS_DISABLED_CONTENT_PREFIX = "Hidden without JavaScript:"
+_JS_OFF_HIDDEN_MIN_CHARS = 200
+_JS_OFF_HIDDEN_MIN_RATIO = 0.4
 WIDE_TEXT_WIDTH_PREFIX = "Narrow text column:"
 _WIDE_TEXT_WIDTH_THRESHOLD = 600
 _SEVERE_CONTRAST_RATIO = 3.0
@@ -414,6 +417,30 @@ def find_wide_text_width_defects(browser_result: BrowserEvaluationResult | None)
     if median is None or median >= _WIDE_TEXT_WIDTH_THRESHOLD:
         return []
     return [f"{WIDE_TEXT_WIDTH_PREFIX} at a 1920px-wide viewport the median width of the page's text and image content per section is {median}px, below {_WIDE_TEXT_WIDTH_THRESHOLD}px; on wide screens the body text sits in a narrow column. Measured value, not a verdict: weigh it with the screenshots."]
+
+
+def find_refinable_browser_defects(browser_result: BrowserEvaluationResult | None) -> list[str]:
+    if browser_result is None or not browser_result.enabled or browser_result.craft is None:
+        return []
+    craft = browser_result.craft
+    hidden, total = craft.js_off_hidden_chars, craft.js_off_text_chars
+    if hidden < _JS_OFF_HIDDEN_MIN_CHARS or hidden / max(total, 1) < _JS_OFF_HIDDEN_MIN_RATIO:
+        return []
+    examples = ", ".join(craft.js_off_hidden_selectors)
+    return [f"{JS_DISABLED_CONTENT_PREFIX} with JavaScript disabled {hidden} of {total} visible-text characters stay at opacity 0/hidden (e.g. {examples}); make content visible by default, reveal with a `.js` class or `@media (scripting:enabled)`/`<noscript>` fallback"]
+
+
+def browser_craft_metrics(browser_result: BrowserEvaluationResult | None) -> dict:
+    if browser_result is None or not browser_result.enabled or browser_result.craft is None:
+        return {}
+    craft = browser_result.craft
+    return {
+        "first_screen_h1": craft.first_screen_h1,
+        "first_screen_cta": craft.first_screen_cta,
+        "js_off_text_chars": craft.js_off_text_chars,
+        "js_off_hidden_ratio": round(craft.js_off_hidden_chars / craft.js_off_text_chars, 3) if craft.js_off_text_chars else 0.0,
+        "wrapped_button_labels": [label.text for label in craft.wrapped_button_labels],
+    }
 
 
 def find_visual_defects(

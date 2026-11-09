@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 import logging
 
 from wra.browser.contrast import CONTRAST_CANDIDATES_SCRIPT, contrast_failures
+from wra.browser.craft_measure import measure_craft
 from wra.browser.framework_cache import DEFAULT_CACHE_DIR, ensure_cached_path_for_url, iter_framework_urls
 from wra.browser.guard import guard_context, launch_guarded
 from wra.browser.http_cache import DEFAULT_HTTP_CACHE_DIR, fetch_cached
@@ -1024,6 +1025,7 @@ class BrowserEvaluator:
         failed_viewports: list[str] = []
         wide_text_width_median: int | None = None
         text_width_measured = False
+        craft = None
         last_error: Exception | None = None
 
         try:
@@ -1139,6 +1141,10 @@ class BrowserEvaluator:
                                 logger.warning("Browser viewport failed: name=%s error=%s", viewport.name, exc)
                         finally:
                             context.close()
+                    try:
+                        craft = measure_craft(browser, html_path.resolve().as_uri(), allowed_root, self._config.timeout_ms)
+                    except Exception as exc:
+                        logger.warning("Browser craft measurement failed: error=%s", exc)
                 finally:
                     browser.close()
         finally:
@@ -1149,4 +1155,4 @@ class BrowserEvaluator:
         if not results and last_error is not None:
             raise last_error
         logger.info("Browser evaluation completed: iteration=%d wide_text_width_median=%s", iteration, wide_text_width_median)
-        return BrowserEvaluationResult(enabled=True, viewports=results, failed_viewports=failed_viewports, blocked_external_resources=blocked_external_resources, wide_text_width_median=wide_text_width_median)
+        return BrowserEvaluationResult(enabled=True, viewports=results, failed_viewports=failed_viewports, blocked_external_resources=blocked_external_resources, wide_text_width_median=wide_text_width_median, craft=craft)
