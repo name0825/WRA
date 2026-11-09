@@ -1262,6 +1262,7 @@ _UNMEASURED_CLAIM_SENTENCES = [
     "Fix the horizontal overflow on mobile.",
     "The desktop viewport shows a horizontal overflow.",
     "The table requires horizontal scrolling on mobile.",
+    "The hero image is missing on mobile.",
 ]
 
 
@@ -1283,6 +1284,10 @@ _PREVENTIVE_SENTENCES = [
     "Verify that the 'Robot Demo' image does not introduce horizontal overflow on mobile viewports.",
     "Weak: The desktop viewport shows a horizontal overflow.",
 ]
+_ATTRIBUTE_CRITIQUE_SENTENCES = [
+    "Weak: The logo image is missing an explicit height attribute in the HTML source.",
+    "The hero image is missing width and height attributes.",
+]
 
 
 def test_labelled_praise_and_hypothetical_sentences_are_kept(tmp_path):
@@ -1291,6 +1296,14 @@ def test_labelled_praise_and_hypothetical_sentences_are_kept(tmp_path):
     result = evaluator.evaluate(FeatureModel(), make_spec(), _CLEAN_HTML, browser_result=_browser())
 
     assert result.improvement_suggestions == _NON_CLAIM_SENTENCES
+
+
+def test_image_attribute_critiques_are_kept(tmp_path):
+    evaluator = _evaluator_with_payload(tmp_path, _payload_with(improvement_suggestions=list(_ATTRIBUTE_CRITIQUE_SENTENCES)))
+
+    result = evaluator.evaluate(FeatureModel(), make_spec(), _CLEAN_HTML, browser_result=_browser())
+
+    assert result.improvement_suggestions == _ATTRIBUTE_CRITIQUE_SENTENCES
 
 
 def test_preventive_requests_and_weak_labelled_claims_are_dropped(tmp_path):

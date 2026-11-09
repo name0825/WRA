@@ -27,7 +27,7 @@ _SENTENCE_BOUNDARY = re.compile(r"(?<=[.!?。])\s+")
 _IMAGE_NOUN = r"(?:images?|photos?|pictures?|img)"
 _IMAGE_LOAD_FAILURE_WORDING = re.compile(
     rf"\b(?:broken|missing)\s+(?!(?:a|an|any|some|the)\s)(?:\w+\s+)?{_IMAGE_NOUN}\b(?!\s+(?:alt|caption))"
-    rf"|\b{_IMAGE_NOUN}\b[^.,;]{{0,30}}\b(?:missing|broken|fail(?:s|ed|ing)?\s+to\s+(?:load|render|display)|not\s+(?:load(?:ing|ed)?|display(?:ing|ed)?|render(?:ing|ed)?|found))\b(?!\s+(?:alt|caption))",
+    rf"|\b{_IMAGE_NOUN}\b[^.,;]{{0,30}}\b(?:missing|broken|fail(?:s|ed|ing)?\s+to\s+(?:load|render|display)|not\s+(?:load(?:ing|ed)?|display(?:ing|ed)?|render(?:ing|ed)?|found))\b(?!\s+(?:(?:an?|the|its)\s+)?(?:explicit\s+|proper\s+|descriptive\s+)?(?:alt|caption|height|width|dimensions?|aspect[- ]ratio|srcset|sizes|loading|lazy|title|\w+\s+attributes?|attributes?))",
     re.IGNORECASE,
 )
 _CLAIM_NEGATION = re.compile(r"\b(?:no|without|never|none|zero|free of|avoids|avoided|gracefully)\b|\b(?:tables?|containers?)\b[^.]{0,30}\bscrollable\b|\bnot\s+(?:\w+\s+)?(?:have|has|show|cause|overflow)\b", re.IGNORECASE)
