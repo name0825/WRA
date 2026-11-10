@@ -18,6 +18,7 @@ from .contrast_repair import repair_low_contrast
 from .fixed_trap_repair import repair_trapped_fixed
 from .js_repair import repair_js_syntax
 from .logo_repair import repair_oversized_header_logo
+from .reveal_repair import repair_js_off_hidden
 from .tailwind_repair import repair_tailwind_v3_remnants, repair_unknown_apply_utilities
 from .edge_repair import repair_edge_hugging_text
 from .overflow_repair import repair_horizontal_overflow
@@ -136,6 +137,9 @@ class HTMLGenerator:
                 html, fixed_trap_repairs = repair_trapped_fixed(html, asset_root=asset_root)
                 if fixed_trap_repairs:
                     logger.info("Repaired trapped fixed elements: %s", fixed_trap_repairs)
+                html, reveal_repairs = repair_js_off_hidden(html, asset_root=asset_root)
+                if reveal_repairs:
+                    logger.info("Repaired JS-off hidden content: %s", reveal_repairs)
                 html, squeeze_repairs = repair_squeezed_text(html, asset_root=asset_root)
                 if squeeze_repairs:
                     logger.info("Repaired squeezed text: %s", squeeze_repairs)

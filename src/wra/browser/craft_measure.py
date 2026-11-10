@@ -48,6 +48,7 @@ JS_OFF_SCRIPT = (
   let total = 0;
   let hidden = 0;
   const selectors = [];
+  const culprits = new Set();
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
   let node;
   while ((node = walker.nextNode())) {
@@ -62,10 +63,27 @@ JS_OFF_SCRIPT = (
     const box = verdict.found.getBoundingClientRect();
     if (box.width < 4 || box.height < 4) continue;
     hidden += text.length;
+    for (let e = verdict.found; e && e !== document.documentElement; e = e.parentElement) {
+      if (e === verdict.found || parseFloat(styleOf(e).opacity) < 0.05 || styleOf(e).visibility === 'hidden') culprits.add(e);
+    }
     const selector = selectorFor(verdict.found);
     if (selectors.length < 5 && !selectors.includes(selector)) selectors.push(selector);
   }
-  return { total, hidden, selectors };
+  const counts = {};
+  const described = Array.from(culprits).map(el => {
+    const classes = Array.from(el.classList).map(c => CSS.escape(c));
+    for (const c of classes) {
+      if (c in counts) continue;
+      counts[c] = Array.from(document.querySelectorAll('.' + c)).filter(other => {
+        if (culprits.has(other)) return true;
+        const verdict = culprit(other);
+        if (verdict.none) return false;
+        return !(verdict.found && !verdict.fixed && root.contains(other) && styleOf(other).position !== 'absolute');
+      }).length;
+    }
+    return { id: el.id ? CSS.escape(el.id) : '', classes };
+  });
+  return { total, hidden, selectors, culprits: described, counts };
 }"""
 )
 

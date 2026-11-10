@@ -9,6 +9,7 @@ from wra.generator.contrast_repair import repair_low_contrast
 from wra.generator.fixed_trap_repair import repair_trapped_fixed
 from wra.generator.js_repair import repair_js_syntax
 from wra.generator.logo_repair import repair_oversized_header_logo
+from wra.generator.reveal_repair import repair_js_off_hidden
 from wra.generator.tailwind_repair import repair_tailwind_v3_remnants, repair_unknown_apply_utilities
 from wra.generator.edge_repair import repair_edge_hugging_text
 from wra.generator.overflow_repair import repair_horizontal_overflow
@@ -127,6 +128,9 @@ class HTMLRefiner:
                 refined, fixed_trap_repairs = repair_trapped_fixed(refined, asset_root=asset_root)
                 if fixed_trap_repairs:
                     logger.info("Repaired trapped fixed elements: %s", fixed_trap_repairs)
+                refined, reveal_repairs = repair_js_off_hidden(refined, asset_root=asset_root)
+                if reveal_repairs:
+                    logger.info("Repaired JS-off hidden content: %s", reveal_repairs)
                 refined, overflow_repairs = repair_horizontal_overflow(refined, asset_root=asset_root)
                 if overflow_repairs:
                     logger.info("Repaired horizontal overflow: %s", overflow_repairs)
