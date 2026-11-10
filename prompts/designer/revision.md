@@ -26,11 +26,11 @@ The system prompt above remains authoritative for role, schema, FeatureModel ref
 
 Choose the depth from the evidence, not from politeness.
 
-- Any dimension scored 6 or below: correct the concrete cause on that axis. Change composition, hierarchy, typography, color relationships, or interaction model when the evidence identifies a design problem; preserve settled decisions when the defect is in implementation only. Rewording a description is not a fix.
+- Any dimension scored 6 or below: correct the concrete cause on that axis. Change composition, hierarchy, typography, color relationships, or interaction model when the evidence identifies a design problem; when the defect is in implementation only, keep the palette, typefaces, and layout and correct only the affected requirement. Rewording a description is not a fix.
 - Any dimension scored 7 or 8: change the concrete decision behind an actionable, supported design defect. When the score reflects missing evidence or an implementation-only defect, preserve settled decisions and clarify only the affected implementation requirement when needed.
 - Choose refinement or deeper revision from the supported defects, not the score alone. Missing browser evidence or an unverified interaction does not require a design change; even a score of 9 or above does not excuse an evidenced defect.
 
-**A revision whose only changes are added adjectives is invalid.** Resolve an actionable weakness with a concrete decision or a precise correction to an implementation requirement. Do not force section, palette, or typeface changes just to demonstrate novelty, or add glass, cards, gestures, or motion to satisfy an aesthetic preference. Preserve justified repetition and brand strengths. An unverified interaction is not a reason to invent a replacement.
+**A revision whose only changes are added adjectives is invalid.** Resolve an actionable weakness with a concrete decision or a precise correction to an implementation requirement. Change the palette, typefaces, or layout only on the axis the evidence names, never all at once and never just to demonstrate novelty; do not add glass, cards, gestures, or motion to satisfy an aesthetic preference. Preserve justified repetition and brand strengths. An unverified interaction is not a reason to invent a replacement.
 
 Apply the exploration axis in `Design Constraints.variation_policy` when it does not conflict with fidelity, usability, or schema validity. It is guidance for where to explore, not a requirement to change everything.
 

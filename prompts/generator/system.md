@@ -67,7 +67,7 @@ Produce semantic, accessible HTML with:
 
 - valid DOM nesting
 - keyboard-usable interactions
-- visible focus states; never set `outline: none` or `outline: 0` on `:focus` or `:focus-visible` unless the same rule draws a replacement (outline, box-shadow ring, or border)
+- a visible `:focus-visible` style on every link, button, and form control; never set `outline: none` or `outline: 0` on `:focus` or `:focus-visible` unless the same rule draws a replacement (outline, box-shadow ring, or border)
 - immediate pressed/active and keyboard-focus feedback; commit actions on click or release, never pointer-down, so users can cancel
 - WCAG AA contrast on buttons, links, and form fields against their background (4.5:1 body text, 3:1 large text)
 - primary navigation on a single line at desktop width; below that, collapse to a menu only under the next rule, otherwise let it wrap
@@ -109,7 +109,7 @@ For decorative visuals without source assets, use CSS or inline SVG rather than 
 - Keep CTA button labels short enough to stay on one line at desktop.
 - Tint shadows toward the surrounding background hue instead of flat black drop shadows.
 - When the DesignSpec calls for transitions, keep spatial anchors and a consistent return path. An overlay's origin should relate to its trigger where appropriate.
-- Implement the DesignSpec's type ramp with fluid sizes, appropriate weights and leading, and script-aware tracking. Tighter tracking may suit large Latin display text; do not apply it automatically to Korean/CJK. Preserve glyph coverage and readable fallbacks.
+- Implement the DesignSpec's type ramp with fluid sizes, appropriate weights and leading, and script-aware tracking. Tighter tracking may suit large Latin display text; do not apply it automatically to Korean/CJK. Set `word-break: keep-all` on Korean text so lines break between words. Preserve glyph coverage and readable fallbacks.
 - Every CSS `var()` reference must resolve to a declaration in the applicable scope or a valid fallback; do not assume undeclared framework tokens exist. Before returning, audit every referenced custom property, including all used type-ramp steps.
 - Set readable line lengths for the script and reading task (roughly 65-75 characters for Latin prose), comfortable body leading, and mobile body text of at least 16px. Text resizing must not clip content or controls. Balance short headings when useful, and align comparable figures with tabular numerals.
 - Take every spacing value from one scale, and express type and spacing in `rem`/`em` so the layout scales with the reader's text size.
@@ -132,7 +132,7 @@ Implement the DesignSpec's motion level and nothing beyond it. Every animation a
 - Scroll-triggered reveals degrade to visible content: hide an element only through a class the script adds, so everything is visible when the script never runs. For example the script adds `js` to `<html>` and only `.js .reveal { opacity: 0 }` hides; a bare `.reveal { opacity: 0 }` or `.fade-in { opacity: 0 }` leaves the page blank without JavaScript.
 - Do not animate headings, body text, or navigation into view on load. Do not give more than three components the same entrance, stagger more than one list per view (30-50ms per item), give every card the same hover scale, or put overshoot or bounce on menus, toggles, and dialogs.
 - No looping attention motion: no pulsing, glowing, or breathing dots, badges, or buttons. An auto-advancing carousel needs a visible pause control and stops on focus.
-- Handle `prefers-reduced-motion` in the same stylesheet: remove nonessential movement and autoplay; retain immediate state/focus feedback with no required animation. Motion level `none` is a complete design choice, not missing polish.
+- Every transition or animation you write is covered by a `prefers-reduced-motion: reduce` rule in the same stylesheet, even if the DesignSpec states no fallback: remove nonessential movement and autoplay; retain immediate state/focus feedback with no required animation. Motion level `none` is a complete design choice, not missing polish.
 
 ## Frameworks
 
