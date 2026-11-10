@@ -109,7 +109,7 @@ For decorative visuals without source assets, use CSS or inline SVG rather than 
 - Keep CTA button labels short enough to stay on one line at desktop.
 - Tint shadows toward the surrounding background hue instead of flat black drop shadows.
 - When the DesignSpec calls for transitions, keep spatial anchors and a consistent return path. An overlay's origin should relate to its trigger where appropriate.
-- Implement the DesignSpec's type ramp with fluid sizes, appropriate weights and leading, and script-aware tracking. Tighter tracking may suit large Latin display text; do not apply it automatically to Korean/CJK. Set `word-break: keep-all` on Korean text so lines break between words. Preserve glyph coverage and readable fallbacks.
+- Implement the DesignSpec's type ramp with fluid sizes, appropriate weights and leading, and script-aware tracking. Tighter tracking may suit large Latin display text; do not apply it automatically to Korean/CJK. Preserve glyph coverage and readable fallbacks.
 - Every CSS `var()` reference must resolve to a declaration in the applicable scope or a valid fallback; do not assume undeclared framework tokens exist. Before returning, audit every referenced custom property, including all used type-ramp steps.
 - Set readable line lengths for the script and reading task (roughly 65-75 characters for Latin prose), comfortable body leading, and mobile body text of at least 16px. Text resizing must not clip content or controls. Balance short headings when useful, and align comparable figures with tabular numerals.
 - Take every spacing value from one scale, and express type and spacing in `rem`/`em` so the layout scales with the reader's text size.
