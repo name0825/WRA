@@ -16,6 +16,8 @@ LOW_CONTRAST_PREFIX = "Low contrast:"
 BROKEN_IMAGE_PREFIX = "Broken image:"
 EXPOSED_MARKUP_PREFIX = "Exposed markup:"
 OVERFLOW_PREFIX = "Horizontal overflow:"
+CLIPPED_TABLE_PREFIX = "Clipped table:"
+SCROLLABLE_TABLE_PREFIX = "Scrollable table:"
 RENDER_COLLAPSE_PREFIX = "Render collapse:"
 VERTICAL_GAP_PREFIX = "Vertical gap:"
 VERTICAL_GAP_MIN_VIEWPORT_RATIO = 0.6
@@ -231,6 +233,18 @@ def find_overflow_defects(browser_result: BrowserEvaluationResult | None) -> lis
     return [f"{OVERFLOW_PREFIX} " + "; ".join(lines)]
 
 
+def find_clipped_table_defects(browser_result: BrowserEvaluationResult | None) -> list[str]:
+    if browser_result is None or not browser_result.enabled:
+        return []
+    lines = []
+    for viewport in browser_result.viewports:
+        for table in [entry for entry in viewport.clipped_tables if entry.overflow_x in ("hidden", "clip")][:3]:
+            lines.append(f"{viewport.name} {viewport.width}px: {table.selector} is {table.table_width}px wide but {table.container} (overflow-x: {table.overflow_x}) shows {table.container_width}px, so columns past the edge are unreachable")
+    if not lines:
+        return []
+    return [f"{CLIPPED_TABLE_PREFIX} " + "; ".join(lines) + "; let long unbreakable tokens (emails/URLs) in table cells break with `overflow-wrap:anywhere` (and `min-width:0`), or make the wrapper `overflow-x:auto`"]
+
+
 class _ExposedMarkupParser(HTMLParser):
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
@@ -420,14 +434,22 @@ def find_wide_text_width_defects(browser_result: BrowserEvaluationResult | None)
 
 
 def find_refinable_browser_defects(browser_result: BrowserEvaluationResult | None) -> list[str]:
-    if browser_result is None or not browser_result.enabled or browser_result.craft is None:
+    if browser_result is None or not browser_result.enabled:
         return []
+    findings: list[str] = []
     craft = browser_result.craft
-    hidden, total = craft.js_off_hidden_chars, craft.js_off_text_chars
-    if hidden < _JS_OFF_HIDDEN_MIN_CHARS or hidden / max(total, 1) < _JS_OFF_HIDDEN_MIN_RATIO:
-        return []
-    examples = ", ".join(craft.js_off_hidden_selectors)
-    return [f"{JS_DISABLED_CONTENT_PREFIX} with JavaScript disabled {hidden} of {total} visible-text characters stay at opacity 0/hidden (e.g. {examples}); make content visible by default, reveal with a `.js` class or `@media (scripting:enabled)`/`<noscript>` fallback"]
+    if craft is not None:
+        hidden, total = craft.js_off_hidden_chars, craft.js_off_text_chars
+        if hidden >= _JS_OFF_HIDDEN_MIN_CHARS and hidden / max(total, 1) >= _JS_OFF_HIDDEN_MIN_RATIO:
+            examples = ", ".join(craft.js_off_hidden_selectors)
+            findings.append(f"{JS_DISABLED_CONTENT_PREFIX} with JavaScript disabled {hidden} of {total} visible-text characters stay at opacity 0/hidden (e.g. {examples}); make content visible by default, reveal with a `.js` class or `@media (scripting:enabled)`/`<noscript>` fallback")
+    lines = []
+    for viewport in browser_result.viewports:
+        for table in [entry for entry in viewport.clipped_tables if entry.overflow_x in ("auto", "scroll")][:3]:
+            lines.append(f"{viewport.name} {viewport.width}px: {table.selector} ({table.table_width}px) scrolls sideways inside {table.container} ({table.container_width}px)")
+    if lines:
+        findings.append(f"{SCROLLABLE_TABLE_PREFIX} " + "; ".join(lines) + "; if the cells hold long emails/URLs add `overflow-wrap:anywhere` so the table fits without scrolling")
+    return findings
 
 
 def browser_craft_metrics(browser_result: BrowserEvaluationResult | None) -> dict:
@@ -467,6 +489,7 @@ def find_visual_defects(
     findings.extend(find_broken_images(html, browser_result))
     findings.extend(find_exposed_markup(html))
     findings.extend(find_overflow_defects(browser_result))
+    findings.extend(find_clipped_table_defects(browser_result))
     findings.extend(find_render_collapse_defects(html, browser_result))
     findings.extend(find_vertical_gap_defects(browser_result))
     findings.extend(find_oversized_header_logo_defects(browser_result))

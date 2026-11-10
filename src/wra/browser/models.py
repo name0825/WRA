@@ -33,6 +33,14 @@ class OverflowElement(BaseModel):
     right: int
 
 
+class ClippedTable(BaseModel):
+    selector: str
+    container: str
+    overflow_x: str
+    table_width: int
+    container_width: int
+
+
 class WrappedTextElement(BaseModel):
     selector: str
     text: str
@@ -86,6 +94,7 @@ class BrowserViewportResult(BaseModel):
     contrast_failures: list[ContrastFailure] = Field(default_factory=list)
     broken_images: list[str] = Field(default_factory=list)
     overflow_elements: list[OverflowElement] = Field(default_factory=list)
+    clipped_tables: list[ClippedTable] = Field(default_factory=list)
     first_screen_max_right: int | None = None
     wrapped_text_elements: list[WrappedTextElement] = Field(default_factory=list)
     vertical_gap_bands: list[VerticalGapBand] = Field(default_factory=list)

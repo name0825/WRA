@@ -18,7 +18,7 @@ from wra.llm.schema import bound_strings
 from wra.evaluator.screenshots import MIN_SCREENSHOT_PIXELS, PIXELS_PER_IMAGE_TOKEN, fit_screenshots, screenshot_pixels
 from wra.evaluator.visual_check import CAPPED_DEFECT_KINDS, VISUAL_INSPECTION_PREFIX
 from wra.validator.tokens import extract_visible_text, normalize_for_match
-from wra.validator.visual import BROKEN_IMAGE_PREFIX, EXPOSED_MARKUP_PREFIX, IMAGES_DROPPED_PREFIX, IMAGES_MISSING_PREFIX, LOW_CONTRAST_PREFIX, OVERFLOW_PREFIX, RENDER_COLLAPSE_PREFIX, UNSTYLED_PREFIX, find_broken_image_markup
+from wra.validator.visual import BROKEN_IMAGE_PREFIX, CLIPPED_TABLE_PREFIX, EXPOSED_MARKUP_PREFIX, IMAGES_DROPPED_PREFIX, IMAGES_MISSING_PREFIX, LOW_CONTRAST_PREFIX, OVERFLOW_PREFIX, RENDER_COLLAPSE_PREFIX, UNSTYLED_PREFIX, find_broken_image_markup
 
 logger = logging.getLogger(__name__)
 
@@ -146,6 +146,10 @@ def _apply_deterministic_caps(parsed: dict, ux_findings: list[str], visual_findi
     overflow = next((finding for finding in visual_findings if finding.startswith(OVERFLOW_PREFIX)), None)
     if overflow is not None:
         _apply_dimension_cap(parsed, "responsive_design", _SEEN_DEFECT_CAP, overflow)
+
+    clipped_table = next((finding for finding in visual_findings if finding.startswith(CLIPPED_TABLE_PREFIX)), None)
+    if clipped_table is not None:
+        _apply_dimension_cap(parsed, "responsive_design", _SEEN_DEFECT_CAP, clipped_table)
 
     inspected = next(
         (

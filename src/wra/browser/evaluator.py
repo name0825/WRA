@@ -193,6 +193,35 @@ OVERFLOW_ELEMENTS_SCRIPT = """() => {
   }
   return out.slice(0, 5);
 }"""
+CLIPPED_TABLES_SCRIPT = """() => {
+  function selectorFor(el) {
+    const tag = el.tagName.toLowerCase();
+    if (el.id) return `${tag}#${el.id}`;
+    if (el.classList.length) return `${tag}.${Array.from(el.classList).slice(0, 2).join('.')}`;
+    return tag;
+  }
+  const out = [];
+  for (const table of document.querySelectorAll('table')) {
+    if (table.getClientRects().length === 0) continue;
+    const tableStyle = getComputedStyle(table);
+    if (tableStyle.visibility === 'hidden' || tableStyle.display === 'none') continue;
+    if (tableStyle.overflowX !== 'visible') continue;
+    if (table.closest('details:not([open])')) continue;
+    if (table.checkVisibility && !table.checkVisibility({ contentVisibilityAuto: true, visibilityProperty: true })) continue;
+    let node = table.parentElement;
+    while (node && node !== document.body && node !== document.documentElement) {
+      if (getComputedStyle(node).overflowX !== 'visible') break;
+      node = node.parentElement;
+    }
+    if (!node || node === document.body || node === document.documentElement) continue;
+    if (node.clientHeight === 0) continue;
+    const tableWidth = Math.round(table.getBoundingClientRect().width);
+    if (tableWidth > node.clientWidth + 1) {
+      out.push({ selector: selectorFor(table), container: selectorFor(node), overflow_x: getComputedStyle(node).overflowX, table_width: tableWidth, container_width: node.clientWidth });
+    }
+  }
+  return out.slice(0, 10);
+}"""
 # Rightmost extent of visible text/image content whose vertical position
 # intersects the first screen (the unscrolled viewport). A collapsed
 # multi-column layout that pushes everything but a narrow sidebar below the
@@ -1089,6 +1118,13 @@ class BrowserEvaluator:
                                 except Exception as exc:
                                     logger.warning("Browser viewport overflow-element check failed: name=%s error=%s", viewport.name, exc)
                                     overflow_elements = []
+                                clipped_tables = []
+                                if viewport.width <= 768:
+                                    try:
+                                        clipped_tables = page.evaluate(CLIPPED_TABLES_SCRIPT)
+                                    except Exception as exc:
+                                        logger.warning("Browser viewport clipped-table check failed: name=%s error=%s", viewport.name, exc)
+                                        clipped_tables = []
                                 try:
                                     first_screen_max_right = page.evaluate(FIRST_SCREEN_EXTENT_SCRIPT)
                                 except Exception as exc:
@@ -1124,7 +1160,7 @@ class BrowserEvaluator:
                                 except Exception as exc:
                                     logger.warning("Browser viewport text-occlusion check failed: name=%s error=%s", viewport.name, exc)
                                     occluded_text_elements = []
-                                results.append(BrowserViewportResult(name=viewport.name, width=viewport.width, height=viewport.height, horizontal_overflow=metrics["scrollWidth"] > metrics["viewportWidth"], scroll_width=metrics["scrollWidth"], viewport_width=metrics["viewportWidth"], page_height=metrics["pageHeight"], console_errors=console_errors, page_errors=page_errors, screenshot_path=screenshot_path, stylesheet_rule_count=metrics["cssRuleCount"], contrast_failures=failures, broken_images=broken_images, overflow_elements=overflow_elements, first_screen_max_right=first_screen_max_right, wrapped_text_elements=wrapped_text_elements, vertical_gap_bands=vertical_gap_bands, header_logo_elements=header_logo_elements, edge_hugging_text_elements=edge_hugging_text_elements, header_overlap_pairs=header_overlap_pairs, occluded_text_elements=occluded_text_elements))
+                                results.append(BrowserViewportResult(name=viewport.name, width=viewport.width, height=viewport.height, horizontal_overflow=metrics["scrollWidth"] > metrics["viewportWidth"], scroll_width=metrics["scrollWidth"], viewport_width=metrics["viewportWidth"], page_height=metrics["pageHeight"], console_errors=console_errors, page_errors=page_errors, screenshot_path=screenshot_path, stylesheet_rule_count=metrics["cssRuleCount"], contrast_failures=failures, broken_images=broken_images, overflow_elements=overflow_elements, clipped_tables=clipped_tables, first_screen_max_right=first_screen_max_right, wrapped_text_elements=wrapped_text_elements, vertical_gap_bands=vertical_gap_bands, header_logo_elements=header_logo_elements, edge_hugging_text_elements=edge_hugging_text_elements, header_overlap_pairs=header_overlap_pairs, occluded_text_elements=occluded_text_elements))
                                 logger.info("Browser viewport completed: name=%s overflow=%s console_errors=%d page_errors=%d", viewport.name, results[-1].horizontal_overflow, len(console_errors), len(page_errors))
                                 if not text_width_measured:
                                     text_width_measured = True

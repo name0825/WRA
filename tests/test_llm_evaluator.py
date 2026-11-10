@@ -1365,3 +1365,16 @@ def test_pipeline_ux_note_and_non_image_load_failures_are_kept(tmp_path):
     assert result.ux.feedback.startswith(feedback.split(" Deterministic UX")[0])
     assert "Failed to load resource" in result.ux.feedback
     assert "Missing image alt on hero." in result.ux.feedback
+
+
+@pytest.mark.parametrize(("prefix", "capped"), [("Clipped table:", True), ("Scrollable table:", False)])
+def test_clipped_table_finding_caps_responsive_design_but_scrollable_does_not(tmp_path, prefix, capped):
+    prompt_path = tmp_path / "system.md"
+    prompt_path.write_text("Evaluate this page.", encoding="utf-8")
+    client = FakeLLMClient(RuntimeError("unused"), _evaluation_response())
+    evaluator = LLMEvaluator(client, "evaluator-model", prompt_path=prompt_path, min_num_ctx=1000, max_num_ctx=32768, ceiling_num_ctx=32768, max_retries=1, growth_power=2.0)
+
+    result = evaluator.evaluate(FeatureModel(), make_spec(), "<html></html>", visual_findings=[f"{prefix} mobile 390px: table.plan is 424px wide but div.wrap (overflow-x: hidden) shows 366px"])
+
+    assert (result.responsive_design.score <= 6.0) is capped
+    assert result.visual_hierarchy.score == 8.0

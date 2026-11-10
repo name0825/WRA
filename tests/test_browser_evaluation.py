@@ -914,3 +914,64 @@ def test_the_wide_measurement_does_not_change_the_viewport_screenshots_or_metric
 
     assert [(viewport.viewport_width, viewport.scroll_width) for viewport in result.viewports] == [(800, 800), (400, 400)]
     assert all(viewport.screenshot_path and Path(viewport.screenshot_path).exists() for viewport in result.viewports)
+
+
+def _table_page(wrapper_style: str, cell: str = "x" * 60, table_style: str = "width:430px") -> str:
+    return f'<html><body style="margin:0"><div class="wrap" style="{wrapper_style}"><table class="plan" style="{table_style}"><tr><td>{cell}</td></tr></table></div></body></html>'
+
+
+def test_a_table_wider_than_its_overflow_hidden_wrapper_is_reported(run_dir: Path) -> None:
+    result = _evaluate_mobile(_table_page("overflow-x:hidden"), run_dir, run_dir / ".browser_tmp", asset_root=run_dir)
+    tables = result.viewports[0].clipped_tables
+
+    assert len(tables) == 1
+    assert (tables[0].selector, tables[0].container, tables[0].overflow_x) == ("table.plan", "div.wrap", "hidden")
+    assert tables[0].table_width > tables[0].container_width
+
+
+def test_a_table_wider_than_its_overflow_auto_wrapper_is_reported_as_auto(run_dir: Path) -> None:
+    result = _evaluate_mobile(_table_page("overflow-x:auto"), run_dir, run_dir / ".browser_tmp", asset_root=run_dir)
+
+    assert [table.overflow_x for table in result.viewports[0].clipped_tables] == ["auto"]
+
+
+def test_a_table_without_an_overflow_ancestor_is_not_reported(run_dir: Path) -> None:
+    result = _evaluate_mobile(_table_page(""), run_dir, run_dir / ".browser_tmp", asset_root=run_dir)
+
+    assert result.viewports[0].clipped_tables == []
+
+
+def test_a_table_that_fits_its_wrapper_is_not_reported(run_dir: Path) -> None:
+    page = _table_page("overflow-x:hidden", cell="x" * 200, table_style="width:100%;table-layout:fixed")
+    page = page.replace("<td>", '<td style="overflow-wrap:anywhere">')
+    result = _evaluate_mobile(page, run_dir, run_dir / ".browser_tmp", asset_root=run_dir)
+
+    assert result.viewports[0].clipped_tables == []
+
+
+def test_a_clipped_table_is_not_checked_at_desktop_width(run_dir: Path) -> None:
+    config = BrowserConfig(enabled=True, viewports=[BrowserViewport(name="desktop", width=1280, height=800)])
+    page = _table_page("overflow-x:hidden;width:300px", table_style="width:600px")
+    result = BrowserEvaluator(config).evaluate(html=page, output_dir=run_dir / ".browser_tmp", iteration=1, asset_root=run_dir)
+
+    assert result.viewports[0].clipped_tables == []
+
+
+def test_a_table_that_is_its_own_scroller_under_a_hidden_wrapper_is_not_reported(run_dir: Path) -> None:
+    page = _table_page("overflow-x:hidden", cell="x" * 300, table_style="display:block;overflow-x:auto;max-width:100%")
+    result = _evaluate_mobile(page, run_dir, run_dir / ".browser_tmp", asset_root=run_dir)
+
+    assert result.viewports[0].clipped_tables == []
+
+
+def test_a_table_inside_a_closed_details_is_not_reported(run_dir: Path) -> None:
+    page = '<html><body style="margin:0"><div style="overflow-x:hidden"><details><summary>More</summary><table class="plan" style="width:600px"><tr><td>x</td></tr></table></details></div></body></html>'
+    result = _evaluate_mobile(page, run_dir, run_dir / ".browser_tmp", asset_root=run_dir)
+
+    assert result.viewports[0].clipped_tables == []
+
+
+def test_a_table_inside_a_zero_height_collapse_panel_is_not_reported(run_dir: Path) -> None:
+    result = _evaluate_mobile(_table_page("overflow:hidden;height:0", table_style="width:600px"), run_dir, run_dir / ".browser_tmp", asset_root=run_dir)
+
+    assert result.viewports[0].clipped_tables == []

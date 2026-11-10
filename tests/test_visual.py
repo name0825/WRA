@@ -1,7 +1,9 @@
 import pytest
 
 from wra.browser.models import BrowserEvaluationResult,BrowserViewportResult, EdgeHuggingTextElement, HeaderLogoElement, HeaderOverlapPair, OccludedTextElement, OverflowElement, VerticalGapBand, WrappedTextElement
+from wra.browser.models import ClippedTable
 from wra.core.models import FeatureModel, Image, Media
+from wra.validator.visual import find_clipped_table_defects, find_refinable_browser_defects
 from wra.validator.visual import EDGE_HUGGING_TEXT_PREFIX, HEADER_OVERLAP_PREFIX, IMAGES_DROPPED_PREFIX, IMAGES_MISSING_PREFIX, OCCLUDED_TEXT_PREFIX, OVERSIZED_HEADER_LOGO_PREFIX, RENDER_COLLAPSE_PREFIX, VERTICAL_GAP_PREFIX, WIDE_TEXT_WIDTH_PREFIX, find_broken_image_markup, find_edge_hugging_text_defects, find_exposed_markup, find_header_overlap_defects, find_missing_content_images, find_occluded_text_defects, find_oversized_header_logo_defects, find_overflow_defects, find_render_collapse_defects, find_vertical_gap_defects, find_visual_defects, find_wide_text_width_defects, _is_unstyled
 
 
@@ -694,3 +696,46 @@ def test_the_narrow_text_finding_is_wired_into_find_visual_defects() -> None:
     findings = find_visual_defects(html, _features([]), BrowserEvaluationResult(enabled=True, wide_text_width_median=332))
 
     assert any(finding.startswith(WIDE_TEXT_WIDTH_PREFIX) for finding in findings)
+
+
+def _table_result(overflow_x: str | None) -> BrowserEvaluationResult:
+    tables = [] if overflow_x is None else [ClippedTable(selector="table.plan", container="div.wrap", overflow_x=overflow_x, table_width=424, container_width=366)]
+    return BrowserEvaluationResult(enabled=True, viewports=[BrowserViewportResult(name="mobile", width=390, height=844, viewport_width=390, scroll_width=390, clipped_tables=tables)])
+
+
+@pytest.mark.parametrize("overflow_x", ["hidden", "clip"])
+def test_a_table_clipped_by_an_overflow_hidden_wrapper_is_reported_once(overflow_x: str) -> None:
+    findings = find_clipped_table_defects(_table_result(overflow_x))
+
+    assert len(findings) == 1
+    assert findings[0].startswith("Clipped table:")
+    assert "mobile 390px: table.plan is 424px wide but div.wrap (overflow-x: " + overflow_x + ") shows 366px" in findings[0]
+    assert "overflow-wrap:anywhere" in findings[0]
+
+
+def test_a_scrollable_table_is_not_a_visual_defect() -> None:
+    browser_result = _table_result("auto")
+
+    assert find_clipped_table_defects(browser_result) == []
+    assert not any(finding.startswith("Clipped table:") for finding in find_visual_defects("<style>body{color:red}</style>", _features([]), browser_result))
+    assert find_clipped_table_defects(_table_result(None)) == []
+
+
+def test_a_clipped_table_flows_through_find_visual_defects() -> None:
+    findings = find_visual_defects("<style>body{color:red}</style>", _features([]), _table_result("hidden"))
+
+    assert sum(finding.startswith("Clipped table:") for finding in findings) == 1
+
+
+def test_a_scrollable_table_is_a_refiner_advisory_without_craft() -> None:
+    findings = find_refinable_browser_defects(_table_result("scroll"))
+
+    assert len(findings) == 1
+    assert findings[0].startswith("Scrollable table:")
+    assert "table.plan" in findings[0]
+
+
+def test_a_clipped_table_is_not_a_refiner_advisory() -> None:
+    assert find_refinable_browser_defects(_table_result("hidden")) == []
+    assert find_refinable_browser_defects(_table_result(None)) == []
+    assert find_refinable_browser_defects(None) == []
