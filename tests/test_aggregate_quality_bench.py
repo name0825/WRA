@@ -34,3 +34,26 @@ def test_path_summary_is_per_mode_so_initial_results_are_not_merged():
 
     assert aggregate.path_summary(rewrite)["initial"]["mean_overall"] == 6.0
     assert aggregate.path_summary(refine)["initial"]["mean_overall"] == 8.0
+
+
+def test_scores_text_marks_kept_iteration_and_higher_reverted_one():
+    iterations = [
+        {**item("initial", 7.25, 1), "selected": False},
+        {**item("redesign", 7.625, 2), "selected": True},
+        {**item("redesign", 8.25, 3), "selected": False},
+    ]
+    assert aggregate.scores_text(iterations) == "i1=7.25, i2=7.625*, i3=8.25 (not kept)"
+
+
+def test_scores_text_without_recorded_selection_is_unmarked():
+    assert aggregate.scores_text([item("initial", 7.0, 1), item("refine", 8.0, 2)]) == "i1=7, i2=8"
+
+
+def test_scores_text_compares_against_the_kept_iteration_of_the_same_page():
+    iterations = [
+        {**item("initial", 6.0, 1, page="a"), "selected": True},
+        {**item("redesign", 6.5, 2, page="a"), "selected": False},
+        {**item("initial", 8.0, 1, page="b"), "selected": True},
+        {**item("redesign", 7.0, 2, page="b"), "selected": False},
+    ]
+    assert aggregate.scores_text(iterations) == "a:i1=6*, a:i2=6.5 (not kept), b:i1=8*, b:i2=7"

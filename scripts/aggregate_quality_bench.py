@@ -29,6 +29,8 @@ def aggregate_run(sample: str, run_name: str | None, log_dir: Path) -> dict:
     result = read_json(result_path) if result_path and result_path.exists() else {"pages": {}}
     pages = []
     for page in result["pages"]:
+        page_result = result["pages"][page] if isinstance(result["pages"], dict) else None
+        best_iteration = page_result.get("best_iteration") if isinstance(page_result, dict) else None
         feature_path = run_dir / "data" / page / "features.json"
         features = FeatureModel.model_validate(read_json(feature_path)) if feature_path.exists() else None
         for iteration_dir in sorted((run_dir / "iterations").glob("iter*"), key=lambda path: int(path.name[4:])):
@@ -47,6 +49,7 @@ def aggregate_run(sample: str, run_name: str | None, log_dir: Path) -> dict:
             pages.append({
                 "page": page,
                 "iteration": int(iteration_dir.name[4:]),
+                "selected": None if best_iteration is None else int(iteration_dir.name[4:]) == int(best_iteration),
                 "path": route.get("path", "unrecorded"),
                 "refine_failed": route.get("refine_failed"),
                 "evaluation_mtime": evaluation_path.stat().st_mtime,
@@ -100,6 +103,20 @@ def path_text(summary: dict) -> str:
     return "; ".join(f"{path} n={value['count']} mean={value['mean_overall']:.3f} refine_failed={value['refine_failed_count']}" for path, value in summary.items()) or "no saved evaluations"
 
 
+def scores_text(iterations: list[dict]) -> str:
+    kept = {item["page"]: item["overall_score"] for item in iterations if item.get("selected")}
+    multi_page = len({item["page"] for item in iterations}) > 1
+    parts = []
+    for item in iterations:
+        text = f"{item['page'] + ':' if multi_page else ''}i{item['iteration']}={item['overall_score']:g}"
+        if item.get("selected"):
+            text += "*"
+        elif item.get("selected") is False and item["overall_score"] > kept.get(item["page"], float("inf")):
+            text += " (not kept)"
+        parts.append(text)
+    return ", ".join(parts)
+
+
 def collect(log_dir: Path) -> tuple[str, list[dict]]:
     meta_path = log_dir / "bench_meta.json"
     mode = read_json(meta_path)["mode"] if meta_path.exists() else "unrecorded"
@@ -120,11 +137,13 @@ def write_report(log_dir: Path, mode: str, runs: list[dict]) -> None:
     score_files = f"{time.strftime(time_format, time.localtime(min(mtimes)))} .. {time.strftime(time_format, time.localtime(max(mtimes)))}" if mtimes else "unavailable"
     findings_computed_at = time.strftime(time_format)
     scores = [item["overall_score"] for item in iterations]
+    selected_scores = [item["overall_score"] for item in iterations if item.get("selected")]
     summary = {
         "run_count": len(runs),
         "failed_run_count": sum(run["exit_code"] != 0 for run in runs),
         "iteration_count": len(iterations),
         "average_overall_score": sum(scores) / len(scores) if scores else None,
+        "selected_average_overall_score": sum(selected_scores) / len(selected_scores) if selected_scores else None,
         "total_le_4_count": sum(item["total_le_4"] for item in iterations),
         "content_gate_le_4_count": sum(item["content_gate_le_4"] is True for item in iterations),
     }
@@ -144,10 +163,11 @@ def write_report(log_dir: Path, mode: str, runs: list[dict]) -> None:
     }
     (log_dir / "aggregate.json").write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     mean_text = f"{summary['average_overall_score']:.3f}" if scores else "unavailable"
+    selected_mean = summary["selected_average_overall_score"]
+    mean_text += f"; selected mean overall: {selected_mean:.3f} (n={len(selected_scores)}, * = kept iteration)" if selected_mean is not None else "; selected mean overall: unavailable"
     lines = [f"Scores: stored evaluation.json (files written {score_files}); findings: current validators on saved HTML/browser.json (no rerender), computed {findings_computed_at}.", f"Mode: {mode}; paths: {path_text(paths)}", f"Runs:{summary['run_count']}; failed: {summary['failed_run_count']}; iterations: {summary['iteration_count']}; mean overall: {mean_text}; total<=4: {summary['total_le_4_count']}; content gate<=4: {summary['content_gate_le_4_count']}"]
     for run in runs:
-        scores_text = ", ".join(f"i{item['iteration']}={item['overall_score']:g}" for item in run["iterations"])
-        lines.append(f"{run['sample']} {run['run'] or 'no run directory'}: exit={run['exit_code']}; {scores_text or 'no saved evaluations'}; repair log lines={run['repair_log_lines']}")
+        lines.append(f"{run['sample']} {run['run'] or 'no run directory'}: exit={run['exit_code']}; {scores_text(run['iterations']) or 'no saved evaluations'}; repair log lines={run['repair_log_lines']}")
         for item in run["iterations"]:
             findings = item["visual_findings"]
             counts = ", ".join(f"{name}={len(values)}" for name, values in findings.items())
