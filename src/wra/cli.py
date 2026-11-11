@@ -20,6 +20,7 @@ from wra.designer.site_plan import SitePlanner
 from wra.evaluator.llm import LLMEvaluator
 from wra.evaluator.visual_check import VisualInspector
 from wra.generator.generator import HTMLGenerator
+from wra.generator.page_render import configure_preview_localization
 from wra.generator.recovery import RecoveryPolicy as GeneratorRecoveryPolicy
 from wra.llm.model_selector import ModelSelector
 from wra.llm.vision_capability import warn_if_vision_missing
@@ -164,6 +165,8 @@ def _run() -> None:
     generator = HTMLGenerator(llm_client=llm_client, generator_model="", frameworks=config.frameworks, recovery_policy=generator_recovery_policy, content_freedom=config.content.freedom)
     evaluator = LLMEvaluator(llm_client=llm_client, model="", min_num_ctx=config.recovery.initial_num_ctx, max_num_ctx=config.recovery.max_num_ctx, ceiling_num_ctx=config.recovery.initial_ceiling_num_ctx, max_retries=config.recovery.max_retries, content_freedom=config.content.freedom, growth_power=config.recovery.growth_power, screenshot_max_pixels=config.browser.evaluation_max_pixels)
     browser_evaluator = BrowserEvaluator(config.browser, frameworks=config.frameworks) if config.browser.enabled else None
+    if config.browser.enabled:
+        configure_preview_localization(config.frameworks, config.browser.localize_web_fonts)
     visual_inspector = build_visual_inspector(config, llm_client) if config.browser.enabled and config.browser.visual_inspection else None
     vision_analyzer = build_vision_analyzer(config, llm_client)
 
