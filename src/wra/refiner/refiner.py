@@ -13,6 +13,7 @@ from wra.generator.reveal_repair import repair_js_off_hidden
 from wra.generator.tailwind_repair import repair_tailwind_v3_remnants, repair_unknown_apply_utilities
 from wra.generator.edge_repair import repair_edge_hugging_text
 from wra.generator.overflow_repair import repair_horizontal_overflow
+from wra.generator.table_wrap_repair import repair_wide_tables
 from wra.generator.script_repair import repair_script_mixing
 from wra.generator.skiplink_repair import repair_protruding_skip_link
 from wra.generator.theme_repair import repair_overridden_root_theme
@@ -134,6 +135,9 @@ class HTMLRefiner:
                 refined, overflow_repairs = repair_horizontal_overflow(refined, asset_root=asset_root)
                 if overflow_repairs:
                     logger.info("Repaired horizontal overflow: %s", overflow_repairs)
+                refined, table_repairs = repair_wide_tables(refined, asset_root=asset_root)
+                if table_repairs:
+                    logger.info("Repaired wide tables: %s", table_repairs)
                 refined, edge_repairs = repair_edge_hugging_text(refined, asset_root=asset_root)
                 if edge_repairs:
                     logger.info("Repaired edge-hugging text: %s", edge_repairs)

@@ -22,6 +22,7 @@ from .reveal_repair import repair_js_off_hidden
 from .tailwind_repair import repair_tailwind_v3_remnants, repair_unknown_apply_utilities
 from .edge_repair import repair_edge_hugging_text
 from .overflow_repair import repair_horizontal_overflow
+from .table_wrap_repair import repair_wide_tables
 from .script_repair import repair_script_mixing
 from .skiplink_repair import repair_protruding_skip_link
 from .squeeze_repair import repair_squeezed_text
@@ -146,6 +147,9 @@ class HTMLGenerator:
                 html, overflow_repairs = repair_horizontal_overflow(html, asset_root=asset_root)
                 if overflow_repairs:
                     logger.info("Repaired horizontal overflow: %s", overflow_repairs)
+                html, table_repairs = repair_wide_tables(html, asset_root=asset_root)
+                if table_repairs:
+                    logger.info("Repaired wide tables: %s", table_repairs)
                 html, edge_repairs = repair_edge_hugging_text(html, asset_root=asset_root)
                 if edge_repairs:
                     logger.info("Repaired edge-hugging text: %s", edge_repairs)

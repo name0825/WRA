@@ -24,7 +24,7 @@ from wra.llm.client import LLMClient
 @pytest.fixture(autouse=True)
 def _skip_contrast_repair(monkeypatch):
     monkeypatch.setattr("wra.generator.js_repair.default_syntax_checker", lambda html: {})
-    for name in ("repair_unknown_apply_utilities", "repair_oversized_header_logo", "repair_trapped_fixed", "repair_squeezed_text", "repair_horizontal_overflow", "repair_edge_hugging_text", "repair_protruding_skip_link", "repair_overridden_root_theme", "repair_low_contrast"):
+    for name in ("repair_unknown_apply_utilities", "repair_oversized_header_logo", "repair_trapped_fixed", "repair_squeezed_text", "repair_horizontal_overflow", "repair_wide_tables", "repair_edge_hugging_text", "repair_protruding_skip_link", "repair_overridden_root_theme", "repair_low_contrast"):
         monkeypatch.setattr(f"wra.generator.generator.{name}", lambda html, asset_root=None: (html, []))
 
 

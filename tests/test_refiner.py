@@ -16,7 +16,7 @@ from support import sample_config_data
 @pytest.fixture(autouse=True)
 def _skip_browser_repairs(monkeypatch):
     for name in ("repair_low_contrast", "repair_oversized_header_logo", "repair_trapped_fixed",
-                 "repair_horizontal_overflow", "repair_edge_hugging_text", "repair_protruding_skip_link",
+                 "repair_horizontal_overflow", "repair_wide_tables", "repair_edge_hugging_text", "repair_protruding_skip_link",
                  "repair_overridden_root_theme", "repair_unknown_apply_utilities"):
         monkeypatch.setattr(f"wra.refiner.refiner.{name}", lambda html, asset_root=None: (html, []))
 
