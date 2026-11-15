@@ -18,6 +18,7 @@ EXPOSED_MARKUP_PREFIX = "Exposed markup:"
 OVERFLOW_PREFIX = "Horizontal overflow:"
 CLIPPED_TABLE_PREFIX = "Clipped table:"
 SCROLLABLE_TABLE_PREFIX = "Scrollable table:"
+STUCK_REVEAL_PREFIX = "Invisible content:"
 RENDER_COLLAPSE_PREFIX = "Render collapse:"
 VERTICAL_GAP_PREFIX = "Vertical gap:"
 VERTICAL_GAP_MIN_VIEWPORT_RATIO = 0.6
@@ -243,6 +244,17 @@ def find_clipped_table_defects(browser_result: BrowserEvaluationResult | None) -
     if not lines:
         return []
     return [f"{CLIPPED_TABLE_PREFIX} " + "; ".join(lines) + "; let long unbreakable tokens (emails/URLs) in table cells break with `overflow-wrap:anywhere` (and `min-width:0`), or make the wrapper `overflow-x:auto`"]
+
+
+def find_stuck_reveal_defects(browser_result: BrowserEvaluationResult | None) -> list[str]:
+    if browser_result is None or not browser_result.enabled:
+        return []
+    stuck = [viewport for viewport in browser_result.viewports if viewport.forced_visible > 0]
+    if not stuck:
+        return []
+    worst = max(viewport.forced_visible for viewport in stuck)
+    per_viewport = "; ".join(f"{viewport.name} {viewport.width}px: {viewport.forced_visible}" for viewport in stuck)
+    return [f"{STUCK_REVEAL_PREFIX} {worst} element(s) stay at opacity 0 in a normal browser after scrolling ({per_viewport}); the screenshot only shows them because the evaluator forced them visible. Make the scroll-reveal script add or remove the class the CSS actually keys on, or make the content visible by default"]
 
 
 class _ExposedMarkupParser(HTMLParser):
@@ -490,6 +502,7 @@ def find_visual_defects(
     findings.extend(find_exposed_markup(html))
     findings.extend(find_overflow_defects(browser_result))
     findings.extend(find_clipped_table_defects(browser_result))
+    findings.extend(find_stuck_reveal_defects(browser_result))
     findings.extend(find_render_collapse_defects(html, browser_result))
     findings.extend(find_vertical_gap_defects(browser_result))
     findings.extend(find_oversized_header_logo_defects(browser_result))

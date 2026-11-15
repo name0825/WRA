@@ -14,7 +14,8 @@ from wra.browser.guard import _make_route_handler, _path_from_file_url
 from wra.browser.framework_cache import cached_path_for_url, iter_framework_urls
 from wra.browser.models import BrowserConfig, BrowserViewport
 from wra.browser.reveal import reveal_animated_content
-from wra.core.models import Framework, FrameworkConfig
+from wra.core.models import FeatureModel, Framework, FrameworkConfig
+from wra.validator.visual import STUCK_REVEAL_PREFIX, find_stuck_reveal_defects, find_visual_defects
 
 pytest.importorskip("playwright.sync_api")
 import playwright.sync_api as pw
@@ -28,8 +29,8 @@ body{margin:0;background:#fff}section{min-height:90vh;padding:4rem}.reveal{width
 </body></html>"""
 GROWING_REVEAL_PAGE = """<!DOCTYPE html><html><head><style>
 body{margin:0}.reveal{width:320px;height:180px;opacity:0;background:#102030}
-</style></head><body><main style="height:1800px"><div class="reveal"></div></main>
-<script>addEventListener('scroll',()=>{const item=document.createElement('div');item.className='reveal';item.style.height='600px';document.body.append(item)})</script>
+</style></head><body><main style="height:1800px"><div class="reveal">Card</div></main>
+<script>addEventListener('scroll',()=>{const item=document.createElement('div');item.className='reveal';item.textContent='Card';item.style.height='600px';document.body.append(item)})</script>
 </body></html>"""
 TRANSLATED_REVEAL_PAGE = """<!DOCTYPE html><html><head><style>
 body{margin:0}.reveal{width:320px;height:180px;opacity:0;background:#102030;transform:translateX(600px)}
@@ -458,7 +459,7 @@ body{margin:0}div{width:320px;height:180px;background:#102030}
 #flow{opacity:0}#overlay{position:fixed;top:0;left:0;width:100%;height:100%;opacity:0;pointer-events:none}
 #inert{opacity:0;pointer-events:none}#solid-fixed{position:fixed;top:0;left:0;opacity:0}
 #glow{position:absolute;top:0;left:0;opacity:0;pointer-events:none}
-</style></head><body><div id="flow"></div><div id="overlay"><a href="#" style="display:block;width:100px;height:40px">Menu</a></div><div id="inert"></div><div id="solid-fixed"></div><div id="glow"></div></body></html>"""
+</style></head><body><div id="flow">Flow</div><div id="overlay"><a href="#" style="display:block;width:100px;height:40px">Menu</a></div><div id="inert"></div><div id="solid-fixed"></div><div id="glow"></div></body></html>"""
 
 
 def test_reveal_pass_forces_in_flow_sections_but_not_hidden_ui_layers() -> None:
@@ -475,7 +476,7 @@ def test_reveal_pass_forces_in_flow_sections_but_not_hidden_ui_layers() -> None:
         finally:
             browser.close()
 
-    assert revealed == 2
+    assert revealed == 1
     assert opacities["flow"] == 1
     assert opacities["overlay"] == 0
     assert opacities["inert"] == 1
@@ -975,3 +976,54 @@ def test_a_table_inside_a_zero_height_collapse_panel_is_not_reported(run_dir: Pa
     result = _evaluate_mobile(_table_page("overflow:hidden;height:0", table_style="width:600px"), run_dir, run_dir / ".browser_tmp", asset_root=run_dir)
 
     assert result.viewports[0].clipped_tables == []
+
+
+STUCK_REVEAL_PAGE = """<!DOCTYPE html><html><head><style>
+body{margin:0}section{min-height:90vh;padding:4rem}.reveal{width:320px;height:180px;opacity:0;background:#102030}
+</style></head><body>
+<section><div class="reveal">Card</div></section><section><div class="reveal">Card</div></section><section><div class="reveal">Card</div></section>
+<script>const io=new IntersectionObserver(entries=>entries.forEach(entry=>{if(entry.isIntersecting)entry.target.classList.remove('reveal-hidden')}),{threshold:0.1});document.querySelectorAll('.reveal').forEach(el=>io.observe(el));</script>
+</body></html>"""
+WORKING_REVEAL_PAGE = """<!DOCTYPE html><html><head><style>
+body{margin:0}section{min-height:90vh;padding:4rem}.reveal{width:320px;height:180px;opacity:0;background:#102030}.reveal.is-visible{opacity:1}
+</style></head><body>
+<section><div class="reveal">Card</div></section><section><div class="reveal">Card</div></section><section><div class="reveal">Card</div></section>
+<script>const io=new IntersectionObserver(entries=>entries.forEach(entry=>{if(entry.isIntersecting)entry.target.classList.add('is-visible')}),{threshold:0.1});document.querySelectorAll('.reveal').forEach(el=>io.observe(el));</script>
+</body></html>"""
+
+
+def test_elements_that_only_a_forced_reveal_shows_are_recorded_and_reported(tmp_path: Path) -> None:
+    result = _evaluate(STUCK_REVEAL_PAGE, tmp_path, tmp_path / ".browser_tmp", asset_root=tmp_path)
+
+    assert result.viewports[0].forced_visible == 3
+    findings = find_stuck_reveal_defects(result)
+    assert len(findings) == 1
+    assert findings[0].startswith(STUCK_REVEAL_PREFIX + " 3 element(s)")
+    assert any(finding.startswith(STUCK_REVEAL_PREFIX) for finding in find_visual_defects("<style>body{color:red}</style>", FeatureModel(), result))
+
+
+def test_a_working_scroll_reveal_records_no_forced_visible_elements(tmp_path: Path) -> None:
+    result = _evaluate(WORKING_REVEAL_PAGE, tmp_path, tmp_path / ".browser_tmp", asset_root=tmp_path)
+
+    assert [viewport.forced_visible for viewport in result.viewports] == [0]
+    assert find_stuck_reveal_defects(result) == []
+
+
+def test_forced_visible_stays_zero_when_screenshots_are_disabled(tmp_path: Path) -> None:
+    config = BrowserConfig(enabled=True, screenshot=False, viewports=[BrowserViewport(name="desktop", width=800, height=600)])
+
+    result = BrowserEvaluator(config).evaluate(html=STUCK_REVEAL_PAGE, output_dir=tmp_path / ".browser_tmp", iteration=1, asset_root=tmp_path)
+
+    assert result.viewports[0].forced_visible == 0
+
+
+HOVER_OVERLAY_PAGE = """<!DOCTYPE html><html><head><style>
+body{margin:0}.card{position:relative;width:320px;height:180px;background:#102030;color:#fff}.card .hover{position:absolute;inset:0;opacity:0;background:#000}.card:hover .hover{opacity:1}
+</style></head><body><div class="card">Plan<div class="hover">Learn more</div></div></body></html>"""
+
+
+def test_an_absolute_hover_overlay_is_not_reported_as_stuck_content(tmp_path: Path) -> None:
+    result = _evaluate(HOVER_OVERLAY_PAGE, tmp_path, tmp_path / ".browser_tmp", asset_root=tmp_path)
+
+    assert [viewport.forced_visible for viewport in result.viewports] == [0]
+    assert not any(finding.startswith(STUCK_REVEAL_PREFIX) for finding in find_visual_defects("<style>body{color:red}</style>", FeatureModel(), result))

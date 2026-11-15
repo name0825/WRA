@@ -1,9 +1,11 @@
+import re
+
 import pytest
 
 from wra.browser.models import BrowserEvaluationResult,BrowserViewportResult, EdgeHuggingTextElement, HeaderLogoElement, HeaderOverlapPair, OccludedTextElement, OverflowElement, VerticalGapBand, WrappedTextElement
 from wra.browser.models import ClippedTable
 from wra.core.models import FeatureModel, Image, Media
-from wra.validator.visual import find_clipped_table_defects, find_refinable_browser_defects
+from wra.validator.visual import STUCK_REVEAL_PREFIX, find_clipped_table_defects, find_refinable_browser_defects, find_stuck_reveal_defects
 from wra.validator.visual import EDGE_HUGGING_TEXT_PREFIX, HEADER_OVERLAP_PREFIX, IMAGES_DROPPED_PREFIX, IMAGES_MISSING_PREFIX, OCCLUDED_TEXT_PREFIX, OVERSIZED_HEADER_LOGO_PREFIX, RENDER_COLLAPSE_PREFIX, VERTICAL_GAP_PREFIX, WIDE_TEXT_WIDTH_PREFIX, find_broken_image_markup, find_edge_hugging_text_defects, find_exposed_markup, find_header_overlap_defects, find_missing_content_images, find_occluded_text_defects, find_oversized_header_logo_defects, find_overflow_defects, find_render_collapse_defects, find_vertical_gap_defects, find_visual_defects, find_wide_text_width_defects, _is_unstyled
 
 
@@ -739,3 +741,31 @@ def test_a_clipped_table_is_not_a_refiner_advisory() -> None:
     assert find_refinable_browser_defects(_table_result("hidden")) == []
     assert find_refinable_browser_defects(_table_result(None)) == []
     assert find_refinable_browser_defects(None) == []
+
+
+def _stuck_reveal_result(*counts: int) -> BrowserEvaluationResult:
+    names = [("desktop", 1440), ("mobile", 390)]
+    viewports = [BrowserViewportResult(name=name, width=width, height=800, forced_visible=count) for (name, width), count in zip(names, counts)]
+    return BrowserEvaluationResult(enabled=True, viewports=viewports)
+
+
+def test_stuck_reveal_finding_leads_with_the_worst_count_for_the_cap_regex() -> None:
+    findings = find_stuck_reveal_defects(_stuck_reveal_result(28, 12))
+
+    assert len(findings) == 1
+    assert findings[0].startswith(STUCK_REVEAL_PREFIX + " 28 element(s)")
+    assert "desktop 1440px: 28; mobile 390px: 12" in findings[0]
+    match = re.match(r"[^:]*:\s*(\d+)\s", findings[0])
+    assert match is not None and match.group(1) == "28"
+
+
+def test_no_stuck_reveal_finding_when_nothing_was_forced_or_the_browser_check_is_off() -> None:
+    assert find_stuck_reveal_defects(_stuck_reveal_result(0, 0)) == []
+    assert find_stuck_reveal_defects(None) == []
+    assert find_stuck_reveal_defects(BrowserEvaluationResult(enabled=False, viewports=_stuck_reveal_result(5).viewports)) == []
+
+
+def test_a_stuck_reveal_flows_through_find_visual_defects() -> None:
+    findings = find_visual_defects("<style>body{color:red}</style>", _features([]), _stuck_reveal_result(3, 0))
+
+    assert any(finding.startswith(STUCK_REVEAL_PREFIX) for finding in findings)

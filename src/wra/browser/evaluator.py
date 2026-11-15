@@ -1093,6 +1093,7 @@ class BrowserEvaluator:
                                 except Exception:
                                     logger.debug("Browser networkidle timeout: viewport=%s", viewport.name)
                                 screenshot_path = None
+                                revealed = 0
                                 if self._config.screenshot:
                                     path = browser_dir / f"{viewport.name}.png"
                                     try:
@@ -1160,7 +1161,7 @@ class BrowserEvaluator:
                                 except Exception as exc:
                                     logger.warning("Browser viewport text-occlusion check failed: name=%s error=%s", viewport.name, exc)
                                     occluded_text_elements = []
-                                results.append(BrowserViewportResult(name=viewport.name, width=viewport.width, height=viewport.height, horizontal_overflow=metrics["scrollWidth"] > metrics["viewportWidth"], scroll_width=metrics["scrollWidth"], viewport_width=metrics["viewportWidth"], page_height=metrics["pageHeight"], console_errors=console_errors, page_errors=page_errors, screenshot_path=screenshot_path, stylesheet_rule_count=metrics["cssRuleCount"], contrast_failures=failures, broken_images=broken_images, overflow_elements=overflow_elements, clipped_tables=clipped_tables, first_screen_max_right=first_screen_max_right, wrapped_text_elements=wrapped_text_elements, vertical_gap_bands=vertical_gap_bands, header_logo_elements=header_logo_elements, edge_hugging_text_elements=edge_hugging_text_elements, header_overlap_pairs=header_overlap_pairs, occluded_text_elements=occluded_text_elements))
+                                results.append(BrowserViewportResult(name=viewport.name, width=viewport.width, height=viewport.height, horizontal_overflow=metrics["scrollWidth"] > metrics["viewportWidth"], scroll_width=metrics["scrollWidth"], viewport_width=metrics["viewportWidth"], page_height=metrics["pageHeight"], console_errors=console_errors, page_errors=page_errors, screenshot_path=screenshot_path, stylesheet_rule_count=metrics["cssRuleCount"], contrast_failures=failures, broken_images=broken_images, overflow_elements=overflow_elements, clipped_tables=clipped_tables, first_screen_max_right=first_screen_max_right, wrapped_text_elements=wrapped_text_elements, vertical_gap_bands=vertical_gap_bands, header_logo_elements=header_logo_elements, edge_hugging_text_elements=edge_hugging_text_elements, header_overlap_pairs=header_overlap_pairs, occluded_text_elements=occluded_text_elements, forced_visible=revealed))
                                 logger.info("Browser viewport completed: name=%s overflow=%s console_errors=%d page_errors=%d", viewport.name, results[-1].horizontal_overflow, len(console_errors), len(page_errors))
                                 if not text_width_measured:
                                     text_width_measured = True

@@ -102,6 +102,7 @@ class BrowserViewportResult(BaseModel):
     edge_hugging_text_elements: list[EdgeHuggingTextElement] = Field(default_factory=list)
     header_overlap_pairs: list[HeaderOverlapPair] = Field(default_factory=list)
     occluded_text_elements: list[OccludedTextElement] = Field(default_factory=list)
+    forced_visible: int = 0
 
 
 class BrowserCraftMeasurements(BaseModel):

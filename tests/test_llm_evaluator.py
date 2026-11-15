@@ -1378,3 +1378,14 @@ def test_clipped_table_finding_caps_responsive_design_but_scrollable_does_not(tm
 
     assert (result.responsive_design.score <= 6.0) is capped
     assert result.visual_hierarchy.score == 8.0
+
+
+def test_stuck_reveal_finding_caps_visual_hierarchy_and_readability_by_count(tmp_path):
+    def run(count):
+        evaluator = _evaluator_with_payload(tmp_path, _payload_with(visual_hierarchy={"score": 10, "feedback": ""}, readability={"score": 10, "feedback": ""}))
+        result = evaluator.evaluate(FeatureModel(), make_spec(), "<html></html>", visual_findings=[f"Invisible content: {count} element(s) stay at opacity 0 in a normal browser after scrolling (desktop 1440px: {count})"])
+        return result.visual_hierarchy.score, result.readability.score
+
+    assert run(1) == (8.0, 8.0)
+    assert run(2) == (7.0, 7.0)
+    assert run(28) == (6.0, 6.0)

@@ -25,7 +25,8 @@ _REVEAL_REMAINING = """
     element.style.setProperty('opacity', '1', 'important');
     element.style.setProperty('transform', 'none', 'important');
     element.style.setProperty('filter', 'none', 'important');
-    revealed++;
+    if (style.position === 'absolute') continue;
+    if (element.textContent.trim() !== '' || element.matches('img,video,picture,svg') || element.querySelector('img,video,picture,svg')) revealed++;
   }
   return revealed;
 }
