@@ -11,7 +11,7 @@ from wra.cli import creating_config
 from wra.core.inputs import InputError, discover
 from wra.core.models import AssetInfo, BusinessInfo, VisionInsight, WRAConfig
 from wra.core.preparation import InputPreparer
-from wra.creator.creator import SITE_DRAFT_SCHEMA, CreatedPage, Creator, CreatorError, SiteDraft, _phone_tokens, _thinness, _weight, _without_unbacked_contacts, feature_model_for, seed_business
+from wra.creator.creator import SITE_DRAFT_SCHEMA, CreatedPage, Creator, CreatorError, SiteDraft, _phone_tokens, _weight, _without_unbacked_contacts, feature_model_for, seed_business
 from wra.validator.claims import find_unsupported_promises
 from support import sample_config_data
 
@@ -481,7 +481,6 @@ def test_an_emptied_heading_or_button_is_dropped_and_not_counted() -> None:
     draft_data["pages"][0]["headings"] = ["", "", "빠른 납기"]
     draft = SiteDraft.model_validate(draft_data)
     assert _weight(draft) == 3
-    assert "1 heading(s)" in _thinness(draft.pages[0])
 
 
 @pytest.mark.parametrize("text, expected", [("전화 (010-9999-8888) 문의", "전화 문의"), ("전화 [010-9999-8888] 문의", "전화 문의"), ("전화 （010-9999-8888） 문의", "전화 문의")])
@@ -591,16 +590,28 @@ def _entry_page(headings: int, lists: int) -> dict:
     return {**DRAFT, "pages": [page]}
 
 
-def test_a_thin_entry_page_is_retried_with_its_counts() -> None:
-    client = ReplyClient(json.dumps(_entry_page(3, 1)), json.dumps(_entry_page(6, 3)))
-    draft = _creator(client, max_retries=2).create(BRIEF, ASSETS)
+def test_a_short_brief_accepts_a_usable_page_without_padding_or_retry() -> None:
+    data = _entry_page(1, 0)
+    data["pages"][0].update(headings=["도자기 공방"], paragraphs=["손으로 도자기를 만듭니다."], images=[])
+    client = ReplyClient(json.dumps(data))
+    draft = _creator(client, max_retries=2).create("도자기 공방 소개", [])
 
-    assert client.calls == 2
-    assert len(draft.pages[0].headings) == 6
-    assert "3 heading(s), 3 paragraph(s), 1 list(s)" in client.prompts[1]
-    assert "at least 5 headings" in client.prompts[1]
-    assert '"paragraphs":["문단 0","문단 1","문단 2"]' in client.prompts[1]
-    assert client.prompts[1].index("Previous draft (untrusted JSON") < client.prompts[1].index("# WRA Site Creation Recovery")
+    assert client.calls == 1
+    assert draft.pages[0].headings == ["도자기 공방"]
+    assert draft.pages[0].paragraphs == ["손으로 도자기를 만듭니다."]
+    assert draft.pages[0].lists == []
+
+
+def test_a_multi_topic_brief_keeps_supplied_categories_in_the_draft() -> None:
+    data = _entry_page(2, 0)
+    data["pages"][0].update(headings=["엔드밀", "드릴"], paragraphs=["엔드밀 안내", "드릴 안내"], images=[])
+    client = ReplyClient(json.dumps(data))
+    draft = _creator(client, max_pages=1).create("절삭공구 유통: 엔드밀과 드릴 취급", [])
+
+    assert client.calls == 1
+    assert "엔드밀과 드릴" in client.prompts[0]
+    assert draft.pages[0].headings == ["엔드밀", "드릴"]
+    assert draft.pages[0].paragraphs == ["엔드밀 안내", "드릴 안내"]
 
 
 def test_a_thick_entry_page_passes_on_the_first_try() -> None:
@@ -936,29 +947,16 @@ def test_creator_allows_latin_terms_and_non_visible_url_and_asset_identifiers() 
     assert draft.pages[0].images == ["assets/サービス.png"]
 
 
-def test_a_bare_heading_makes_the_entry_page_thin() -> None:
-    data = _entry_page(6, 3)
-    data["pages"][0]["paragraphs"] = ["문단 하나"]
-    data["pages"][0]["lists"] = [["a"], ["b"], ["c"]]
-    client = ReplyClient(json.dumps(data), json.dumps(_entry_page(6, 3)))
-    _creator(client, max_retries=1).create(BRIEF, ASSETS)
-
-    assert client.calls == 2
-
-
-def test_exhausted_retries_keep_the_thickest_draft() -> None:
-    client = ReplyClient(json.dumps(_entry_page(3, 1)), json.dumps(_entry_page(4, 2)), json.dumps(_entry_page(2, 1)))
-    draft = _creator(client, max_retries=2).create(BRIEF, ASSETS)
-
-    assert client.calls == 3
-    assert len(draft.pages[0].headings) == 4
-
-
-def test_a_thin_draft_survives_a_later_invalid_response() -> None:
-    client = ReplyClient(json.dumps(_entry_page(3, 1)), "not json")
+@pytest.mark.parametrize("field", ["headings", "paragraphs"])
+def test_whitespace_only_page_content_is_rejected_and_retried(field: str) -> None:
+    empty = _entry_page(1, 0)
+    empty["pages"][0][field] = ["", "   "]
+    client = ReplyClient(json.dumps(empty), json.dumps(_entry_page(1, 0)))
     draft = _creator(client, max_retries=1).create(BRIEF, ASSETS)
 
-    assert len(draft.pages[0].headings) == 3
+    assert client.calls == 2
+    assert f"has no {field}" in client.prompts[1]
+    assert getattr(draft.pages[0], field)[0].strip()
 
 
 def test_the_creator_prompt_states_the_entry_page_volume_target() -> None:
@@ -1152,7 +1150,7 @@ def test_creator_resizes_context_for_recovery_with_the_previous_draft(monkeypatc
         sizes.append(prompt)
         return len(prompt)
     monkeypatch.setattr("wra.creator.creator.estimate_num_ctx", estimate)
-    client = ReplyClient(json.dumps(_entry_page(3, 1)), json.dumps(_entry_page(5, 3)))
+    client = ReplyClient(json.dumps(_draft_with("견적은 무료입니다")), json.dumps(_draft_with("견적 요청")))
 
     _creator(client, max_retries=1).create(BRIEF, ASSETS)
 
