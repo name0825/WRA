@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import pytest
 import yaml
 
+from wra.core.models import SINGLE_MODEL_ROLES
 from scripts import design_prompt_bench as bench
 from scripts.design_prompt_bench import ROOT, SAMPLES, digest, prepare
 
@@ -26,6 +27,9 @@ def experiment(tmp_path):
     for name in ('config.yaml', 'models.yaml'):
         shutil.copy2(ROOT / 'config' / f'{name}.sample', config / name)
     shutil.copy2(ROOT / 'config/frameworks.yaml', config / 'frameworks.yaml')
+    models = yaml.safe_load((config / 'models.yaml').read_text(encoding='utf-8'))
+    models['models']['single'].update({'enabled': True, 'think': True})
+    (config / 'models.yaml').write_text(yaml.safe_dump(models), encoding='utf-8')
     cases = {}
     for name in SAMPLES:
         path = snapshot / 'inputs' / name
@@ -71,8 +75,14 @@ def test_evaluator_runs_same_model_with_thinking_off(experiment):
         overrides = {name: yaml.safe_load((work / 'config' / name).read_text(encoding='utf-8')) for name in ('config.yaml', 'models.yaml', 'frameworks.yaml')}
         resolved = WRAConfig.model_validate(load_raw(overrides=overrides))
         model = overrides['models.yaml']['models']['single']['name']
-        assert [(spec.name, spec.think) for spec in resolved.models.evaluator] == [(model, False)]
-        assert all(spec.think is True for spec in resolved.models.designer + resolved.models.generator)
+        timeout = overrides['models.yaml']['models']['single'].get('timeout')
+        assert [(spec.name, spec.think, spec.timeout) for spec in resolved.models.evaluator] == [(model, False, timeout)]
+        for role in SINGLE_MODEL_ROLES:
+            specs = getattr(resolved.models, role)
+            assert len(specs) == 1
+            assert (specs[0].name, specs[0].timeout) == (model, timeout)
+            if role != 'evaluator':
+                assert specs[0].think is True
 
 
 def test_preflight_rejects_changed_input_and_common_evaluator(experiment):

@@ -124,7 +124,7 @@ def prepare(snapshot, candidate, destination):
     configs['models.yaml']['ollama']['seed'] = 42
     single = configs['models.yaml']['models']['single']
     single['exclude_roles'] = [*(single.get('exclude_roles') or []), 'evaluator']
-    configs['models.yaml']['models']['evaluator'] = [{'name': single['name'], 'think': False, 'timeout': single['timeout']}]
+    configs['models.yaml']['models']['evaluator'] = [{'name': single['name'], 'think': False, 'timeout': single.get('timeout')}]
     destination.mkdir(parents=True)
     prepared = []
     for bundle_name, prompt_dir in (('A', baseline / 'prompts'), ('B', candidate)):
@@ -151,7 +151,7 @@ def prepare(snapshot, candidate, destination):
             if resolved.input.mode != 'entry' or resolved.creator.max_pages != 1 or resolved.pipeline.max_iterations != 3 or resolved.pipeline.refine.enabled or resolved.pipeline.termination.patience != 0 or resolved.pipeline.evaluation_threshold <= 10:
                 raise ValueError(f'{bundle_name}/{name}: invalid resolved settings')
             evaluator = resolved.models.evaluator
-            if len(evaluator) != 1 or evaluator[0].name != single['name'] or evaluator[0].think is not False or any(spec.think != single['think'] for role in SINGLE_MODEL_ROLES if role != 'evaluator' for spec in getattr(resolved.models, role)):
+            if len(evaluator) != 1 or evaluator[0].think is not False or any(spec.name != single['name'] or spec.timeout != single.get('timeout') for role in SINGLE_MODEL_ROLES for spec in getattr(resolved.models, role)) or any(spec.think != single['think'] for role in SINGLE_MODEL_ROLES if role != 'evaluator' for spec in getattr(resolved.models, role)):
                 raise ValueError(f'{bundle_name}/{name}: invalid evaluator settings')
             if (actual.entry.relative if actual.entry else None) != manifest['cases'][name]['entry'] or actual.creates != (name == 'brief'):
                 raise ValueError(f'{bundle_name}/{name}: staged input discovery failed')
@@ -430,14 +430,13 @@ def validate_outputs(work):
     slug = next(iter(result['pages']))
     if not (run / f'{slug}.html').is_file():
         raise RuntimeError('Final HTML missing')
-    config = yaml.safe_load((work / 'config/config.yaml').read_text(encoding='utf-8'))
     resolved = resolved_browser(work)
     if resolved.enabled and resolved.visual_inspection:
         events = [json.loads(line) for line in (work / 'calls.jsonl').read_text(encoding='utf-8').splitlines()] if (work / 'calls.jsonl').exists() else []
         inspections = [event for event in events if event['event'] == 'visual_inspection']
         if len(inspections) != 3 or any(not event['performed'] for event in inspections) or {(event['iteration'], event['slug']) for event in inspections} != {(iteration, slug) for iteration in range(1, 4)}:
             raise RuntimeError('Expected three completed required visual inspections')
-    expected_viewports = {(viewport['name'], viewport['width'], viewport['height']) for viewport in config['browser']['viewports']}
+    expected_viewports = {(viewport.name, viewport.width, viewport.height) for viewport in resolved.viewports}
     if {path.name for path in (run / 'iterations').glob('iter*')} != {'iter1', 'iter2', 'iter3'}:
         raise RuntimeError('Expected exactly three saved iterations')
     for iteration in range(1, 4):
@@ -448,7 +447,7 @@ def validate_outputs(work):
         if not read_json(data / 'validation.json')['valid']:
             raise RuntimeError(f'Iteration {iteration} has invalid HTML')
         browser = read_json(data / 'browser.json')
-        if config['browser']['enabled']:
+        if resolved.enabled:
             actual_viewports = {(viewport['name'], viewport['width'], viewport['height']) for viewport in browser['viewports']}
             if not browser['enabled'] or browser.get('failed_viewports') or actual_viewports != expected_viewports:
                 raise RuntimeError(f'Iteration {iteration} lacks complete configured browser evidence')
