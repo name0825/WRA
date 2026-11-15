@@ -18,7 +18,7 @@ from wra.validator.html import HTMLValidationResult, validate_html
 from wra.validator.regression import find_regressions
 from wra.validator.syntax import find_syntax_defects
 from wra.validator.tokens import find_corrupted_tokens
-from wra.validator.visual import browser_craft_metrics, find_refinable_browser_defects, find_visual_defects
+from wra.validator.visual import browser_craft_metrics, find_refinable_browser_defects, find_stuck_reveal_defects, find_visual_defects
 from wra.llm.model_selector import ModelSelector
 
 logger = logging.getLogger(__name__)
@@ -359,7 +359,9 @@ class IterationEngine:
         different design rather than another edit; and the page's worst
         dimension must be one a local edit can reach. A page held back by its
         composition or its design system cannot be edited into a better score,
-        only redesigned.
+        only redesigned. The exception is a freshly improved page with content stuck
+        invisible to real visitors, where the low structural score comes from a
+        reveal script that a local edit can fix.
         """
         refine = self._config.pipeline.refine
         if not refine.enabled or self._refiner is None:
@@ -369,6 +371,9 @@ class IterationEngine:
         if refine.redesign_after_stalls and state.stalled >= refine.redesign_after_stalls:
             logger.info("Page '%s' stalled %d time(s): redesigning instead of refining", state.page.slug, state.stalled)
             return False
+        if state.stalled == 0 and find_stuck_reveal_defects(state.best.browser):
+            logger.info("Page '%s' has content stuck invisible: refining to fix the reveal script", state.page.slug)
+            return True
         worst = min(EVALUATION_DIMENSIONS, key=lambda name: getattr(state.best.evaluation, name).score)
         if worst in STRUCTURAL_DIMENSIONS:
             logger.info("Page '%s' is weakest at '%s', which a local edit cannot move: redesigning instead of refining", state.page.slug, worst)

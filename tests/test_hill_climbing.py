@@ -469,3 +469,40 @@ def test_a_higher_scoring_page_with_a_new_broken_image_is_not_adopted(tmp_path: 
     results, _ = _run_engine(tmp_path, monkeypatch, [FULL, RESTRUCTURED], [_evaluation(6.0), _evaluation(9.0)], max_iterations=2, browsers=[browser(), browser(["assets/a.jpg"])])
     assert results[0].html == FULL
     _assert_published_v1(tmp_path)
+
+
+# --- refining a page whose content is stuck invisible ------------------------
+
+def _refining_engine(**refine) -> IterationEngine:
+    data = sample_config_data()
+    data["pipeline"] = {**data["pipeline"], "refine": {"enabled": True, **refine}}
+    return IterationEngine(config=WRAConfig.model_validate(data), designer=None, generator=None, evaluator=None, refiner=object())
+
+
+def _stuck_state(forced_visible: int, stalled: int = 0) -> _PageRun:
+    browser = BrowserEvaluationResult(enabled=True, viewports=[BrowserViewportResult(name="desktop", width=1280, height=800, forced_visible=forced_visible)])
+    state = _state()
+    state.stalled = stalled
+    evaluation = _evaluation(9.0, visual_hierarchy=6.0, readability=6.0)
+    state.best = SimpleNamespace(evaluation=evaluation, browser=browser, html="<html></html>", design_spec=None, iteration=1)
+    return state
+
+
+def test_a_stuck_reveal_is_refined_even_when_a_structural_dimension_is_weakest() -> None:
+    assert _refining_engine()._refines(_stuck_state(forced_visible=28))
+
+
+def test_a_stuck_reveal_is_not_refined_when_refining_is_disabled() -> None:
+    assert not _refining_engine(enabled=False)._refines(_stuck_state(forced_visible=28))
+
+
+def test_a_stuck_reveal_is_redesigned_once_the_page_has_stalled() -> None:
+    assert not _refining_engine(redesign_after_stalls=2)._refines(_stuck_state(forced_visible=28, stalled=2))
+
+
+def test_a_stuck_reveal_is_redesigned_after_a_failed_attempt_even_when_stall_redesign_is_disabled() -> None:
+    assert not _refining_engine(redesign_after_stalls=0)._refines(_stuck_state(forced_visible=28, stalled=1))
+
+
+def test_a_structural_weakness_without_a_stuck_reveal_is_still_redesigned() -> None:
+    assert not _refining_engine()._refines(_stuck_state(forced_visible=0))

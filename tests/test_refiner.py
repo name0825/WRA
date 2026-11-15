@@ -177,7 +177,7 @@ def _state(best_score: float | None = 8.0, stalled: int = 0) -> _PageRun:
                         run_root=Path("."), data_dir=Path("."), is_entry=True)
     state = _PageRun(page=page, stalled=stalled)
     if best_score is not None:
-        state.best = SimpleNamespace(evaluation=_evaluation(readability=7.0), html=PAGE, design_spec=SPEC, iteration=1)
+        state.best = SimpleNamespace(evaluation=_evaluation(readability=7.0), html=PAGE, browser=None, design_spec=SPEC, iteration=1)
     return state
 
 
