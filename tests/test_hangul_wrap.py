@@ -54,6 +54,26 @@ def test_style_inserted_after_doctype_when_no_head_or_body():
     assert "word-break:keep-all" in out
 
 
+def test_style_inserted_after_leading_doctype_not_inside_script():
+    html = '<!-- note -->\n<!DOCTYPE html><h2>파트너 소개</h2><script>const s = "<!doctype x>";</script>'
+    out, repairs = repair_hangul_heading_wrap(html)
+    assert repairs
+    assert out.index('data-wra-repair="hangul-wrap"') < out.index("<h2>")
+    assert out.startswith("<!-- note -->\n<!DOCTYPE html>\n<style")
+
+
+def test_doctype_inside_script_is_not_an_insertion_point():
+    out, repairs = repair_hangul_heading_wrap('<h2>파트너 소개</h2><script>const s = "<!doctype x>";</script>')
+    assert repairs
+    assert out.startswith('<style data-wra-repair="hangul-wrap">')
+
+
+def test_many_leading_comments_without_doctype_do_not_backtrack():
+    out, repairs = repair_hangul_heading_wrap("<!-- c -->" * 40 + "<h2>파트너 소개</h2>")
+    assert repairs
+    assert out.startswith('<style data-wra-repair="hangul-wrap">')
+
+
 def test_rule_uses_where_selector():
     out, _ = repair_hangul_heading_wrap(_page("<h2>파트너 소개</h2>", "h2{word-break:normal}"))
     assert ":where(h1,h2,h3,h4,h5,h6){" in out

@@ -101,6 +101,22 @@ def test_preflight_rejects_changed_input_and_common_evaluator(experiment):
     assert not dest.exists()
 
 
+@pytest.mark.parametrize('change', [{'enabled': False}, {'think': None}])
+def test_preflight_requires_enabled_single_with_explicit_think(experiment, change):
+    snapshot, candidate, dest = experiment
+    path = snapshot / 'baseline/config/models.yaml'
+    models = yaml.safe_load(path.read_text(encoding='utf-8'))
+    single = models['models']['single']
+    if 'think' in change:
+        del single['think']
+    else:
+        single.update(change)
+    path.write_text(yaml.safe_dump(models), encoding='utf-8')
+    with pytest.raises(ValueError, match='models.single must be enabled'):
+        prepare(snapshot, candidate, dest)
+    assert not dest.exists()
+
+
 def test_preflight_hashes_runtime_configs_without_confusing_sample_files(experiment):
     snapshot, candidate, destination = experiment
     manifest = bench.read_json(snapshot / 'manifest.json')

@@ -123,6 +123,8 @@ def prepare(snapshot, candidate, destination):
     configs = {name: yaml.safe_load((baseline / 'config' / name).read_text(encoding='utf-8')) for name in ('models.yaml', 'frameworks.yaml')}
     configs['models.yaml']['ollama']['seed'] = 42
     single = configs['models.yaml']['models']['single']
+    if single.get('enabled') is not True or 'think' not in single:
+        raise ValueError('models.single must be enabled and set think explicitly')
     single['exclude_roles'] = [*(single.get('exclude_roles') or []), 'evaluator']
     configs['models.yaml']['models']['evaluator'] = [{'name': single['name'], 'think': False, 'timeout': single.get('timeout')}]
     destination.mkdir(parents=True)
