@@ -47,7 +47,14 @@ def test_idempotent():
     assert twice == once and repairs == []
 
 
-def test_rule_has_zero_specificity():
+def test_style_inserted_after_doctype_when_no_head_or_body():
+    out, repairs = repair_hangul_heading_wrap("<!DOCTYPE html><h2>파트너 소개</h2>")
+    assert repairs
+    assert out.startswith("<!DOCTYPE html>")
+    assert "word-break:keep-all" in out
+
+
+def test_rule_uses_where_selector():
     out, _ = repair_hangul_heading_wrap(_page("<h2>파트너 소개</h2>", "h2{word-break:normal}"))
     assert ":where(h1,h2,h3,h4,h5,h6){" in out
 

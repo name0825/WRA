@@ -106,6 +106,9 @@ def _inject_style(html: str, style_content: str, repair: str = "fixed-trap") -> 
     if match:
         insert_at = match.end()
         return f"{html[:insert_at]}\n{style_block}{html[insert_at:]}"
+    match = re.search(r"<!doctype[^>]*>", html, flags=re.IGNORECASE)
+    if match:
+        return f"{html[:match.end()]}\n{style_block}{html[match.end():]}"
     return f"{style_block}\n{html}"
 
 
