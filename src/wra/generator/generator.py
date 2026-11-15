@@ -25,6 +25,7 @@ from .overflow_repair import repair_horizontal_overflow
 from .table_wrap_repair import repair_wide_tables
 from .script_repair import repair_script_mixing
 from .skiplink_repair import repair_protruding_skip_link
+from .hangul_wrap import repair_hangul_heading_wrap
 from .squeeze_repair import repair_squeezed_text
 from .theme_repair import repair_overridden_root_theme
 from .recovery import HTMLRecoveryError, RecoveryPolicy, RecoveryStrategy, build_recovery_prompt, classify_exception, classify_validation_errors, strategy_for
@@ -141,6 +142,9 @@ class HTMLGenerator:
                 html, reveal_repairs = repair_js_off_hidden(html, asset_root=asset_root)
                 if reveal_repairs:
                     logger.info("Repaired JS-off hidden content: %s", reveal_repairs)
+                html, hangul_wrap_repairs = repair_hangul_heading_wrap(html)
+                if hangul_wrap_repairs:
+                    logger.info("Repaired Hangul heading wrapping: %s", hangul_wrap_repairs)
                 html, squeeze_repairs = repair_squeezed_text(html, asset_root=asset_root)
                 if squeeze_repairs:
                     logger.info("Repaired squeezed text: %s", squeeze_repairs)

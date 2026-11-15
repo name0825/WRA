@@ -9,6 +9,7 @@ from wra.core.iteration import IterationEngine, _PageRun
 from wra.core.models import EvaluationResult, FeatureModel, WRAConfig
 from wra.core.output import OutputManager
 from wra.core.preparation import PreparedPage
+from wra.generator.hangul_wrap import repair_hangul_heading_wrap
 from wra.refiner.refiner import HTMLRefiner, RefinerError
 from support import sample_config_data
 
@@ -371,7 +372,7 @@ def test_refiner_can_restore_images_from_source_inventory() -> None:
 
     result = _refiner(client).refine(features, PAGE, _evaluation(), visual_findings=["Images dropped: none of the 2 source image(s) are referenced in the generated HTML"])
 
-    assert result == restored
+    assert result == repair_hangul_heading_wrap(restored)[0]
     inventory = client.prompts[0].split("Source image inventory:\n", 1)[1].split("\n\n", 1)[0]
     assert '"src":"https://example.com/catalog/hero.jpg"' in inventory
     assert '"image_assets":["assets/catalog/detail.png"]' in inventory
