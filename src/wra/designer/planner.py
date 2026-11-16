@@ -20,7 +20,7 @@ from wra.designer.schema import DesignSpec
 from wra.llm.client import LLMClient
 from wra.llm.context import COMPACT_JSON, estimate_num_ctx
 from wra.llm.response import json_root_text, normalize_json_response
-from wra.validator.design import _resolve_path, required_coverage_paths, validate_design_spec
+from wra.validator.design import _resolve_path, is_form_type, required_coverage_paths, validate_design_spec
 from wra.llm.schema import bound_strings
 
 logger = logging.getLogger(__name__)
@@ -185,13 +185,13 @@ class DesignPlanner:
                 if last_error is DesignRecoveryError.INVALID_DESIGN and last_spec is not None:
                     candidate = last_spec
                     if not allow_forms and not features.structure.forms:
-                        candidate = self._drop_form_components(copy.deepcopy(last_spec)) or last_spec
+                        candidate = self._neutralize_form_components(copy.deepcopy(last_spec)) or last_spec
                     coerced_spec = self._coerce_unresolvable_sources(candidate, features) or (candidate if candidate is not last_spec else None)
                     if coerced_spec is not None:
                         revalidation = validate_design_spec(coerced_spec, features, self._frameworks, self._content_freedom, allow_forms=allow_forms)
                         if revalidation.valid:
                             if candidate is not last_spec:
-                                logger.info("DesignSpec validation passed after dropping form components")
+                                logger.info("DesignSpec validation passed after neutralizing form components")
                             else:
                                 logger.info("DesignSpec validation passed after coercing out-of-range content_source indexes")
                             return coerced_spec
@@ -306,20 +306,19 @@ class DesignPlanner:
         return spec if coerced else None
 
     @staticmethod
-    def _drop_form_components(spec: DesignSpec) -> DesignSpec | None:
-        dropped = False
+    def _neutralize_form_components(spec: DesignSpec) -> DesignSpec | None:
+        changed = False
         for section in spec.sections:
-            kept_components = [component for component in section.components if component.type.strip().lower() != "form"]
-            if len(kept_components) != len(section.components):
-                logger.warning("Dropping form component the source page has no form for: section=%s", section.id)
-                dropped = True
-                section.components = kept_components
-        spec.sections = [section for section in spec.sections if section.components]
-        kept_interactions = [interaction for interaction in spec.interaction.components if interaction.target.strip().lower() != "form"]
+            for component in section.components:
+                if is_form_type(component.type):
+                    logger.warning("Neutralizing form component the source page has no form for: section=%s type=%s", section.id, component.type)
+                    component.type = "text"
+                    changed = True
+        kept_interactions = [interaction for interaction in spec.interaction.components if not is_form_type(interaction.target)]
         if len(kept_interactions) != len(spec.interaction.components):
-            dropped = True
+            changed = True
             spec.interaction.components = kept_interactions
-        return spec if dropped else None
+        return spec if changed else None
 
     @staticmethod
     def _build_design_context(prompt_template, features, design_constraints, generation_rules=None, frameworks: FrameworkConfig | None = None, content_freedom: ContentFreedom = "low"):

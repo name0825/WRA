@@ -16,6 +16,11 @@ class DesignValidationResult:
 
 _PATH_PART_RE = re.compile(r"^(?P<name>[^\[\]]+)(?P<indexes>(?:\[\d+\])*)$")
 _INDEX_RE = re.compile(r"\[(\d+)\]")
+_FORM_TYPE_RE = re.compile(r"(?<![a-z])forms?(?![a-z])")
+
+
+def is_form_type(component_type: str) -> bool:
+    return bool(_FORM_TYPE_RE.search(component_type.strip().lower()))
 
 # Collections a DesignSpec must reference when populated.
 #
@@ -197,7 +202,7 @@ def validate_design_spec(spec: DesignSpec, features: FeatureModel, frameworks: F
     if not allow_forms and not features.structure.forms:
         for section in spec.sections:
             for component in section.components:
-                if component.type.strip().lower() == "form":
+                if is_form_type(component.type):
                     errors.append(f"form component not allowed in section {section.id}: the source page has no form; remove it and show contact facts as mailto:/tel: links")
     for section in spec.sections:
         for component in section.components:

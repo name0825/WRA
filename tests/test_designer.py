@@ -698,7 +698,25 @@ def test_form_component_retried_then_accepted():
     assert not any(component.type == "form" for section in result.sections for component in section.components)
 
 
-def test_form_component_dropped_when_retries_exhausted():
+def test_validator_matches_form_like_types_as_whole_tokens():
+    from wra.designer.schema import DesignSpec
+
+    def errors_for(component_type: str) -> list[str]:
+        data = make_design_spec()
+        data["sections"][0]["components"][0]["type"] = component_type
+        data["interaction"]["components"] = []
+        spec = DesignSpec.model_validate(data)
+        result = validate_design_spec(spec, FeatureModel(), FrameworkConfig(), allow_forms=False)
+        return [error for error in result.errors if error.startswith("form component not allowed")]
+
+    assert errors_for("contact-form")
+    assert errors_for("Newsletter Form")
+    assert not errors_for("format")
+    assert not errors_for("platform")
+    assert not errors_for("information")
+
+
+def test_form_component_neutralized_when_retries_exhausted():
     data = _spec_with_form()
     data["sections"][0]["components"].append({"type": "card", "purpose": "More", "content_source": "content.text"})
     client = FakeLLMClient([json.dumps(data), json.dumps(data)])
@@ -708,6 +726,23 @@ def test_form_component_dropped_when_retries_exhausted():
 
     assert len(client.calls) == 2
     assert not any(component.type == "form" for section in result.sections for component in section.components)
+    assert {interaction.target for interaction in result.interaction.components} == {"card"}
+
+
+def test_form_only_coverage_reference_survives_when_retries_exhausted():
+    features = FeatureModel(content={"labels": ["Email"], "text": ["Hello"]})
+    data = make_design_spec()
+    data["sections"][0]["components"] = [{"type": "contact-form", "purpose": "Contact", "content_source": "content.labels"}, {"type": "card", "purpose": "Body", "content_source": "content.text"}]
+    data["interaction"]["components"] = [{"target": "contact-form", "behavior": "focus"}, {"target": "card", "behavior": "hover"}]
+    client = FakeLLMClient([json.dumps(data), json.dumps(data)])
+    planner = DesignPlanner(client, "designer-model", recovery_policy=RecoveryPolicy(max_retries=1))
+
+    result = planner.plan(features, allow_forms=False)
+
+    components = result.sections[0].components
+    assert components[0].type == "text"
+    assert components[0].content_source == "content.labels"
+    assert components[0].purpose == "Contact"
     assert {interaction.target for interaction in result.interaction.components} == {"card"}
 
 
