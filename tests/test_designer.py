@@ -711,9 +711,27 @@ def test_validator_matches_form_like_types_as_whole_tokens():
 
     assert errors_for("contact-form")
     assert errors_for("Newsletter Form")
-    assert not errors_for("format")
-    assert not errors_for("platform")
-    assert not errors_for("information")
+    for joined in ("ContactForm", "contactForm", "SignupForm", "signupform", "loginform", "newsletterforms"):
+        assert errors_for(joined), joined
+    for plain in ("format", "platform", "information", "transform", "Transform", "uniform", "inform", "perform", "waveform", "formula", "Platform"):
+        assert not errors_for(plain), plain
+
+
+def test_form_type_without_hyphen_neutralized_keeping_only_coverage_reference():
+    features = FeatureModel(content={"labels": ["Email"]})
+    data = make_design_spec()
+    data["sections"][0]["components"] = [{"type": "form", "purpose": "Contact", "content_source": "content.labels"}]
+    data["interaction"]["components"] = [{"target": "form", "behavior": "focus"}]
+    client = FakeLLMClient([json.dumps(data), json.dumps(data)])
+    planner = DesignPlanner(client, "designer-model", recovery_policy=RecoveryPolicy(max_retries=1))
+
+    result = planner.plan(features, allow_forms=False)
+
+    components = result.sections[0].components
+    assert len(components) == 1
+    assert components[0].type == "text"
+    assert components[0].content_source == "content.labels"
+    assert not any(interaction.target == "form" for interaction in result.interaction.components)
 
 
 def test_form_component_neutralized_when_retries_exhausted():

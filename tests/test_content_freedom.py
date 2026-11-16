@@ -1,3 +1,5 @@
+from types import SimpleNamespace
+
 import pytest
 
 from wra.core.iteration import IterationEngine
@@ -37,6 +39,16 @@ def test_design_constraints_carry_content_freedom(freedom: str, coverage_require
     assert constraints["content_freedom"]["level"] == freedom
     assert constraints["content_freedom"]["coverage_required"] is coverage_required
     assert constraints["content_freedom"]["instruction"]
+
+
+def test_design_constraints_carry_page_origin_only_for_created_pages() -> None:
+    engine = make_engine("low")
+    created = SimpleNamespace(slug="contact", content_focus=None, created=True)
+    existing = SimpleNamespace(slug="about", content_focus=None, created=False)
+
+    assert engine._build_design_constraints(1, page=created)["page_origin"]["kind"] == "brief"
+    assert "page_origin" not in engine._build_design_constraints(1, page=existing)
+    assert "page_origin" not in engine._build_design_constraints(1)
 
 
 @pytest.mark.parametrize("freedom", ["low", "medium", "high", "ultra", "madmax"])

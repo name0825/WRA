@@ -19,8 +19,13 @@ _INDEX_RE = re.compile(r"\[(\d+)\]")
 _FORM_TYPE_RE = re.compile(r"(?<![a-z])forms?(?![a-z])")
 
 
+_CAMEL_BOUNDARY_RE = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
+_JOINED_FORM_TYPE_RE = re.compile(r"(?<![a-z])(contact|signup|signin|login|register|registration|newsletter|subscribe|subscription|inquiry|enquiry|feedback|booking|order|request|lead|email|search|quote)forms?(?![a-z])")
+
+
 def is_form_type(component_type: str) -> bool:
-    return bool(_FORM_TYPE_RE.search(component_type.strip().lower()))
+    spaced = _CAMEL_BOUNDARY_RE.sub(" ", component_type.strip()).lower()
+    return bool(_FORM_TYPE_RE.search(spaced) or _JOINED_FORM_TYPE_RE.search(spaced))
 
 # Collections a DesignSpec must reference when populated.
 #
