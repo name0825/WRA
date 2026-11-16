@@ -84,8 +84,13 @@ def inventory(root):
     return {p.relative_to(root).as_posix(): digest(p) for p in sorted(root.rglob('*')) if p.is_file()}
 
 
-def prepare(snapshot, candidate, destination):
+def prepare(snapshot, candidate, destination, seed=42, cases=None):
     snapshot, candidate, destination = map(lambda p: Path(p).resolve(), (snapshot, candidate, destination))
+    cases = list(SAMPLES if cases is None else cases)
+    if not cases or len(set(cases)) != len(cases) or any(name not in SAMPLES for name in cases):
+        raise ValueError(f'cases must be a non-empty list of distinct names from {SAMPLES}')
+    if isinstance(seed, bool) or not isinstance(seed, int):
+        raise ValueError('seed must be an integer')
     manifest = json.loads((snapshot / 'manifest.json').read_text(encoding='utf-8'))
     baseline = snapshot / 'baseline'
     baseline_prompts = inventory(baseline / 'prompts')
@@ -108,7 +113,7 @@ def prepare(snapshot, candidate, destination):
     if destination.exists():
         raise FileExistsError(f'Destination already exists: {destination}')
     sources = {}
-    for name in SAMPLES:
+    for name in cases:
         source = snapshot / 'inputs' / name
         expected = manifest['cases'][name]
         files = {f.relative: digest(f.path) for f in discover(source).files}
@@ -121,7 +126,7 @@ def prepare(snapshot, candidate, destination):
         sources[name] = source
     raw_config = yaml.safe_load((baseline / 'config/config.yaml').read_text(encoding='utf-8'))
     configs = {name: yaml.safe_load((baseline / 'config' / name).read_text(encoding='utf-8')) for name in ('models.yaml', 'frameworks.yaml')}
-    configs['models.yaml']['ollama']['seed'] = 42
+    configs['models.yaml']['ollama']['seed'] = seed
     single = configs['models.yaml']['models']['single']
     if single.get('enabled') is not True or 'think' not in single:
         raise ValueError('models.single must be enabled and set think explicitly')
@@ -158,7 +163,8 @@ def prepare(snapshot, candidate, destination):
             if (actual.entry.relative if actual.entry else None) != manifest['cases'][name]['entry'] or actual.creates != (name == 'brief'):
                 raise ValueError(f'{bundle_name}/{name}: staged input discovery failed')
             prepared.append({'bundle': bundle_name, 'case': name, 'workdir': str(work), 'prompt_hashes': inventory(work / 'prompts'), 'input_hashes': {f.relative: digest(f.path) for f in actual.files}, 'config_hashes': inventory(work / 'config')})
-    record = {'status': 'prepared', 'live_execution_supported': True, 'evaluator_think': False, 'max_iterations': 36, 'first_batch_max_iterations': 12, 'prepared': prepared, 'runtime_hashes': runtime_hashes(), 'manifest_hash': digest(snapshot / 'manifest.json'), 'accounting': 'Reserve all three iterations per case permanently, including failures and interrupted cases; no automatic reruns.'}
+    budget = len(cases) * 6
+    record = {'status': 'prepared', 'live_execution_supported': True, 'evaluator_think': False, 'seed': seed, 'cases': cases, 'max_iterations': budget, 'first_batch_max_iterations': 12 if len(cases) == len(SAMPLES) else budget, 'prepared': prepared, 'runtime_hashes': runtime_hashes(), 'manifest_hash': digest(snapshot / 'manifest.json'), 'accounting': 'Reserve all three iterations per case permanently, including failures and interrupted cases; no automatic reruns.'}
     write_json(destination / 'preflight.json', record)
     write_json(destination / 'ledger.json', {'preflight_hash': digest(destination / 'preflight.json'), 'jobs': {}})
     return record
@@ -204,12 +210,18 @@ def execute(destination, phase='pilot', resume=False, pilot_reviewed=False, runn
         record, ledger = verify(destination)
         if ledger['jobs'] and not resume:
             raise RuntimeError('Experiment has prior reservations; use --resume to skip consumed cases')
+        recorded = record.get('cases', list(SAMPLES))
+        subset = len(recorded) < len(SAMPLES)
+        if subset and phase != 'all':
+            raise RuntimeError("Subset experiments run only with phase 'all'")
+        if not subset and phase == 'all':
+            raise RuntimeError("Phase 'all' requires a subset experiment")
         reconcile(destination, ledger)
         if phase == 'remaining':
             pilot_keys = [f'{bundle}/{name}' for name in PILOT for bundle in ('A', 'B')]
             if not pilot_reviewed or any(ledger['jobs'].get(key, {}).get('status') != 'succeeded' for key in pilot_keys):
                 raise RuntimeError('Remaining cases require four successful pilot cases and --pilot-reviewed')
-        names = PILOT if phase == 'pilot' else SAMPLES[2:]
+        names = recorded if phase == 'all' else PILOT if phase == 'pilot' else SAMPLES[2:]
         for name in names:
             for bundle in ('A', 'B'):
                 key = f'{bundle}/{name}'
@@ -509,22 +521,26 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('action', choices=('prepare', 'run', 'abandon', 'worker'))
     parser.add_argument('destination', type=Path)
-    parser.add_argument('--phase', choices=('pilot', 'remaining'), default='pilot')
+    parser.add_argument('--phase', choices=('pilot', 'remaining', 'all'), default='pilot')
+    parser.add_argument('--seed', type=int, default=42)
+    parser.add_argument('--cases', nargs='+')
     parser.add_argument('--resume', action='store_true')
     parser.add_argument('--pilot-reviewed', action='store_true')
     parser.add_argument('--bundle', choices=('A', 'B'))
-    parser.add_argument('--case', choices=SAMPLES)
+    parser.add_argument('--case')
     parser.add_argument('--token')
     args = parser.parse_args()
     if args.action == 'prepare':
-        record = prepare(SNAPSHOT, CANDIDATE, args.destination)
-        print(f"Prepared {len(record['prepared'])} isolated work directories; run --phase pilot starts at most 12 iterations.")
+        record = prepare(SNAPSHOT, CANDIDATE, args.destination, args.seed, args.cases)
+        print(f"Prepared {len(record['prepared'])} isolated work directories (seed {record['seed']}); run --phase {'pilot' if len(record['cases']) == len(SAMPLES) else 'all'} starts at most {record['first_batch_max_iterations']} iterations.")
     elif args.action == 'run':
         ledger = execute(args.destination, args.phase, args.resume, args.pilot_reviewed)
         print(json.dumps(ledger, ensure_ascii=False, indent=2))
     else:
         if not args.bundle or not args.case:
             parser.error('--bundle and --case are required')
+        if args.case not in read_json(args.destination / 'preflight.json').get('cases', SAMPLES):
+            parser.error(f'--case must be one of the cases recorded for this experiment: {args.case}')
         if args.action == 'abandon':
             print(json.dumps(abandon(args.destination, args.bundle, args.case), ensure_ascii=False, indent=2))
         elif not args.token:

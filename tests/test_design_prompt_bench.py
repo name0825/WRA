@@ -512,3 +512,59 @@ def test_required_visual_default_applies_when_work_config_omits_key(experiment, 
     ledger = bench.read_json(destination / 'ledger.json')
     assert ledger['jobs']['A/bakery']['status'] == 'failed'
     assert 'three completed required visual inspections' in ledger['jobs']['A/bakery']['result']['error']
+
+
+FOLLOWUP = ['saas-product', 'research-lab']
+
+
+def test_subset_prepare_records_seed_and_cases_and_stages_only_those(experiment):
+    snapshot, candidate, destination = experiment
+    result = prepare(snapshot, candidate, destination, seed=7, cases=FOLLOWUP)
+    assert result['seed'] == 7
+    assert result['cases'] == FOLLOWUP
+    assert result['max_iterations'] == 12
+    assert len(result['prepared']) == 4
+    assert sorted(p.name for p in (destination / 'A').iterdir()) == sorted(FOLLOWUP)
+    assert sorted(p.name for p in (destination / 'B').iterdir()) == sorted(FOLLOWUP)
+    for job in result['prepared']:
+        models = yaml.safe_load((Path(job['workdir']) / 'config/models.yaml').read_text(encoding='utf-8'))
+        assert models['ollama']['seed'] == 7
+    assert bench.verify(destination)[0] == result
+    full = prepare(snapshot, candidate, destination.with_name('full'))
+    assert full['seed'] == 42 and full['cases'] == list(SAMPLES) and full['max_iterations'] == 36
+
+
+@pytest.mark.parametrize('cases', [[], ['bakery', 'bakery'], ['bakery', 'unknown'], ['Bakery']])
+def test_subset_prepare_rejects_invalid_cases_without_destination(experiment, cases):
+    snapshot, candidate, destination = experiment
+    with pytest.raises(ValueError, match='cases'):
+        prepare(snapshot, candidate, destination, cases=cases)
+    assert not destination.exists()
+
+
+def test_phase_all_runs_only_subset_cases_within_cap(experiment):
+    snapshot, candidate, destination = experiment
+    prepare(snapshot, candidate, destination, seed=7, cases=FOLLOWUP)
+    for phase in ('pilot', 'remaining'):
+        with pytest.raises(RuntimeError, match="only with phase 'all'"):
+            bench.execute(destination, phase=phase, pilot_reviewed=True, runner=completed_runner(destination, []))
+    assert not bench.read_json(destination / 'ledger.json')['jobs']
+    calls = []
+    ledger = bench.execute(destination, phase='all', runner=completed_runner(destination, calls))
+    assert calls == ['A/saas-product', 'B/saas-product', 'A/research-lab', 'B/research-lab']
+    assert sum(job['reserved_iterations'] for job in ledger['jobs'].values()) == 12
+    bench.execute(destination, phase='all', resume=True, runner=completed_runner(destination, calls))
+    assert len(calls) == 4
+    ledger['jobs']['A/bakery'] = {'bundle': 'A', 'case': 'bakery', 'reserved_iterations': 3, 'status': 'succeeded'}
+    bench.write_json(destination / 'ledger.json', ledger)
+    with pytest.raises(ValueError, match='Iteration budget exceeded'):
+        bench.execute(destination, phase='all', resume=True, runner=completed_runner(destination, calls))
+
+
+def test_phase_all_rejected_for_full_experiment(experiment):
+    snapshot, candidate, destination = experiment
+    prepare(snapshot, candidate, destination)
+    calls = []
+    with pytest.raises(RuntimeError, match='requires a subset'):
+        bench.execute(destination, phase='all', runner=completed_runner(destination, calls))
+    assert calls == [] and not bench.read_json(destination / 'ledger.json')['jobs']
