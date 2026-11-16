@@ -43,7 +43,7 @@ suggestions and not matters of judgement: the source says one thing and the page
 
 `ux_findings`, when present, are confirmed UX defects such as an in-page link whose target
 does not exist, a brief contact fact missing from the page (fix it by adding the fact to
-the footer or contact section), or a CSS craft defect that names its own fix (`transition: all`, a removed focus outline, disabled zoom). Fix each one, e.g. by adding the missing `id` or pointing the link at a
+the footer or contact section), an invented `<form>` the source did not have (remove it and keep the contact facts as `mailto:`/`tel:` links), or a CSS craft defect that names its own fix (`transition: all`, a removed focus outline, disabled zoom). Fix each one, e.g. by adding the missing `id` or pointing the link at a
 target that exists. Every in-page `href="#x"` must point to an element with `id="x"`; use the
 section ids from the design spec.
 

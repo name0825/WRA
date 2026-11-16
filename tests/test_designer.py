@@ -662,3 +662,60 @@ def test_madmax_groups_thirteen_headed_blocks_within_section_budget():
     assert all(f"Headed block {index}" in sent for index in range(13))
     assert len(result.sections) == 12
     assert {component.content_source for section in result.sections for component in section.components} == {f"content.headings.{index}" for index in range(13)}
+
+
+def _spec_with_form() -> dict:
+    data = make_design_spec()
+    data["sections"][0]["components"].append({"type": "form", "purpose": "Contact", "content_source": "content.text"})
+    data["interaction"]["components"].append({"target": "form", "behavior": "focus"})
+    return data
+
+
+def test_validator_rejects_form_component_when_source_has_no_form():
+    from wra.designer.schema import DesignSpec
+
+    data = make_design_spec()
+    data["sections"][0]["components"][0]["type"] = "Form"
+    data["interaction"]["components"][0]["target"] = "Form"
+    spec = DesignSpec.model_validate(data)
+
+    result = validate_design_spec(spec, FeatureModel(), FrameworkConfig(), allow_forms=False)
+
+    assert not result.valid
+    assert any(error.startswith("form component not allowed in section featured") for error in result.errors)
+    assert validate_design_spec(spec, FeatureModel(), FrameworkConfig()).valid
+    with_form = validate_design_spec(spec, FeatureModel(structure={"forms": [{"fields": ["email"]}]}), FrameworkConfig(), allow_forms=False)
+    assert not any(error.startswith("form component not allowed") for error in with_form.errors)
+
+
+def test_form_component_retried_then_accepted():
+    client = FakeLLMClient([json.dumps(_spec_with_form()), json.dumps(make_design_spec())])
+    planner = DesignPlanner(client, "designer-model", recovery_policy=RecoveryPolicy(max_retries=1))
+
+    result = planner.plan(FeatureModel(), allow_forms=False)
+
+    assert len(client.calls) == 2
+    assert not any(component.type == "form" for section in result.sections for component in section.components)
+
+
+def test_form_component_dropped_when_retries_exhausted():
+    data = _spec_with_form()
+    data["sections"][0]["components"].append({"type": "card", "purpose": "More", "content_source": "content.text"})
+    client = FakeLLMClient([json.dumps(data), json.dumps(data)])
+    planner = DesignPlanner(client, "designer-model", recovery_policy=RecoveryPolicy(max_retries=1))
+
+    result = planner.plan(FeatureModel(), allow_forms=False)
+
+    assert len(client.calls) == 2
+    assert not any(component.type == "form" for section in result.sections for component in section.components)
+    assert {interaction.target for interaction in result.interaction.components} == {"card"}
+
+
+def test_form_component_kept_when_forms_allowed():
+    client = FakeLLMClient([json.dumps(_spec_with_form())])
+    planner = DesignPlanner(client, "designer-model", recovery_policy=RecoveryPolicy(max_retries=1))
+
+    result = planner.plan(FeatureModel())
+
+    assert len(client.calls) == 1
+    assert any(component.type == "form" for section in result.sections for component in section.components)

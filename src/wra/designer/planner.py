@@ -81,7 +81,7 @@ class DesignPlanner:
         self._revision_prompt_path = Path(revision_prompt_path)
         self._recovery_policy = recovery_policy or RecoveryPolicy()
 
-    def plan(self, features: FeatureModel, design_constraints: dict[str, Any] | None = None, generation_rules: list[str] | None = None, model: str | None = None, think: bool | None = None, timeout: float | None = None) -> DesignSpec:
+    def plan(self, features: FeatureModel, design_constraints: dict[str, Any] | None = None, generation_rules: list[str] | None = None, model: str | None = None, think: bool | None = None, timeout: float | None = None, allow_forms: bool = True) -> DesignSpec:
         selected_model = model or self._designer_model
         selected_think = self._designer_think if think is None else think
         selected_timeout = self._designer_timeout if timeout is None else timeout
@@ -95,9 +95,10 @@ class DesignPlanner:
             model=selected_model,
             think=selected_think,
             timeout=selected_timeout,
+            allow_forms=allow_forms,
         )
 
-    def revise(self, features: FeatureModel, previous_design_spec: DesignSpec, previous_html: str, evaluation: EvaluationResult, design_constraints: dict[str, Any] | None = None, model: str | None = None, think: bool | None = None, timeout: float | None = None) -> DesignSpec:
+    def revise(self, features: FeatureModel, previous_design_spec: DesignSpec, previous_html: str, evaluation: EvaluationResult, design_constraints: dict[str, Any] | None = None, model: str | None = None, think: bool | None = None, timeout: float | None = None, allow_forms: bool = True) -> DesignSpec:
         selected_model = model or self._designer_model
         selected_think = self._designer_think if think is None else think
         selected_timeout = self._designer_timeout if timeout is None else timeout
@@ -123,9 +124,10 @@ class DesignPlanner:
             model=selected_model,
             think=selected_think,
             timeout=selected_timeout,
+            allow_forms=allow_forms,
         )
 
-    def _generate_and_validate(self, original_prompt, features, recovery_context, model, think=None, timeout=None):
+    def _generate_and_validate(self, original_prompt, features, recovery_context, model, think=None, timeout=None, allow_forms=True):
         base_num_ctx = estimate_num_ctx(original_prompt, self._recovery_policy.initial_num_ctx, self._recovery_policy.max_num_ctx, ceiling=self._recovery_policy.ceiling_num_ctx, headroom_tokens=self._recovery_policy.output_headroom_tokens)
         current_num_ctx = base_num_ctx
         previous_response = None
@@ -145,7 +147,7 @@ class DesignPlanner:
                 spec = self._parse_response(response)
                 logger.debug("DesignSpec JSON parsed successfully")
                 last_spec = spec
-                validation = validate_design_spec(spec, features, self._frameworks, self._content_freedom)
+                validation = validate_design_spec(spec, features, self._frameworks, self._content_freedom, allow_forms=allow_forms)
                 if not validation.valid:
                     last_error = DesignRecoveryError.INVALID_DESIGN
                     last_details = validation.errors
@@ -153,7 +155,7 @@ class DesignPlanner:
                     if all(self._is_table_source_error(error) for error in validation.errors):
                         coerced_spec = self._coerce_table_sources(copy.deepcopy(spec), features)
                         if coerced_spec is not None:
-                            revalidation = validate_design_spec(coerced_spec, features, self._frameworks, self._content_freedom)
+                            revalidation = validate_design_spec(coerced_spec, features, self._frameworks, self._content_freedom, allow_forms=allow_forms)
                             if revalidation.valid:
                                 logger.info("DesignSpec validation passed after coercing content.tables indexes on the same attempt")
                                 return coerced_spec
@@ -181,11 +183,17 @@ class DesignPlanner:
 
             if retry >= self._recovery_policy.max_retries:
                 if last_error is DesignRecoveryError.INVALID_DESIGN and last_spec is not None:
-                    coerced_spec = self._coerce_unresolvable_sources(last_spec, features)
+                    candidate = last_spec
+                    if not allow_forms and not features.structure.forms:
+                        candidate = self._drop_form_components(copy.deepcopy(last_spec)) or last_spec
+                    coerced_spec = self._coerce_unresolvable_sources(candidate, features) or (candidate if candidate is not last_spec else None)
                     if coerced_spec is not None:
-                        revalidation = validate_design_spec(coerced_spec, features, self._frameworks, self._content_freedom)
+                        revalidation = validate_design_spec(coerced_spec, features, self._frameworks, self._content_freedom, allow_forms=allow_forms)
                         if revalidation.valid:
-                            logger.info("DesignSpec validation passed after coercing out-of-range content_source indexes")
+                            if candidate is not last_spec:
+                                logger.info("DesignSpec validation passed after dropping form components")
+                            else:
+                                logger.info("DesignSpec validation passed after coercing out-of-range content_source indexes")
                             return coerced_spec
                 break
             if strategy is RecoveryStrategy.INCREASE_CONTEXT:
@@ -296,6 +304,22 @@ class DesignPlanner:
             section.components = kept_components
         spec.sections = [section for section in spec.sections if section.components]
         return spec if coerced else None
+
+    @staticmethod
+    def _drop_form_components(spec: DesignSpec) -> DesignSpec | None:
+        dropped = False
+        for section in spec.sections:
+            kept_components = [component for component in section.components if component.type.strip().lower() != "form"]
+            if len(kept_components) != len(section.components):
+                logger.warning("Dropping form component the source page has no form for: section=%s", section.id)
+                dropped = True
+                section.components = kept_components
+        spec.sections = [section for section in spec.sections if section.components]
+        kept_interactions = [interaction for interaction in spec.interaction.components if interaction.target.strip().lower() != "form"]
+        if len(kept_interactions) != len(spec.interaction.components):
+            dropped = True
+            spec.interaction.components = kept_interactions
+        return spec if dropped else None
 
     @staticmethod
     def _build_design_context(prompt_template, features, design_constraints, generation_rules=None, frameworks: FrameworkConfig | None = None, content_freedom: ContentFreedom = "low"):

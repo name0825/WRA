@@ -176,10 +176,10 @@ class _Designer:
     def __init__(self) -> None:
         self.revised_from: list[str] = []
 
-    def plan(self, features, design_constraints, model, think=None, timeout=None):
+    def plan(self, features, design_constraints, model, think=None, timeout=None, allow_forms=True):
         return SimpleNamespace(sections=[], design=None, responsive=None, interaction=None)
 
-    def revise(self, features, previous_design_spec, previous_html, evaluation, design_constraints, model, think=None, timeout=None):
+    def revise(self, features, previous_design_spec, previous_html, evaluation, design_constraints, model, think=None, timeout=None, allow_forms=True):
         self.revised_from.append(previous_html)
         return SimpleNamespace(sections=[], design=None, responsive=None, interaction=None)
 
@@ -352,7 +352,7 @@ class _NoteDesigner(_Designer):
         super().__init__()
         self.constraints: list[dict] = []
 
-    def revise(self, features, previous_design_spec, previous_html, evaluation, design_constraints, model, think=None, timeout=None):
+    def revise(self, features, previous_design_spec, previous_html, evaluation, design_constraints, model, think=None, timeout=None, allow_forms=True):
         self.constraints.append(design_constraints)
         return super().revise(features, previous_design_spec, previous_html, evaluation, design_constraints, model, think, timeout)
 

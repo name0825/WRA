@@ -116,7 +116,7 @@ of. A visitor moving between these pages should never wonder whether they left t
 - Do not invent semantic aliases such as `content.hero`, `content.services`, `media.logo`, `navigation.items`, or `ui.*`.
 - Never write a value with literal content in it, such as `text: "..."` or `metadata.title: "..."`.
 
-When the FeatureModel holds business contact facts (`business.phone`, `business.email`, `business.address`, `business.business_information`), plan a contact section or footer that shows them. A form must not fake submission.
+When the FeatureModel holds business contact facts (`business.phone`, `business.email`, `business.address`, `business.business_information`), plan a contact section or footer that shows them. A form must not fake submission. When `structure.forms` is empty, do not declare a `form` component or an `interaction.components` entry targeting `form`; show the contact facts as `mailto:` and `tel:` links, unless `design_constraints.page_origin` says the page is built from a brief.
 
 Every path in the `Coverage required` block must be referenced by at least one component's `content_source`. A collection path or an existing indexed item covers that collection.
 

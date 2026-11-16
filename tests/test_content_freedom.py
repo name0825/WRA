@@ -131,3 +131,15 @@ def test_generator_and_designer_prompts_render_contact_facts_without_faking_subm
 
     assert "business.phone" in text
     assert "fake submission" in text
+
+
+@pytest.mark.parametrize("prompt", ["generator", "designer", "refiner"])
+def test_prompts_steer_contact_facts_to_mailto_links_when_the_source_has_no_form(prompt: str) -> None:
+    from pathlib import Path
+
+    text = (Path(__file__).resolve().parent.parent / "prompts" / prompt / "system.md").read_text(encoding="utf-8")
+
+    assert "mailto:" in text
+    assert "form" in text
+    if prompt == "designer":
+        assert "page_origin" in text

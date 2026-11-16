@@ -178,7 +178,7 @@ def _validate_content_coverage(spec: DesignSpec, features: FeatureModel, errors:
             errors.append(f"missing content coverage: {path}")
 
 
-def validate_design_spec(spec: DesignSpec, features: FeatureModel, frameworks: FrameworkConfig, content_freedom: ContentFreedom = "low") -> DesignValidationResult:
+def validate_design_spec(spec: DesignSpec, features: FeatureModel, frameworks: FrameworkConfig, content_freedom: ContentFreedom = "low", allow_forms: bool = True) -> DesignValidationResult:
     logger.debug("DesignSpec validation started: sections=%d", len(spec.sections))
     errors: list[str] = []
 
@@ -194,6 +194,11 @@ def validate_design_spec(spec: DesignSpec, features: FeatureModel, frameworks: F
             errors.append(f"section has no components: {section.id}")
 
     component_types = {component.type for section in spec.sections for component in section.components if component.type}
+    if not allow_forms and not features.structure.forms:
+        for section in spec.sections:
+            for component in section.components:
+                if component.type.strip().lower() == "form":
+                    errors.append(f"form component not allowed in section {section.id}: the source page has no form; remove it and show contact facts as mailto:/tel: links")
     for section in spec.sections:
         for component in section.components:
             source = component.content_source.strip()

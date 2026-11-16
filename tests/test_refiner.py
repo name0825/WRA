@@ -223,11 +223,11 @@ class _Designer:
         self.plans = 0
         self.revisions = 0
 
-    def plan(self, features, design_constraints, model, think=None, timeout=None):
+    def plan(self, features, design_constraints, model, think=None, timeout=None, allow_forms=True):
         self.plans += 1
         return SimpleNamespace(sections=[])
 
-    def revise(self, features, previous_design_spec, previous_html, evaluation, design_constraints, model, think=None, timeout=None):
+    def revise(self, features, previous_design_spec, previous_html, evaluation, design_constraints, model, think=None, timeout=None, allow_forms=True):
         self.revisions += 1
         return SimpleNamespace(sections=[])
 

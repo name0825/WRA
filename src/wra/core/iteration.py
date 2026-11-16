@@ -14,6 +14,7 @@ from wra.validator.browser_errors import find_browser_errors
 from wra.validator.claims import find_unsupported_claims
 from wra.validator.craft import find_refinable_craft_defects
 from wra.validator.facts import find_missing_business_facts
+from wra.validator.forms import find_invented_forms
 from wra.validator.html import HTMLValidationResult, validate_html
 from wra.validator.regression import find_regressions
 from wra.validator.syntax import find_syntax_defects
@@ -79,6 +80,10 @@ class _PageRun:
 
 def _brief_fact_findings(page: PreparedPage, html: str) -> list[str]:
     return find_missing_business_facts(html, page.features) if page.is_entry and page.created else []
+
+
+def _invented_form_findings(page: PreparedPage, html: str) -> list[str]:
+    return [] if page.created else find_invented_forms(html, page.features)
 
 
 def _describe_setback(rejected: IterationResult, best: IterationResult | None, regressions: Sequence[str] = ()) -> dict:
@@ -246,7 +251,7 @@ class IterationEngine:
         if self._refines(state):
             logger.info("Current task: refining the best page (score=%.2f)", previous_result.evaluation.overall_score)
             try:
-                html = self._refiner.refine(features, previous_result.html, previous_result.evaluation, design_spec=previous_result.design_spec, content_findings=find_corrupted_tokens(previous_result.html, features, content_freedom=self._config.content.freedom) + find_unsupported_claims(previous_result.html, features),ux_findings=find_broken_anchors(previous_result.html) + find_browser_errors(previous_result.browser) + find_syntax_defects(previous_result.html) + _brief_fact_findings(state.page, previous_result.html) + find_refinable_craft_defects(previous_result.html, features) + find_refinable_browser_defects(previous_result.browser), visual_findings=find_visual_defects(previous_result.html, features, previous_result.browser) + previous_result.visual_inspection_findings, model=refiner_model.name, think=refiner_model.think, timeout=refiner_model.timeout, asset_root=output_manager.run_dir, regressions=(state.setback or {}).get("regressions"))
+                html = self._refiner.refine(features, previous_result.html, previous_result.evaluation, design_spec=previous_result.design_spec, content_findings=find_corrupted_tokens(previous_result.html, features, content_freedom=self._config.content.freedom) + find_unsupported_claims(previous_result.html, features),ux_findings=find_broken_anchors(previous_result.html) + find_browser_errors(previous_result.browser) + find_syntax_defects(previous_result.html) + _brief_fact_findings(state.page, previous_result.html) + _invented_form_findings(state.page, previous_result.html) +find_refinable_craft_defects(previous_result.html, features) + find_refinable_browser_defects(previous_result.browser), visual_findings=find_visual_defects(previous_result.html, features, previous_result.browser) + previous_result.visual_inspection_findings, model=refiner_model.name, think=refiner_model.think, timeout=refiner_model.timeout, asset_root=output_manager.run_dir, regressions=(state.setback or {}).get("regressions"))
                 route = "refine"
             except Exception as exc:
                 # A refinement that will not come out valid is not worth an
@@ -259,11 +264,11 @@ class IterationEngine:
             if previous_result is None or previous_result.evaluation is None:
                 logger.info("Current task: design planning")
                 route = "initial"
-                design_spec = self._designer.plan(features, design_constraints=design_constraints, model=designer_model.name, think=designer_model.think, timeout=designer_model.timeout)
+                design_spec = self._designer.plan(features, design_constraints=design_constraints, model=designer_model.name, think=designer_model.think, timeout=designer_model.timeout, allow_forms=state.page.created)
             else:
                 logger.info("Current task: design revision based on score=%.2f", previous_result.evaluation.overall_score)
                 route = "redesign"
-                design_spec = self._designer.revise(features=features, previous_design_spec=previous_result.design_spec, previous_html=previous_result.html, evaluation=previous_result.evaluation, design_constraints=design_constraints, model=designer_model.name, think=designer_model.think, timeout=designer_model.timeout)
+                design_spec = self._designer.revise(features=features, previous_design_spec=previous_result.design_spec, previous_html=previous_result.html, evaluation=previous_result.evaluation, design_constraints=design_constraints, model=designer_model.name, think=designer_model.think, timeout=designer_model.timeout, allow_forms=state.page.created)
 
             logger.info("Current task: HTML generation")
             html = self._generator.generate(features, design_spec, generation_rules=self._build_generation_rules(), model=generator_model.name, think=generator_model.think, timeout=generator_model.timeout, asset_root=output_manager.run_dir, preserve_facts=iteration > 1)
@@ -283,7 +288,7 @@ class IterationEngine:
                     logger.info("Current task: visual inspection")
                     inspection_findings = self._visual_inspector.inspect(browser_result, html, model=evaluator_model.name, think=evaluator_model.think, timeout=evaluator_model.timeout)
                 logger.info("Current task: LLM evaluation")
-                evaluation = self._evaluator.evaluate(features, design_spec, html, browser_result=browser_result, content_findings=find_corrupted_tokens(html, features, content_freedom=self._config.content.freedom) + find_unsupported_claims(html, features),ux_findings=find_broken_anchors(html) + find_browser_errors(browser_result) + find_syntax_defects(html) + _brief_fact_findings(state.page, html), visual_findings=find_visual_defects(html, features, browser_result) + inspection_findings, model=evaluator_model.name, think=evaluator_model.think, timeout=evaluator_model.timeout)
+                evaluation = self._evaluator.evaluate(features, design_spec, html, browser_result=browser_result, content_findings=find_corrupted_tokens(html, features, content_freedom=self._config.content.freedom) + find_unsupported_claims(html, features),ux_findings=find_broken_anchors(html) + find_browser_errors(browser_result) + find_syntax_defects(html) + _brief_fact_findings(state.page, html) + _invented_form_findings(state.page, html), visual_findings=find_visual_defects(html, features, browser_result) + inspection_findings, model=evaluator_model.name, think=evaluator_model.think, timeout=evaluator_model.timeout)
             except Exception as exc:
                 logger.exception("Evaluation failed for iteration %d, page '%s'", iteration, slug)
                 evaluation_error = exc
@@ -397,6 +402,8 @@ class IterationEngine:
                 "carries": page.content_focus,
                 "instruction": "The Feature Model may hold material belonging to sibling pages. Build this page around what it carries and leave the rest to them.",
             }
+        if page is not None and page.created:
+            constraints["page_origin"] = {"kind": "brief", "instruction": "This page is built from a client brief; an honest `mailto:` form is allowed."}
         if mode != "auto":
             constraints["available_presets"] = self._config.design.presets
         exploration_axes = (
