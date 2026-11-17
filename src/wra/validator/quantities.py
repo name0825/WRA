@@ -24,6 +24,8 @@ _QUANTITY_RE = re.compile(
     rf"(?<![A-Za-z0-9_.,])(?<!\d-)(?P<first>{_NUMBER})(?:\s*[-–—~]\s*(?P<second>{_NUMBER}))?\s?(?P<unit>{_UNIT_PATTERN})(?![A-Za-z])"
 )
 _YEAR_RE = re.compile(r"(?:19|20)\d{2}")
+_SINGLE_LETTER_UNITS = frozenset({"g", "m", "V", "A", "K", "W", "L"})
+_PARTICLES = "이가을를은는의에와과도만씩부까간당내미초짜대째으로입및정"
 
 
 def _number_key(number: str) -> str:
@@ -40,10 +42,25 @@ def _unit_key(unit: str) -> str:
     return "mL" if unit == "ml" else unit
 
 
-def _quantities(text: str) -> list[tuple[QuantityKey, str]]:
+def _is_false_unit(text: str, match: re.Match[str]) -> bool:
+    unit = match.group("unit")
+    before = text[: match.start()]
+    following = text[match.end() : match.end() + 1]
+    if "가" <= following <= "힣" and following not in _PARTICLES:
+        return True
+    if unit == "분" and re.search(r"(?<![가-힣])\d+\s*시\s*$", before):
+        return True
+    gap = match.group(0)[: -len(unit)]
+    return unit in _SINGLE_LETTER_UNITS and gap[-1:].isspace() and re.search(r"[A-Za-z]\s+$", before) is not None
+
+
+def _quantities(text: str, strict: bool = False) -> list[tuple[QuantityKey, str]]:
     found = []
-    for match in _QUANTITY_RE.finditer(" ".join(without_dates(text).split())):
+    joined = " ".join(without_dates(text).split())
+    for match in _QUANTITY_RE.finditer(joined):
         unit = match.group("unit")
+        if strict and _is_false_unit(joined, match):
+            continue
         spelling = " ".join(match.group(0).split())
         for number in (match.group("first"), match.group("second")):
             if number is None or (unit == "년" and _YEAR_RE.fullmatch(number)):
@@ -61,7 +78,7 @@ def find_dropped_quantities(html: str, source_html: str) -> list[str]:
     if not source_html or not source_html.strip():
         return []
     spellings: dict[QuantityKey, str] = {}
-    for key, spelling in _quantities(extract_visible_text(source_html)):
+    for key, spelling in _quantities(extract_visible_text(source_html), strict=True):
         spellings.setdefault(key, spelling)
     if not spellings:
         return []
@@ -80,6 +97,7 @@ def find_dropped_quantities(html: str, source_html: str) -> list[str]:
 _QUESTION_TAGS = frozenset({"summary", "dt", "h2", "h3", "h4", "h5", "h6", "button"})
 _SKIPPED_TAGS = frozenset({"script", "style", "template", "noscript"})
 _QUESTION_END = ("?", "？")
+_SUMMARY_ENDINGS = ("요", "까")
 
 
 class _QuestionParser(HTMLParser):
@@ -91,6 +109,8 @@ class _QuestionParser(HTMLParser):
         self._parts: list[str] = []
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag in ("dt", "dd") and self._active == "dt":
+            self._finalize()
         if tag in _SKIPPED_TAGS:
             self._skip_depth += 1
         elif tag in _QUESTION_TAGS and self._active is None and not self._skip_depth:
@@ -100,11 +120,14 @@ class _QuestionParser(HTMLParser):
     def handle_endtag(self, tag: str) -> None:
         if tag in _SKIPPED_TAGS:
             self._skip_depth = max(0, self._skip_depth - 1)
-        elif tag == self._active:
-            text = " ".join(unicodedata.normalize("NFKC", " ".join(self._parts)).split())
-            if text and (tag == "summary" or text.endswith(_QUESTION_END)):
-                self.questions.append(text)
-            self._active = None
+        elif tag == self._active or (tag == "dl" and self._active == "dt"):
+            self._finalize()
+
+    def _finalize(self) -> None:
+        text = " ".join(unicodedata.normalize("NFKC", " ".join(self._parts)).split())
+        if text and (text.endswith(_QUESTION_END) or (self._active == "summary" and text.endswith(_SUMMARY_ENDINGS))):
+            self.questions.append(text)
+        self._active = None
 
     def handle_data(self, data: str) -> None:
         if self._active is not None and not self._skip_depth:

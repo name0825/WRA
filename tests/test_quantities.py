@@ -9,7 +9,7 @@ def _page(html: str, created: bool = False) -> SimpleNamespace:
 
 
 def _keys(text: str) -> list[tuple[str, str]]:
-    return [key for key, _ in _quantities(text)]
+    return [key for key, _ in _quantities(text, strict=True)]
 
 
 def test_spaced_and_unspaced_quantities_share_a_key():
@@ -81,10 +81,10 @@ def test_question_match_ignores_case_whitespace_and_punctuation():
     assert find_dropped_questions("<p>Can I return it？</p>", source) == []
 
 
-def test_question_headings_terms_and_buttons_need_a_question_mark_but_summary_does_not():
+def test_question_headings_terms_buttons_and_summaries_need_a_question_ending():
     source = "<h2>Shipping?</h2><dt>Refunds？</dt><button>Is it waterproof?</button><h3>About us</h3><button>Buy</button><details><summary>Warranty</summary></details>"
     asked = [finding.split("'")[1] for finding in find_dropped_questions("<p>x</p>", source)]
-    assert asked == ["Shipping?", "Refunds?", "Is it waterproof?", "Warranty"]
+    assert asked == ["Shipping?", "Refunds?", "Is it waterproof?"]
 
 
 def test_repeated_question_is_reported_once_and_script_questions_are_ignored():
@@ -100,3 +100,39 @@ def test_helper_is_inert_above_medium_and_for_created_pages():
     for level in ("high", "ultra", "madmax"):
         assert _dropped_quantity_findings(page, "<p>x</p>", level) == []
     assert _dropped_quantity_findings(_page(page.html, created=True), "<p>x</p>", "low") == []
+
+
+def test_hangul_after_unit_counts_only_for_particles():
+    assert _keys("3개를 10분간 11W의 5명이 1,000원에 3시간대") == [("3", "개"), ("10", "분"), ("11", "W"), ("5", "명"), ("1000", "원"), ("3", "시간")]
+    assert _keys("1분기 3 원칙 USB 3.0 A타입 3개국") == []
+
+
+def test_minutes_after_hour_are_not_quantities():
+    assert find_dropped_quantities("<p>14:30</p>", "<p>14시 30분</p>") == []
+    assert _keys("14시 30분") == []
+    assert _keys("수원시 30분 거리") == [("30", "분")]
+
+
+def test_spaced_single_letter_unit_after_latin_word_is_not_a_quantity():
+    assert _keys("Plan 2 V") == []
+    assert _keys("최대 소비전력 11 W") == [("11", "W")]
+    assert _keys("Power: 11 W and 11W") == [("11", "W"), ("11", "W")]
+
+
+def test_summary_without_question_ending_is_not_a_question():
+    assert find_dropped_questions("<p>x</p>", "<details><summary>더 보기</summary><p>내용</p></details>") == []
+    assert find_dropped_questions("<p>x</p>", "<details><summary>Show more</summary></details>") == []
+    findings = find_dropped_questions("<p>x</p>", "<details><summary>배송은 얼마나 걸리나요</summary><p>2일</p></details>")
+    assert len(findings) == 1
+    assert "배송은 얼마나 걸리나요" in findings[0]
+
+
+def test_dt_with_omitted_end_tag_does_not_merge_with_next_term():
+    findings = find_dropped_questions("<p>x</p>", "<dl><dt>Q1?<dt>Q2?<dd>A</dl>")
+    assert [finding.split("'")[1] for finding in findings] == ["Q1?", "Q2?"]
+
+
+def test_source_only_skip_rules_leave_page_extraction_lenient():
+    assert find_dropped_quantities("<p>최대 30%할인</p>", "<p>최대 30% 할인</p>") == []
+    assert find_dropped_quantities("<p>AC 220 V</p>", "<p>220V</p>") == []
+    assert find_dropped_quantities("<p>2시간마다</p>", "<p>2시간</p>") == []
