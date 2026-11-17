@@ -35,7 +35,6 @@ COPIED_INPUTS = {
 }
 OVERRIDES = [
     (r'(\n  directory: )"[^"]*"', None),
-    (r"(\n  max_iterations: )\S+", "3"),
     (r"(\n  evaluation_threshold: )\S+", "10.1"),
     (r"(\n  termination:\n    enabled: )\S+", "true"),
     (r"(\n    patience: )\S+", "0"),
@@ -43,8 +42,8 @@ OVERRIDES = [
 ]
 
 
-def bench_config(text: str, input_dir: Path, mode: str = "rewrite") -> str:
-    for pattern, value in OVERRIDES:
+def bench_config(text: str, input_dir: Path, mode: str = "rewrite", iterations: int = 3) -> str:
+    for pattern, value in [(r"(\n  max_iterations: )\S+", str(iterations)), *OVERRIDES]:
         value = value or f'"{input_dir.as_posix()}"'
         text, count = re.subn(pattern, lambda m: m.group(1) + value, text, count=1)
         if count != 1:
@@ -73,7 +72,7 @@ def input_path(log_dir: Path, sample: str) -> Path:
     return SAMPLES[sample] or log_dir / f"{sample}_input"
 
 
-def check(names: list[str], modes: list[str], log_dir: Path) -> None:
+def check(names: list[str], modes: list[str], log_dir: Path, iterations: int = 3) -> None:
     sys.path.insert(0, str(ROOT / "src"))
     from wra.core.config import load_raw
     from wra.core.models import WRAConfig
@@ -93,11 +92,11 @@ def check(names: list[str], modes: list[str], log_dir: Path) -> None:
                 if not source.is_file():
                     errors.append(f"{name}: source file missing: {source}")
         for mode in modes:
-            text = bench_config(original, input_dir, mode)
+            text = bench_config(original, input_dir, mode, iterations)
             config = WRAConfig.model_validate(load_raw(overrides={"config.yaml": yaml.safe_load(text), "models.yaml": models}))
             pipeline = config.pipeline
             termination = pipeline.termination
-            if pipeline.max_iterations != 3:
+            if pipeline.max_iterations != iterations:
                 errors.append(f"{name}/{mode}: max_iterations={pipeline.max_iterations}")
             if config.content.freedom != "madmax":
                 errors.append(f"{name}/{mode}: freedom={config.content.freedom}")
@@ -180,11 +179,12 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("samples", nargs="*")
     parser.add_argument("--mode", choices=("rewrite", "refine"), default="rewrite")
     parser.add_argument("--check", action="store_true")
+    parser.add_argument("--iterations", type=int, default=3)
     args = parser.parse_args(argv)
     log_dir = args.log_dir.resolve()
     names = args.samples or list(SAMPLES)
     if args.check:
-        check(names, ["rewrite", "refine"], log_dir)
+        check(names, ["rewrite", "refine"], log_dir, args.iterations)
         return
     log_dir.mkdir(parents=True, exist_ok=True)
     write_bench_meta(log_dir, args.mode, names)
@@ -203,7 +203,7 @@ def main(argv: list[str] | None = None) -> None:
                     with open(log_dir / "wait.log", "a", encoding="utf-8") as log:
                         log.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')}\t{name}\tfailed_probes={failed}\twaited={waited:.0f}s\n")
             input_dir = SAMPLES[name] or copied_input(log_dir, name)
-            CONFIG.write_text(bench_config(original, input_dir, args.mode), encoding="utf-8")
+            CONFIG.write_text(bench_config(original, input_dir, args.mode, args.iterations), encoding="utf-8")
             before = set((ROOT / "output").glob("run_*"))
             start = time.time()
             with open(log_dir / f"run_{name}.out", "w", encoding="utf-8") as out:
