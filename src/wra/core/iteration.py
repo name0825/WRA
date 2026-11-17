@@ -14,6 +14,7 @@ from wra.validator.browser_errors import find_browser_errors
 from wra.validator.claims import find_unsupported_claims
 from wra.validator.craft import find_refinable_craft_defects
 from wra.validator.dates import find_dropped_dates
+from wra.validator.names import find_misnamed_people
 from wra.validator.facts import find_missing_business_facts
 from wra.validator.forms import find_invented_forms
 from wra.validator.html import HTMLValidationResult, validate_html
@@ -85,6 +86,10 @@ def _brief_fact_findings(page: PreparedPage, html: str) -> list[str]:
 
 def _dropped_date_findings(page: PreparedPage, html: str) -> list[str]:
     return [] if page.created else find_dropped_dates(html, page.html)
+
+
+def _misnamed_person_findings(page: PreparedPage, html: str) -> list[str]:
+    return [] if page.created else find_misnamed_people(html, page.html, page.features.model_dump_json())
 
 
 def _invented_form_findings(page: PreparedPage, html: str) -> list[str]:
@@ -256,7 +261,7 @@ class IterationEngine:
         if self._refines(state):
             logger.info("Current task: refining the best page (score=%.2f)", previous_result.evaluation.overall_score)
             try:
-                html = self._refiner.refine(features, previous_result.html, previous_result.evaluation, design_spec=previous_result.design_spec, content_findings=find_corrupted_tokens(previous_result.html, features, content_freedom=self._config.content.freedom) + find_unsupported_claims(previous_result.html, features) + _dropped_date_findings(state.page, previous_result.html),ux_findings=find_broken_anchors(previous_result.html) + find_browser_errors(previous_result.browser) + find_syntax_defects(previous_result.html) + _brief_fact_findings(state.page, previous_result.html) + _invented_form_findings(state.page, previous_result.html) +find_refinable_craft_defects(previous_result.html, features) + find_refinable_browser_defects(previous_result.browser), visual_findings=find_visual_defects(previous_result.html, features, previous_result.browser) + previous_result.visual_inspection_findings, model=refiner_model.name, think=refiner_model.think, timeout=refiner_model.timeout, asset_root=output_manager.run_dir, regressions=(state.setback or {}).get("regressions"))
+                html = self._refiner.refine(features, previous_result.html, previous_result.evaluation, design_spec=previous_result.design_spec, content_findings=find_corrupted_tokens(previous_result.html, features, content_freedom=self._config.content.freedom) + find_unsupported_claims(previous_result.html, features) + _dropped_date_findings(state.page, previous_result.html) + _misnamed_person_findings(state.page, previous_result.html),ux_findings=find_broken_anchors(previous_result.html) + find_browser_errors(previous_result.browser) + find_syntax_defects(previous_result.html) + _brief_fact_findings(state.page, previous_result.html) + _invented_form_findings(state.page, previous_result.html) +find_refinable_craft_defects(previous_result.html, features) + find_refinable_browser_defects(previous_result.browser), visual_findings=find_visual_defects(previous_result.html, features, previous_result.browser) + previous_result.visual_inspection_findings, model=refiner_model.name, think=refiner_model.think, timeout=refiner_model.timeout, asset_root=output_manager.run_dir, regressions=(state.setback or {}).get("regressions"))
                 route = "refine"
             except Exception as exc:
                 # A refinement that will not come out valid is not worth an
@@ -293,7 +298,7 @@ class IterationEngine:
                     logger.info("Current task: visual inspection")
                     inspection_findings = self._visual_inspector.inspect(browser_result, html, model=evaluator_model.name, think=evaluator_model.think, timeout=evaluator_model.timeout)
                 logger.info("Current task: LLM evaluation")
-                evaluation = self._evaluator.evaluate(features, design_spec, html, browser_result=browser_result, content_findings=find_corrupted_tokens(html, features, content_freedom=self._config.content.freedom) + find_unsupported_claims(html, features) + _dropped_date_findings(state.page, html),ux_findings=find_broken_anchors(html) + find_browser_errors(browser_result) + find_syntax_defects(html) + _brief_fact_findings(state.page, html) + _invented_form_findings(state.page, html), visual_findings=find_visual_defects(html, features, browser_result) + inspection_findings, model=evaluator_model.name, think=evaluator_model.think, timeout=evaluator_model.timeout)
+                evaluation = self._evaluator.evaluate(features, design_spec, html, browser_result=browser_result, content_findings=find_corrupted_tokens(html, features, content_freedom=self._config.content.freedom) + find_unsupported_claims(html, features) + _dropped_date_findings(state.page, html) + _misnamed_person_findings(state.page, html),ux_findings=find_broken_anchors(html) + find_browser_errors(browser_result) + find_syntax_defects(html) + _brief_fact_findings(state.page, html) + _invented_form_findings(state.page, html), visual_findings=find_visual_defects(html, features, browser_result) + inspection_findings, model=evaluator_model.name, think=evaluator_model.think, timeout=evaluator_model.timeout)
             except Exception as exc:
                 logger.exception("Evaluation failed for iteration %d, page '%s'", iteration, slug)
                 evaluation_error = exc

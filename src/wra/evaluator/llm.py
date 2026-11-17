@@ -18,6 +18,7 @@ from wra.llm.schema import bound_strings
 from wra.evaluator.screenshots import MIN_SCREENSHOT_PIXELS, PIXELS_PER_IMAGE_TOKEN, fit_screenshots, screenshot_pixels
 from wra.evaluator.visual_check import CAPPED_DEFECT_KINDS, VISUAL_INSPECTION_PREFIX
 from wra.validator.dates import DROPPED_DATE_PREFIX, date_is_present, date_keys, without_dates
+from wra.validator.names import FULL_NAME as _FULL_NAME, MISNAMED_PERSON_PREFIX
 from wra.validator.tokens import extract_visible_text, normalize_for_match
 from wra.validator.visual import BROKEN_IMAGE_PREFIX, CLIPPED_TABLE_PREFIX, EXPOSED_MARKUP_PREFIX, IMAGES_DROPPED_PREFIX, IMAGES_MISSING_PREFIX, LOW_CONTRAST_PREFIX, OVERFLOW_PREFIX, RENDER_COLLAPSE_PREFIX, STUCK_REVEAL_PREFIX, UNSTYLED_PREFIX, find_broken_image_markup
 
@@ -179,11 +180,9 @@ _REWORDING_MAX_SIMILARITY = 0.7
 _REWORDING_MIN_WORDS = 3
 _REWORDING_MIN_SHARED_STEMS = 0.3
 _STEM_LENGTH = 2
-_SURNAME = "[김이박최정강조윤장임한오서신권황안송류전홍고문양손배백허유남심노하곽차민]"
 _TITLE = "(?:대표이사|대표자|대표|사장|원장|이사|팀장|실장|부장|과장|소장|회장|교수|박사|선생)"
 _PARTICLE = "(?:이|가|은|는|의|께서|와|과|을|를|도|에게)"
 _LONE_SURNAME = "[김박최윤임권황송류홍허곽]"
-_FULL_NAME = _SURNAME + "[가-힣](?![의한된운적과와로를을에도회주점급껏히는면은])[가-힣]"
 _NOT_PRODUCT_WORD = r"(?!\s+(?:메뉴|상품|브랜드|제품|서비스|맛집|업체|센터))"
 _NAME_AFTER_LABEL = re.compile(rf"{_TITLE}\s*[:：]\s*({_FULL_NAME})(?![가-힣])")
 _WEAK_NAME_FORMS = (
@@ -434,7 +433,7 @@ def _enforce_factual_caps(parsed: dict, content_findings: list[str]) -> None:
 
     Runs after the content gate so lifting cannot undo it. Only lowers scores.
     """
-    dropped_dates = [finding for finding in content_findings if finding.startswith(DROPPED_DATE_PREFIX)]
+    dropped_dates = [finding for finding in content_findings if finding.startswith((DROPPED_DATE_PREFIX, MISNAMED_PERSON_PREFIX))]
     if dropped_dates:
         _apply_dimension_cap(parsed, "content_preservation", _FACTUAL_ACCURACY_SCORE_CAP, "Factual accuracy cap: " + "; ".join(dropped_dates))
         return

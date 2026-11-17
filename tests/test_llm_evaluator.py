@@ -1421,6 +1421,15 @@ def test_dropped_date_finding_caps_content_preservation_in_code(tmp_path):
     assert "2026.08" in result.content_preservation.feedback
 
 
+def test_misnamed_person_finding_caps_content_preservation_in_code(tmp_path):
+    evaluator = _evaluator_with_payload(tmp_path, _payload_with(content_preservation={"score": 10, "feedback": ""}))
+
+    result = evaluator.evaluate(FeatureModel(), make_spec(), "<html></html>", content_findings=["misnamed person: '이민재' (source names: 'MinJae Park')"])
+
+    assert result.content_preservation.score == 4.0
+    assert "이민재" in result.content_preservation.feedback
+
+
 def test_remaining_altered_defect_that_loses_a_source_date_caps_content_preservation(tmp_path):
     evaluator = _gated_evaluator(tmp_path, [{"kind": "altered", "source_text": "2026.08 Paper accepted", "rendered_text": "Paper accepted"}], cp_score=8.0)
 
