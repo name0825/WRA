@@ -17,6 +17,7 @@ from wra.llm.response import normalize_json_response
 from wra.llm.schema import bound_strings
 from wra.evaluator.screenshots import MIN_SCREENSHOT_PIXELS, PIXELS_PER_IMAGE_TOKEN, fit_screenshots, screenshot_pixels
 from wra.evaluator.visual_check import CAPPED_DEFECT_KINDS, VISUAL_INSPECTION_PREFIX
+from wra.validator.dates import DROPPED_DATE_PREFIX, date_is_present, date_keys, without_dates
 from wra.validator.tokens import extract_visible_text, normalize_for_match
 from wra.validator.visual import BROKEN_IMAGE_PREFIX, CLIPPED_TABLE_PREFIX, EXPOSED_MARKUP_PREFIX, IMAGES_DROPPED_PREFIX, IMAGES_MISSING_PREFIX, LOW_CONTRAST_PREFIX, OVERFLOW_PREFIX, RENDER_COLLAPSE_PREFIX, STUCK_REVEAL_PREFIX, UNSTYLED_PREFIX, find_broken_image_markup
 
@@ -49,6 +50,11 @@ _EVALUATOR_CHARS_PER_TOKEN = 3.0
 _MAX_FAILURE_CHARS = 2000
 _MIN_MISSING_SOURCE_LENGTH = 6
 _CONTENT_GATE_LIFTED_SCORE = 9.0
+_FACTUAL_ACCURACY_SCORE_CAP = 4.0
+_NUMBER_RE = re.compile(r"\d+")
+_THOUSANDS_COMMA = re.compile(r"(?<=\d),(?=\d)")
+_TRAILING_ELLIPSIS = re.compile(r"(?:\s*(?:\.{3}|…))+\s*$")
+_PUNCTUATION = re.compile(r"[^\w]")
 
 
 def _drop_in_page_anchor_hrefs(feature_model_dump: dict) -> dict:
@@ -322,7 +328,17 @@ def _is_pure_rewording(source_text: str, rendered_text: str) -> bool:
     return SequenceMatcher(None, source_text, rendered_text).ratio() < _REWORDING_MAX_SIMILARITY
 
 
-def _refute_content_defect(defect: dict, visible_text: str, shown_text: str, content_freedom: str) -> bool:
+def _feature_strings(value) -> list[str]:
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, dict):
+        value = list(value.values())
+    if isinstance(value, list):
+        return [text for item in value for text in _feature_strings(item)]
+    return []
+
+
+def _refute_content_defect(defect: dict, visible_text: str, shown_text: str, content_freedom: str, source_haystack: str = "") -> bool:
     """True if `defect`'s claim does not hold against the page's rendered text.
 
     At freedom levels that permit rewriting, an `altered` defect is also refuted when
@@ -337,17 +353,20 @@ def _refute_content_defect(defect: dict, visible_text: str, shown_text: str, con
     source_text = normalize_for_match(raw_source_text)
     rendered_text = normalize_for_match(str(defect.get("rendered_text") or ""))
     if kind == "missing":
-        return len(source_text) >= _MIN_MISSING_SOURCE_LENGTH and source_text in shown_text
+        source_text = _PUNCTUATION.sub("", normalize_for_match(_TRAILING_ELLIPSIS.sub("", _ORDINAL_PREFIX.sub("", raw_source_text))))
+        return len(source_text) >= _MIN_MISSING_SOURCE_LENGTH and source_text in _PUNCTUATION.sub("", shown_text)
     if kind == "altered":
         if not rendered_text or rendered_text == source_text or rendered_text not in visible_text:
             return True
         if rendered_text == normalize_for_match(_ORDINAL_PREFIX.sub("", raw_source_text)):
             return True
         return content_freedom in _REWORDING_GATE_LEVELS and _is_pure_rewording(raw_source_text, str(defect.get("rendered_text") or ""))
+    if kind == "invented":
+        return not rendered_text or rendered_text not in visible_text or rendered_text in source_haystack
     return False
 
 
-def _verify_content_gate(parsed: dict, html: str, content_findings: list[str], content_freedom: str) -> None:
+def _verify_content_gate(parsed: dict, html: str, content_findings: list[str], content_freedom: str, source_haystack: str = "") -> None:
     """Lift a gated `content_preservation` score whose cited defects are not on the page.
 
     Refuted entries are always dropped from `content_defects`; the score
@@ -370,7 +389,7 @@ def _verify_content_gate(parsed: dict, html: str, content_findings: list[str], c
     shown_text = normalize_for_match(_extract_shown_text(html))
     remaining, refuted = [], []
     for defect in defects:
-        if isinstance(defect, dict) and _refute_content_defect(defect, visible_text, shown_text, content_freedom):
+        if isinstance(defect, dict) and _refute_content_defect(defect, visible_text, shown_text, content_freedom, source_haystack):
             refuted.append(defect)
         else:
             remaining.append(defect)
@@ -398,6 +417,39 @@ def _verify_content_gate(parsed: dict, html: str, content_findings: list[str], c
     entry["score"] = _CONTENT_GATE_LIFTED_SCORE
     entry["feedback"] = note
     logger.warning("Content gate lifted: %s %s", note, refuted)
+
+
+def _fact_tokens_lost(source_text: str, rendered_text: str) -> bool:
+    """True if a date or number in `source_text` is absent from `rendered_text`."""
+    rendered_dates = date_keys(rendered_text)
+    if any(not date_is_present(key, rendered_dates) for key in date_keys(source_text)):
+        return True
+    source_numbers = set(_NUMBER_RE.findall(_THOUSANDS_COMMA.sub("", without_dates(_ORDINAL_PREFIX.sub("", source_text)))))
+    rendered_numbers = set(_NUMBER_RE.findall(_THOUSANDS_COMMA.sub("", without_dates(rendered_text))))
+    return not source_numbers <= rendered_numbers
+
+
+def _enforce_factual_caps(parsed: dict, content_findings: list[str]) -> None:
+    """Cap `content_preservation` in code when a source date or number is provably gone.
+
+    Runs after the content gate so lifting cannot undo it. Only lowers scores.
+    """
+    dropped_dates = [finding for finding in content_findings if finding.startswith(DROPPED_DATE_PREFIX)]
+    if dropped_dates:
+        _apply_dimension_cap(parsed, "content_preservation", _FACTUAL_ACCURACY_SCORE_CAP, "Factual accuracy cap: " + "; ".join(dropped_dates))
+        return
+    entry = parsed.get("content_preservation")
+    score = entry.get("score") if isinstance(entry, dict) else None
+    if not isinstance(score, (int, float)) or isinstance(score, bool):
+        return
+    for defect in parsed.get("content_defects") or []:
+        if not isinstance(defect, dict) or defect.get("kind") not in ("altered", "invented"):
+            continue
+        source_text = str(defect.get("source_text") or "")
+        if source_text and _fact_tokens_lost(source_text, str(defect.get("rendered_text") or "")):
+            note = f"Factual accuracy cap: a date or number from the source is missing from the rendered text ('{source_text[:60]}')."
+            _apply_dimension_cap(parsed, "content_preservation", _FACTUAL_ACCURACY_SCORE_CAP, note)
+            return
 
 
 def _drop_refuted_claims(parsed: dict, html: str, browser_result: BrowserEvaluationResult | None, visual_findings: list[str]) -> None:
@@ -531,7 +583,7 @@ class LLMEvaluator:
             "\n\nAt this freedom level `content_preservation` does not average into the overall score; it caps it. "
             f"A score below {CONTENT_GATE_THRESHOLD:.0f} becomes the page's overall score no matter how well it is "
             "designed. Score it as a judgement on whether the page is still about the same subject, states the "
-            "source's facts correctly, and invents no external assets - not on how much source wording survived."
+            "source's facts correctly, and invents no external assets or checkable facts - not on how much source wording survived."
         )
 
     def evaluate(self, features: FeatureModel, design_spec: DesignSpec, html: str, browser_result: BrowserEvaluationResult | None = None, content_findings: list[str] | None = None, ux_findings: list[str] | None = None, visual_findings: list[str] | None = None, model: str | None = None, think: bool | None = None, timeout: float | None = None) -> EvaluationResult:
@@ -590,7 +642,8 @@ class LLMEvaluator:
                     # The level is the pipeline's, not the model's to report.
                     parsed["content_freedom"] = self._content_freedom
                     _apply_deterministic_caps(parsed, ux_findings or [], visual_findings or [])
-                    _verify_content_gate(parsed, html, content_findings or [], self._content_freedom)
+                    _verify_content_gate(parsed, html, content_findings or [], self._content_freedom, normalize_for_match(" ".join(_feature_strings(features.model_dump(mode="json")))))
+                    _enforce_factual_caps(parsed, content_findings or [])
                     _drop_refuted_claims(parsed, html, browser_result, visual_findings or [])
                 result = EvaluationResult.model_validate(parsed)
             except LLMTransportError:

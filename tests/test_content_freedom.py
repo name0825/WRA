@@ -107,8 +107,8 @@ def test_every_freedom_level_has_a_complete_policy() -> None:
 _LOWER_LEVEL_POLICY_DIGESTS = {
     "low": "5d9de786cc1fd2f5",
     "medium": "1a5c0ba631c463a1",
-    "high": "4a06dac0811798c0",
-    "ultra": "66577aa61e5b0c2a",
+    "high": "6680745d94741a92",
+    "ultra": "4659077038003326",
 }
 
 

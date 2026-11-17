@@ -132,7 +132,9 @@ ContentFreedom = Literal["low", "medium", "high", "ultra", "madmax"]
 # restated incorrectly.
 FACTUAL_ACCURACY_RULE = (
     "Every date, number, proper noun, and the pairing between them must match the Feature Model "
-    "wherever it appears. Freedom to rewrite is never freedom to restate a fact incorrectly."
+    "wherever it appears. Freedom to rewrite is never freedom to restate a fact incorrectly, "
+    "and never freedom to add a checkable fact the Feature Model lacks (a number, year, certification, "
+    "partner or client name, price, statistic, or person's name)."
 )
 # Freedom to write new content is not freedom to switch the page's language:
 # an audience that reads the source reads the replacement.
@@ -144,7 +146,9 @@ SOURCE_LANGUAGE_RULE = (
 )
 FACTUAL_ACCURACY_CAP = (
     "Cap this dimension at 4 when a date, number, proper noun, or the pairing between them "
-    "differs from the Feature Model, at any freedom level."
+    "differs from the Feature Model (including an item shown without the date it is paired with), "
+    "at any freedom level. Cap it at 6 when the page states a checkable fact the Feature Model lacks "
+    "(certification, partner or client, year, statistic, price, person's name), at any freedom level."
 )
 
 CONTENT_FREEDOM_POLICIES: dict[str, dict[str, str]] = {
@@ -161,17 +165,17 @@ CONTENT_FREEDOM_POLICIES: dict[str, dict[str, str]] = {
     "high": {
         "authoring": "Use the source content as the basis of the page. You may rewrite, reorder, drop weak content, and add new content that fits the site's purpose. Keep the site's subject, identity, and factual claims intact, and do not invent external URLs or assets.",
         "planning": "Use the Feature Model as the basis. Not every supplied collection has to be placed, and sections may be added when the site's purpose calls for them.",
-        "evaluation": "Judge content_preservation as intent-level fidelity: rewriting, dropping, and adding content are expected; only a lost subject, a contradicted fact, or invented external assets are defects.",
+        "evaluation": "Judge content_preservation as intent-level fidelity: rewriting, dropping, and adding content are expected; only a lost subject, a contradicted fact, an invented checkable fact (certification, partner or client, year, statistic, price, person's name), or invented external assets are defects.",
     },
     "ultra": {
         "authoring": "Treat the source content as reference material. Add, remove, and rewrite freely to produce the strongest page for this subject. Do not invent external URLs or assets, and do not contradict facts the Feature Model states.",
         "planning": "Treat the Feature Model as reference material. Structure the page however best serves the subject.",
-        "evaluation": "Judge content_preservation as subject-level fidelity only: the page must still be about the same subject and must not contradict stated facts or invent external assets.",
+        "evaluation": "Judge content_preservation as subject-level fidelity only: the page must still be about the same subject and must not contradict stated facts, invent checkable facts (certification, partner or client, year, statistic, price, person's name), or invent external assets.",
     },
     "madmax": {
         "authoring": "Write this page as an author, not as a transcriber. Rewrite every heading and every line of prose in your own words, cut whatever is weak, and write substantial copy the source never contained: an opening statement, section introductions, explanatory text that makes the subject legible to a first-time reader, and calls to action the source lacks. Reproducing the source's wording or echoing its section order is a failure at this level. At this level only, these defaults are lifted: `requirements.must_preserve` is advisory rather than required, source strings need not be reproduced, and writing content the Feature Model does not contain is expected rather than fabrication. Rewriting is never translating: a string the Feature Model gives in one language must not reappear in another, and where the source mixes languages, keep each part in the language the source used and write your new copy in the language of the content it accompanies. The fixed points are the subject's identity and its factual record: dates, numbers, proper names, contact values, and URLs must appear exactly as the Feature Model states them wherever you use them, and no external URL or asset may be invented. Qualitative content is yours to add: strengths, feature bullets, process steps, quality and service claims the Feature Model does not make (quality assurance, reliable supply, fast and accurate handling, superlatives such as 최고), icon suggestions, and a contact form drawn as UI. A checkable fact the Feature Model lacks (a number, date, year, opening hours or holidays, certification, client name, price, or statistic) and a bracket placeholder such as [대표자명] are never allowed, nor are offers or terms the Feature Model does not make (free, discounts, lowest price, rankings), place names it lacks, or notes to yourself such as (Based on text). The contact values the Feature Model holds (`business.phone`, `business.email`, `business.address`, `business.business_information`) must be rendered in a contact section or the footer. A form is only an honest hand-off: a `mailto:` action using the supplied email, or fields shown beside the real phone and email. It must never run a script or show a message claiming the enquiry was sent (no alert('접수되었습니다'), no success banner) unless a backend is supplied.",
         "planning": "Plan the page an author would want for this subject, not a rearrangement of the Feature Model. Plan sections the source does not contain, and do not mirror its section order. The Feature Model is one input among your own ideas, and `requirements.must_preserve` does not bind the plan. Qualitative sections, quality and service claims, icons, and a contact form drawn as UI are allowed; checkable facts the Feature Model lacks, bracket placeholders, offers it does not make, and place names it lacks are not. When the Feature Model carries several headed blocks, prefer a section for each within the planner's 12-section budget, including hero and contact/footer sections. When blocks exceed the available slots, group related headed blocks within sections, retaining every heading's block; never silently drop blocks to meet the budget. Plan a contact section or footer that carries the contact values the Feature Model holds, and a form that never fakes a successful submission.",
-        "evaluation": "Judge content_preservation as identity-level fidelity only: invented sections and wholly new copy are the point and are not defects, and closely reproduced source wording earns no credit here. Quality and service claims the Feature Model does not make (quality assurance, reliable supply, superlatives without a number or ranking) are allowed copy, not defects. Only a lost subject identity, a misstated fact, or an invented external asset is a defect.",
+        "evaluation": "Judge content_preservation as identity-level fidelity only: invented sections and wholly new copy are the point and are not defects, and closely reproduced source wording earns no credit here. Quality and service claims the Feature Model does not make (quality assurance, reliable supply, superlatives without a number or ranking) are allowed copy, not defects. Only a lost subject identity, a misstated fact (a name shown as a different name or in another script, an item shown without the date the source pairs it with), an invented checkable fact (a number, date, year, certification or accreditation, partner, client or manufacturer relationship, claimed reach, price, statistic, or person's name), or an invented external asset is a defect. Headings, feature bullets, benefit phrasing, and calls to action are not.",
     },
 }
 
@@ -684,12 +688,12 @@ class EvaluationDimension(BaseModel):
 
 
 class ContentDefect(BaseModel):
-    """A specific date, number, proper noun, or item cited as missing or altered.
+    """A specific date, number, proper noun, or item cited as missing, altered, or invented.
 
     Backs a lowered `content_preservation` score with a checkable claim, so it can
     be verified against the rendered page instead of trusted outright.
     """
-    kind: Literal["missing", "altered"]
+    kind: Literal["missing", "altered", "invented"]
     source_text: str = ""
     rendered_text: str = ""
 

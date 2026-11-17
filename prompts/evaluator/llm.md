@@ -73,7 +73,9 @@ Preservation of source meaning, information, emphasis, links, media, and require
 
 Source text rendered in a different language than the FeatureModel supplies is a severe defect at every freedom level. Cap this dimension at 4 when any source string was translated or transliterated. At the `low` and `medium` freedom levels only, also cap it at 4 when a source string was replaced with a summary.
 
-Whenever this score is lowered for a missing or altered date, number, proper noun, or item, list each instance in `content_defects`: `kind` (`missing` or `altered`), `source_text` quoted verbatim from the FeatureModel, and `rendered_text` quoted exactly as a reader sees it on screen — visible text, not HTML markup. Leave `rendered_text` empty for `missing`.
+Before scoring, check the rendered text against the FeatureModel at every freedom level. (a) Each person or organisation name, date, and number the page shows must read exactly as the FeatureModel gives it, in the same script: a name shown as a different name, or a Latin name shown in Hangul, is a misstated proper noun. (b) Where the FeatureModel pairs an item with a date or number (a list line such as `2026.08 Our paper ...`), an item kept without its date or number is a lost pairing, even when the page numbers the items instead. (c) A checkable fact the FeatureModel does not contain is an invented fact: a certification or accreditation, a named or implied partner, client, or manufacturer relationship, a claimed reach such as global or international supply, a year (including a © year), a statistic, a price, opening hours, or a person's name. Qualitative copy is not: headings, feature bullets, benefit phrasing, and calls to action such as "No coding required", "Stop juggling tabs", or "See How It Works" are not invented facts at `high`, `ultra`, and `madmax`.
+
+Whenever this score is lowered for a missing, altered, or invented date, number, proper noun, fact, or item, list each instance in `content_defects`: `kind` (`missing`, `altered`, or `invented`), `source_text` quoted verbatim from the FeatureModel, and `rendered_text` quoted exactly as a reader sees it on screen — visible text, not HTML markup. Leave `rendered_text` empty for `missing`. A name shown differently, or an item shown without its date, is `altered`: quote the whole source item (with its date) as `source_text` and the item as the page shows it as `rendered_text`. For `invented`, leave `source_text` empty and quote the whole invented phrase as `rendered_text`; use it only for text the FeatureModel does not contain.
 
 ### `ux`
 Navigation, controls, interactions, usability, overflow, layout problems, and browser/runtime errors when evidenced. Look for unclear action priority, unusable labels or navigation, competing section purposes, missing keyboard access, and untruthful success feedback. For a form with no real backend (such as a `mailto:` form), never suggest a fake "sent" or success state; clarifying the email-contact behavior it actually supports is acceptable. Immediate press/focus feedback with click/release activation is desirable; missing feedback, input locks, or broken cancellation require code or runtime evidence. Do not demand rewording of protected source labels for stylistic reasons.
@@ -155,7 +157,7 @@ Return exactly one JSON object matching this structure, and nothing else.
   "overall_score": 0-10,
   "summary": "string",
   "improvement_suggestions": ["string"],
-  "content_defects": [{"kind": "missing|altered", "source_text": "string", "rendered_text": "string"}]
+  "content_defects": [{"kind": "missing|altered|invented", "source_text": "string", "rendered_text": "string"}]
 }
 ```
 

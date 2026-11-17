@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 
 from wra.browser.models import BrowserEvaluationResult, BrowserViewportResult
-from wra.core.models import FeatureModel
+from wra.core.models import Content, FeatureModel
 from wra.designer.schema import (
     ColorSystem,
     ComponentSpec,
@@ -574,6 +574,27 @@ def test_content_gate_lifted_when_cited_missing_item_is_actually_present(tmp_pat
     assert result.content_defects == []
 
 
+def test_content_gate_lifted_when_invented_fact_is_in_the_feature_model(tmp_path):
+    evaluator = _gated_evaluator(tmp_path, [{"kind": "invented", "rendered_text": "Founded in 2026"}])
+    features = FeatureModel(content=Content(paragraphs=["Founded in 2026 by two friends"]))
+
+    result = evaluator.evaluate(features, make_spec(), "<p>Founded in 2026</p>")
+
+    assert result.content_preservation.score == 9.0
+    assert result.content_defects == []
+
+
+def test_content_gate_stays_when_invented_fact_is_on_page_and_not_in_the_feature_model(tmp_path):
+    evaluator = _gated_evaluator(tmp_path, [{"kind": "invented", "rendered_text": "ISO 9001 certified"}])
+    features = FeatureModel(content=Content(paragraphs=["We make valves"]))
+
+    result = evaluator.evaluate(features, make_spec(), "<p>ISO 9001 certified</p>")
+
+    assert result.content_preservation.score == 4.0
+    assert len(result.content_defects) == 1
+    assert result.content_defects[0].kind == "invented"
+
+
 @pytest.mark.parametrize("cp_score", [8.0, 10.0])
 def test_high_content_score_filters_refuted_missing_claim_without_changing_score(tmp_path, cp_score):
     evaluator = _gated_evaluator(tmp_path, [{"kind": "missing", "source_text": "제 3회 청소년 ICT창업가 캠프"}], cp_score=cp_score)
@@ -588,16 +609,16 @@ def test_high_content_score_filters_refuted_missing_claim_without_changing_score
 def test_high_content_score_filters_only_refuted_defects(tmp_path):
     defects = [
         {"kind": "missing", "source_text": "제 3회 청소년 ICT창업가 캠프"},
-        {"kind": "altered", "source_text": "2027", "rendered_text": "202tr"},
+        {"kind": "altered", "source_text": "ICT캠프", "rendered_text": "ICT캠푸"},
     ]
     evaluator = _gated_evaluator(tmp_path, defects, cp_score=8.0)
 
-    result = evaluator.evaluate(FeatureModel(), make_spec(), "<p>제 3회 청소년 ICT창업가 캠프 202tr</p>")
+    result = evaluator.evaluate(FeatureModel(), make_spec(), "<p>제 3회 청소년 ICT창업가 캠프 ICT캠푸</p>")
 
     assert result.content_preservation.score == 8.0
     assert result.content_preservation.feedback == "content_preservation feedback"
     assert len(result.content_defects) == 1
-    assert result.content_defects[0].source_text == "2027"
+    assert result.content_defects[0].source_text == "ICT캠프"
 
 
 def test_content_gate_stays_for_confirmed_alterations(tmp_path):
@@ -1389,3 +1410,63 @@ def test_stuck_reveal_finding_caps_visual_hierarchy_and_readability_by_count(tmp
     assert run(1) == (8.0, 8.0)
     assert run(2) == (7.0, 7.0)
     assert run(28) == (6.0, 6.0)
+
+
+def test_dropped_date_finding_caps_content_preservation_in_code(tmp_path):
+    evaluator = _evaluator_with_payload(tmp_path, _payload_with(content_preservation={"score": 10, "feedback": ""}))
+
+    result = evaluator.evaluate(FeatureModel(), make_spec(), "<html></html>", content_findings=["dropped source date: '2026.08' appears 1 time(s) in the source but 0 in the page"])
+
+    assert result.content_preservation.score == 4.0
+    assert "2026.08" in result.content_preservation.feedback
+
+
+def test_remaining_altered_defect_that_loses_a_source_date_caps_content_preservation(tmp_path):
+    evaluator = _gated_evaluator(tmp_path, [{"kind": "altered", "source_text": "2026.08 Paper accepted", "rendered_text": "Paper accepted"}], cp_score=8.0)
+
+    result = evaluator.evaluate(FeatureModel(), make_spec(), "<p>Paper accepted</p>")
+
+    assert result.content_preservation.score == 4.0
+    assert len(result.content_defects) == 1
+
+
+def test_altered_defect_with_the_same_numbers_on_both_sides_is_not_capped(tmp_path):
+    evaluator = _gated_evaluator(tmp_path, [{"kind": "altered", "source_text": "Price 389,000 won today", "rendered_text": "Price 389,000 won"}], cp_score=8.0)
+
+    result = evaluator.evaluate(FeatureModel(), make_spec(), "<p>Price 389,000 won</p>")
+
+    assert result.content_preservation.score == 8.0
+
+
+def test_missing_defect_with_ordinal_prefix_and_ellipsis_is_refuted_when_the_text_is_on_the_page(tmp_path):
+    evaluator = _gated_evaluator(tmp_path, [{"kind": "missing", "source_text": "3. Lab tour opens..."}])
+
+    result = evaluator.evaluate(FeatureModel(), make_spec(), "<p>Lab tour opens</p>")
+
+    assert result.content_preservation.score == 9.0
+    assert result.content_defects == []
+
+
+def test_missing_defect_joining_heading_and_body_with_a_colon_is_refuted_when_both_are_on_the_page(tmp_path):
+    evaluator = _gated_evaluator(tmp_path, [{"kind": "missing", "source_text": "3. Assistive Robotics: We design robotic systems to support elderly individuals..."}])
+
+    result = evaluator.evaluate(FeatureModel(), make_spec(), "<h3>3. Assistive Robotics</h3><p>We design robotic systems to support elderly individuals living alone.</p>")
+
+    assert result.content_preservation.score == 9.0
+    assert result.content_defects == []
+
+
+def test_phone_number_reformatting_is_not_a_lost_number(tmp_path):
+    evaluator = _gated_evaluator(tmp_path, [{"kind": "altered", "source_text": "Tel 02-123-4567", "rendered_text": "Tel 02.123.4567"}], cp_score=8.0)
+
+    result = evaluator.evaluate(FeatureModel(), make_spec(), "<p>Tel 02.123.4567</p>")
+
+    assert result.content_preservation.score == 8.0
+
+
+def test_unrefuted_defects_do_not_cap_when_the_gate_skipped_refutation(tmp_path):
+    evaluator = _evaluator_with_payload(tmp_path, _payload_with(content_preservation=8, content_defects=[{"kind": "altered", "source_text": "2026.08 Paper accepted", "rendered_text": "Paper accepted"}]))
+
+    result = evaluator.evaluate(FeatureModel(), make_spec(), "<p>Paper accepted</p>")
+
+    assert result.content_preservation.score == 8.0
