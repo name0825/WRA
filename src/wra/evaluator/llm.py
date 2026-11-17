@@ -18,6 +18,7 @@ from wra.llm.schema import bound_strings
 from wra.evaluator.screenshots import MIN_SCREENSHOT_PIXELS, PIXELS_PER_IMAGE_TOKEN, fit_screenshots, screenshot_pixels
 from wra.evaluator.visual_check import CAPPED_DEFECT_KINDS, VISUAL_INSPECTION_PREFIX
 from wra.validator.dates import DROPPED_DATE_PREFIX, date_is_present, date_keys, without_dates
+from wra.validator.quantities import DROPPED_QUANTITY_PREFIX, FAQ_QUESTION_PREFIX
 from wra.validator.names import FULL_NAME as _FULL_NAME, MISNAMED_PERSON_PREFIX
 from wra.validator.tokens import extract_visible_text, normalize_for_match
 from wra.validator.visual import BROKEN_IMAGE_PREFIX, CLIPPED_TABLE_PREFIX, EXPOSED_MARKUP_PREFIX, IMAGES_DROPPED_PREFIX, IMAGES_MISSING_PREFIX, LOW_CONTRAST_PREFIX, OVERFLOW_PREFIX, RENDER_COLLAPSE_PREFIX, STUCK_REVEAL_PREFIX, UNSTYLED_PREFIX, find_broken_image_markup
@@ -433,9 +434,9 @@ def _enforce_factual_caps(parsed: dict, content_findings: list[str]) -> None:
 
     Runs after the content gate so lifting cannot undo it. Only lowers scores.
     """
-    dropped_dates = [finding for finding in content_findings if finding.startswith((DROPPED_DATE_PREFIX, MISNAMED_PERSON_PREFIX))]
-    if dropped_dates:
-        _apply_dimension_cap(parsed, "content_preservation", _FACTUAL_ACCURACY_SCORE_CAP, "Factual accuracy cap: " + "; ".join(dropped_dates))
+    dropped_facts = [finding for finding in content_findings if finding.startswith((DROPPED_DATE_PREFIX, MISNAMED_PERSON_PREFIX, DROPPED_QUANTITY_PREFIX, FAQ_QUESTION_PREFIX))]
+    if dropped_facts:
+        _apply_dimension_cap(parsed, "content_preservation", _FACTUAL_ACCURACY_SCORE_CAP, "Factual accuracy cap: " + "; ".join(dropped_facts))
         return
     entry = parsed.get("content_preservation")
     score = entry.get("score") if isinstance(entry, dict) else None
