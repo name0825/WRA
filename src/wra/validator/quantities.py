@@ -98,6 +98,14 @@ _QUESTION_TAGS = frozenset({"summary", "dt", "h2", "h3", "h4", "h5", "h6", "butt
 _SKIPPED_TAGS = frozenset({"script", "style", "template", "noscript"})
 _QUESTION_END = ("?", "？")
 _SUMMARY_ENDINGS = ("요", "까")
+_QUESTION_CLASS_RE = re.compile(r"(?:^|[-_])question$", re.IGNORECASE)
+_MAX_CLASSED_QUESTION_CHARS = 200
+_IMPLICITLY_CLOSED_TAGS = frozenset({"p", "li"})
+_VOID_TAGS =frozenset({"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr"})
+
+
+def _has_question_class(attrs: list[tuple[str, str | None]]) -> bool:
+    return any(name == "class" and any(_QUESTION_CLASS_RE.search(token) for token in (value or "").split()) for name, value in attrs)
 
 
 class _QuestionParser(HTMLParser):
@@ -105,29 +113,57 @@ class _QuestionParser(HTMLParser):
         super().__init__()
         self.questions: list[str] = []
         self._active: str | None = None
+        self._classed = False
+        self._depth = 0
         self._skip_depth = 0
         self._parts: list[str] = []
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         if tag in ("dt", "dd") and self._active == "dt":
             self._finalize()
+        if self._classed and tag == self._active and tag in _IMPLICITLY_CLOSED_TAGS:
+            self._finalize()
         if tag in _SKIPPED_TAGS:
             self._skip_depth += 1
-        elif tag in _QUESTION_TAGS and self._active is None and not self._skip_depth:
+        elif self._active is None and not self._skip_depth and (tag in _QUESTION_TAGS or (tag not in _VOID_TAGS and _has_question_class(attrs))):
             self._active = tag
+            self._classed = tag not in _QUESTION_TAGS
+            self._depth = 1
             self._parts = []
+        elif self._classed and tag in _QUESTION_TAGS and not self._skip_depth:
+            self._active = tag
+            self._classed = False
+            self._depth = 1
+            self._parts = []
+        elif self._classed and tag == self._active:
+            self._depth += 1
 
     def handle_endtag(self, tag: str) -> None:
         if tag in _SKIPPED_TAGS:
             self._skip_depth = max(0, self._skip_depth - 1)
+        elif self._classed and tag == self._active:
+            self._depth -= 1
+            if self._depth == 0:
+                self._finalize()
         elif tag == self._active or (tag == "dl" and self._active == "dt"):
+            self._finalize()
+
+    def close(self) -> None:
+        super().close()
+        if self._active is not None:
             self._finalize()
 
     def _finalize(self) -> None:
         text = " ".join(unicodedata.normalize("NFKC", " ".join(self._parts)).split())
-        if text and (text.endswith(_QUESTION_END) or (self._active == "summary" and text.endswith(_SUMMARY_ENDINGS))):
+        if self._classed:
+            accepted = bool(text) and len(text) <= _MAX_CLASSED_QUESTION_CHARS and (text.endswith(_QUESTION_END) or ("?" not in text and text.endswith(_SUMMARY_ENDINGS)))
+        else:
+            accepted = bool(text) and (text.endswith(_QUESTION_END) or (self._active == "summary" and text.endswith(_SUMMARY_ENDINGS)))
+        if accepted:
             self.questions.append(text)
         self._active = None
+        self._classed = False
+        self._depth = 0
 
     def handle_data(self, data: str) -> None:
         if self._active is not None and not self._skip_depth:

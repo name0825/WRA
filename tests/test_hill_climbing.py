@@ -200,7 +200,7 @@ class _Evaluator:
         self.scores = list(scores)
         self.calls = 0
 
-    def evaluate(self, features, design_spec, html, browser_result, content_findings, ux_findings=None, visual_findings=None, model=None, think=None, timeout=None):
+    def evaluate(self, features, design_spec, html, browser_result, content_findings, ux_findings=None, visual_findings=None, model=None, think=None, timeout=None, fact_loss_findings=None):
         score = self.scores[min(self.calls, len(self.scores) - 1)]
         self.calls += 1
         return _evaluation(score)
@@ -209,7 +209,7 @@ class _Evaluator:
 class _RaisingEvaluator:
     """Fails every evaluation, the way an over-context Ollama call does."""
 
-    def evaluate(self, features, design_spec, html, browser_result, content_findings, ux_findings=None, visual_findings=None, model=None, think=None, timeout=None):
+    def evaluate(self, features, design_spec, html, browser_result, content_findings, ux_findings=None, visual_findings=None, model=None, think=None, timeout=None, fact_loss_findings=None):
         raise RuntimeError("evaluator exploded")
 
 
@@ -373,7 +373,7 @@ class _ScriptedEvaluator:
         self.evaluations = list(evaluations)
         self.calls = 0
 
-    def evaluate(self, features, design_spec, html, browser_result, content_findings, ux_findings=None, visual_findings=None, model=None, think=None, timeout=None):
+    def evaluate(self, features, design_spec, html, browser_result, content_findings, ux_findings=None, visual_findings=None, model=None, think=None, timeout=None, fact_loss_findings=None):
         evaluation = self.evaluations[min(self.calls, len(self.evaluations) - 1)]
         self.calls += 1
         return evaluation

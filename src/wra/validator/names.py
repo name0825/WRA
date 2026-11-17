@@ -1,11 +1,12 @@
 import logging
 import re
 
-from wra.validator.tokens import extract_visible_text
+from wra.validator.tokens import extract_visible_text, normalize_for_match
 
 logger = logging.getLogger(__name__)
 
 MISNAMED_PERSON_PREFIX = "misnamed person"
+DROPPED_IDENTITY_PREFIX = "dropped source identity name"
 
 SURNAME = "[김이박최정강조윤장임한오서신권황안송류전홍고문양손배백허유남심노하곽차민]"
 FULL_NAME = SURNAME + "[가-힣](?![의한된운적과와로를을에도회주점급껏히는면은])[가-힣]"
@@ -83,4 +84,68 @@ def find_misnamed_people(html: str, source_html: str, source_extra_text: str = "
             findings.append(f"{MISNAMED_PERSON_PREFIX}: '{candidate}' (source names: {source_list})")
     if findings:
         logger.warning("Misnamed people detected: %s", findings)
+    return findings
+
+
+_HANGUL_PHRASE = r"[가-힣](?:[가-힣 ]{0,38}[가-힣])?"
+_HANGUL_THEN_LATIN = re.compile(rf"(?<![가-힣])(?P<hangul>{_HANGUL_PHRASE})\s*[(（]\s*(?P<latin>[A-Za-z][^()（）]{{1,58}}?)\s*[)）]")
+_LATIN_THEN_HANGUL = re.compile(rf"(?P<latin>[A-Za-z][A-Za-z0-9 &.'\-]{{1,58}}?)\s*[(（]\s*(?P<hangul>{_HANGUL_PHRASE})\s*[)）]")
+_BRAND_SEPARATORS = re.compile(r"\s[-–—|:·]\s|[|·]")
+_MASTHEAD_CHARS = 400
+_MIN_BRAND_CHARS = 3
+_HANGUL = re.compile(r"[가-힣]")
+
+
+def _brand_forms(features) -> set[str]:
+    sources = [features.metadata.title if features.metadata else None, features.business.company_name if features.business else None]
+    forms: set[str] = set()
+    for source in sources:
+        if not source:
+            continue
+        for part in (source, *_BRAND_SEPARATORS.split(source), *re.findall(r"[(（]([^()（）]+)[)）]", source)):
+            key = re.sub(r"[\W_]+", "", part).casefold()
+            if len(key) >= _MIN_BRAND_CHARS:
+                forms.add(key)
+    return forms
+
+
+def find_dropped_identity_name(html: str, source_html: str, features) -> list[str]:
+    """The subject's source-script (Hangul) name that the page no longer carries anywhere.
+
+    Two sources of a name, both required to be unambiguous: the Feature Model's
+    company name when it contains Hangul and reads verbatim in the source, and a
+    Hangul phrase the source masthead pairs in parentheses with its Latin brand
+    ("Lab Name 연구실 (Lab)"). Fires only when the whole Hangul name is absent
+    from the page's visible text, so romanizing it while keeping it is not a loss
+    and a Latin-only source name is never held to a transliteration.
+    """
+    if not source_html or not source_html.strip():
+        return []
+    source_text = extract_visible_text(source_html)
+    names: dict[str, str] = {}
+    company = features.business.company_name if features.business else None
+    if company and _HANGUL.search(company) and normalize_for_match(company) in normalize_for_match(source_text):
+        names.setdefault(normalize_for_match(company), " ".join(company.split()))
+    brands = _brand_forms(features)
+    masthead: list[str] = []
+    length = 0
+    for node in extract_visible_text(source_html, "\n").split("\n"):
+        node = " ".join(node.split())
+        if node:
+            masthead.append(node)
+            length += len(node)
+        if length >= _MASTHEAD_CHARS:
+            break
+    for node in masthead:
+        for pattern in (_HANGUL_THEN_LATIN, _LATIN_THEN_HANGUL):
+            for match in pattern.finditer(node):
+                latin = re.sub(r"[\W_]+", "", match.group("latin")).casefold()
+                if len(latin) >= _MIN_BRAND_CHARS and any(latin in brand or brand in latin for brand in brands):
+                    names.setdefault(normalize_for_match(match.group("hangul")), " ".join(match.group("hangul").split()))
+    if not names:
+        return []
+    page_text = normalize_for_match(extract_visible_text(html))
+    findings = [f"{DROPPED_IDENTITY_PREFIX}: '{spelling}' is in the source but not on the page" for key, spelling in names.items() if key not in page_text]
+    if findings:
+        logger.warning("Dropped source identity name detected: %s", findings)
     return findings

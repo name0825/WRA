@@ -207,6 +207,23 @@ def content_preservation_is_a_gate(level: ContentFreedom) -> bool:
     return level in _CONTENT_GATE_LEVELS
 
 
+# Where wording is free but the source's factual record must survive, losing a
+# fact costs a fixed amount instead of capping a dimension. A hard cap here
+# turns one detector hit into a 4.0 total and leaves no ranking between pages.
+_FACT_LOSS_PENALTY_LEVELS: set[str] = {"high", "ultra", "madmax"}
+FACT_LOSS_PER_FINDING = 1.0
+FACT_LOSS_MAX = 1.5
+
+
+def fact_loss_penalty_applies(level: ContentFreedom) -> bool:
+    """Whether dropped source facts are scored as a soft penalty rather than a hard cap."""
+    return level in _FACT_LOSS_PENALTY_LEVELS
+
+
+def fact_loss_penalty_for(findings: int) -> float:
+    return min(FACT_LOSS_MAX, FACT_LOSS_PER_FINDING * findings)
+
+
 class ContentConfig(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -715,6 +732,9 @@ class EvaluationResult(BaseModel):
     # The level this page was authored at, which decides how the total is formed.
     # Supplied by the evaluator, never by the model being scored.
     content_freedom: ContentFreedom = "low"
+    # Points taken off the graded mean for source facts the page dropped.
+    # Supplied by the evaluator from deterministic findings, never by the model.
+    fact_loss_penalty: float = Field(0, ge=0)
 
     @model_validator(mode="before")
     @classmethod
@@ -767,12 +787,19 @@ class EvaluationResult(BaseModel):
             self.originality,
             self.html_quality,
         )
+        penalty = self.fact_loss_penalty if fact_loss_penalty_applies(self.content_freedom) else 0.0
         if not content_preservation_is_a_gate(self.content_freedom):
             graded = (*graded, self.content_preservation)
-            self.overall_score = sum(dimension.score for dimension in graded) / len(graded)
+            mean = sum(dimension.score for dimension in graded) / len(graded)
+            if penalty:
+                logger.info("Fact-loss penalty applied: overall=%.2f->%.2f penalty=%.2f", mean, max(0.0, mean - penalty), penalty)
+            self.overall_score = max(0.0, mean - penalty)
             return self
 
-        score = sum(dimension.score for dimension in graded) / len(graded)
+        mean = sum(dimension.score for dimension in graded) / len(graded)
+        score = max(0.0, mean - penalty)
+        if penalty:
+            logger.info("Fact-loss penalty applied: overall=%.2f->%.2f penalty=%.2f", mean, score, penalty)
         if self.content_preservation.score < CONTENT_GATE_THRESHOLD:
             capped = min(score, self.content_preservation.score)
             if capped < score:

@@ -1,0 +1,637 @@
+{
+  "source": "bench/evaluator_calibration_plan.md, section 'Audit labels source' (2026-11-18 visual-qa audit)",
+  "label_convention": "label is always a list. content_defect and visual_defect may both be present when the audit names both. faithful means no audited content defect: an iteration listed as faithful that also carries a visual defect (research 202925 i1, no h1) is [faithful, visual_defect]. Iterations the audit does not name are [faithful] with note 'unaudited'. kept = the iteration selected as the page's best in the run's result.json.",
+  "iterations": [
+    {
+      "run": "run_20261117_210401",
+      "sample": "saas",
+      "page": "index",
+      "iter": 1,
+      "kept": false,
+      "label": [
+        "faithful"
+      ],
+      "note": "unaudited"
+    },
+    {
+      "run": "run_20261117_210401",
+      "sample": "saas",
+      "page": "index",
+      "iter": 2,
+      "kept": true,
+      "label": [
+        "visual_defect"
+      ],
+      "note": "visual: blank logo box, glyph-less icons"
+    },
+    {
+      "run": "run_20261117_210401",
+      "sample": "saas",
+      "page": "index",
+      "iter": 3,
+      "kept": false,
+      "label": [
+        "faithful"
+      ],
+      "note": "unaudited"
+    },
+    {
+      "run": "run_20261117_210401",
+      "sample": "saas",
+      "page": "index",
+      "iter": 4,
+      "kept": false,
+      "label": [
+        "faithful"
+      ],
+      "note": "unaudited"
+    },
+    {
+      "run": "run_20261117_210401",
+      "sample": "saas",
+      "page": "index",
+      "iter": 5,
+      "kept": false,
+      "label": [
+        "faithful"
+      ],
+      "note": "unaudited"
+    },
+    {
+      "run": "run_20261117_173147",
+      "sample": "saas",
+      "page": "index",
+      "iter": 1,
+      "kept": true,
+      "label": [
+        "faithful"
+      ],
+      "note": "audited faithful (best by reviewers)"
+    },
+    {
+      "run": "run_20261117_173147",
+      "sample": "saas",
+      "page": "index",
+      "iter": 2,
+      "kept": false,
+      "label": [
+        "faithful"
+      ],
+      "note": "unaudited"
+    },
+    {
+      "run": "run_20261117_173147",
+      "sample": "saas",
+      "page": "index",
+      "iter": 3,
+      "kept": false,
+      "label": [
+        "faithful"
+      ],
+      "note": "unaudited"
+    },
+    {
+      "run": "run_20261117_193936",
+      "sample": "saas",
+      "page": "index",
+      "iter": 1,
+      "kept": false,
+      "label": [
+        "faithful"
+      ],
+      "note": "unaudited"
+    },
+    {
+      "run": "run_20261117_193936",
+      "sample": "saas",
+      "page": "index",
+      "iter": 2,
+      "kept": true,
+      "label": [
+        "content_defect",
+        "visual_defect"
+      ],
+      "note": "FAQ 5/6 questions replaced, '20%' and 'cancellation fee' dropped, invented drag-and-drop; visual: orphan image in half-empty grid"
+    },
+    {
+      "run": "run_20261117_193936",
+      "sample": "saas",
+      "page": "index",
+      "iter": 3,
+      "kept": false,
+      "label": [
+        "faithful"
+      ],
+      "note": "unaudited"
+    },
+    {
+      "run": "run_20261117_214216",
+      "sample": "bakery",
+      "page": "index",
+      "iter": 1,
+      "kept": false,
+      "label": [
+        "faithful"
+      ],
+      "note": "unaudited"
+    },
+    {
+      "run": "run_20261117_214216",
+      "sample": "bakery",
+      "page": "index",
+      "iter": 2,
+      "kept": false,
+      "label": [
+        "faithful"
+      ],
+      "note": "unaudited"
+    },
+    {
+      "run": "run_20261117_214216",
+      "sample": "bakery",
+      "page": "index",
+      "iter": 3,
+      "kept": true,
+      "label": [
+        "faithful"
+      ],
+      "note": "audited faithful (best by reviewers)"
+    },
+    {
+      "run": "run_20261117_214216",
+      "sample": "bakery",
+      "page": "index",
+      "iter": 4,
+      "kept": false,
+      "label": [
+        "faithful"
+      ],
+      "note": "unaudited"
+    },
+    {
+      "run": "run_20261117_214216",
+      "sample": "bakery",
+      "page": "index",
+      "iter": 5,
+      "kept": false,
+      "label": [
+        "faithful"
+      ],
+      "note": "unaudited"
+    },
+    {
+      "run": "run_20261117_175206",
+      "sample": "bakery",
+      "page": "index",
+      "iter": 1,
+      "kept": false,
+      "label": [
+        "faithful"
+      ],
+      "note": "unaudited"
+    },
+    {
+      "run": "run_20261117_175206",
+      "sample": "bakery",
+      "page": "index",
+      "iter": 2,
+      "kept": false,
+      "label": [
+        "faithful"
+      ],
+      "note": "unaudited"
+    },
+    {
+      "run": "run_20261117_175206",
+      "sample": "bakery",
+      "page": "index",
+      "iter": 3,
+      "kept": true,
+      "label": [
+        "visual_defect"
+      ],
+      "note": "visual: broken menu grid"
+    },
+    {
+      "run": "run_20261117_195931",
+      "sample": "bakery",
+      "page": "index",
+      "iter": 1,
+      "kept": false,
+      "label": [
+        "faithful"
+      ],
+      "note": "unaudited"
+    },
+    {
+      "run": "run_20261117_195931",
+      "sample": "bakery",
+      "page": "index",
+      "iter": 2,
+      "kept": true,
+      "label": [
+        "visual_defect"
+      ],
+      "note": "visual: baked-in label overlaps h1, cake card shows red-bean-bun photo, Gungsuh body font"
+    },
+    {
+      "run": "run_20261117_195931",
+      "sample": "bakery",
+      "page": "index",
+      "iter": 3,
+      "kept": false,
+      "label": [
+        "faithful"
+      ],
+      "note": "unaudited"
+    },
+    {
+      "run": "run_20261117_221539",
+      "sample": "research",
+      "page": "index",
+      "iter": 1,
+      "kept": false,
+      "label": [
+        "faithful"
+      ],
+      "note": "unaudited"
+    },
+    {
+      "run": "run_20261117_221539",
+      "sample": "research",
+      "page": "index",
+      "iter": 2,
+      "kept": false,
+      "label": [
+        "faithful"
+      ],
+      "note": "unaudited"
+    },
+    {
+      "run": "run_20261117_221539",
+      "sample": "research",
+      "page": "index",
+      "iter": 3,
+      "kept": false,
+      "label": [
+        "faithful"
+      ],
+      "note": "unaudited"
+    },
+    {
+      "run": "run_20261117_221539",
+      "sample": "research",
+      "page": "index",
+      "iter": 4,
+      "kept": false,
+      "label": [
+        "faithful"
+      ],
+      "note": "unaudited"
+    },
+    {
+      "run": "run_20261117_221539",
+      "sample": "research",
+      "page": "index",
+      "iter": 5,
+      "kept": true,
+      "label": [
+        "content_defect",
+        "visual_defect"
+      ],
+      "note": "3 invented sentences, Korean lab name dropped; visual: mobile table clipped, no h1"
+    },
+    {
+      "run": "run_20261117_181507",
+      "sample": "research",
+      "page": "index",
+      "iter": 1,
+      "kept": false,
+      "label": [
+        "faithful"
+      ],
+      "note": "unaudited"
+    },
+    {
+      "run": "run_20261117_181507",
+      "sample": "research",
+      "page": "index",
+      "iter": 2,
+      "kept": false,
+      "label": [
+        "faithful"
+      ],
+      "note": "unaudited"
+    },
+    {
+      "run": "run_20261117_181507",
+      "sample": "research",
+      "page": "index",
+      "iter": 3,
+      "kept": true,
+      "label": [
+        "content_defect"
+      ],
+      "note": "Korean name dropped, invented marketing copy"
+    },
+    {
+      "run": "run_20261117_202925",
+      "sample": "research",
+      "page": "index",
+      "iter": 1,
+      "kept": true,
+      "label": [
+        "faithful",
+        "visual_defect"
+      ],
+      "note": "visual: no h1; audited faithful (best by reviewers)"
+    },
+    {
+      "run": "run_20261117_202925",
+      "sample": "research",
+      "page": "index",
+      "iter": 2,
+      "kept": false,
+      "label": [
+        "faithful"
+      ],
+      "note": "unaudited"
+    },
+    {
+      "run": "run_20261117_202925",
+      "sample": "research",
+      "page": "index",
+      "iter": 3,
+      "kept": false,
+      "label": [
+        "faithful"
+      ],
+      "note": "unaudited"
+    },
+    {
+      "run": "run_20261117_224155",
+      "sample": "reference",
+      "page": "index",
+      "iter": 1,
+      "kept": false,
+      "label": [
+        "faithful"
+      ],
+      "note": "unaudited"
+    },
+    {
+      "run": "run_20261117_224155",
+      "sample": "reference",
+      "page": "index",
+      "iter": 2,
+      "kept": false,
+      "label": [
+        "content_defect"
+      ],
+      "note": "hours dropped, mangled ranges 420-610mm/100-240"
+    },
+    {
+      "run": "run_20261117_224155",
+      "sample": "reference",
+      "page": "index",
+      "iter": 3,
+      "kept": true,
+      "label": [
+        "faithful"
+      ],
+      "note": "audited faithful (best by reviewers)"
+    },
+    {
+      "run": "run_20261117_224155",
+      "sample": "reference",
+      "page": "index",
+      "iter": 4,
+      "kept": false,
+      "label": [
+        "content_defect"
+      ],
+      "note": "hours dropped"
+    },
+    {
+      "run": "run_20261117_224155",
+      "sample": "reference",
+      "page": "index",
+      "iter": 5,
+      "kept": false,
+      "label": [
+        "content_defect"
+      ],
+      "note": "hours dropped"
+    },
+    {
+      "run": "run_20261117_183939",
+      "sample": "reference",
+      "page": "index",
+      "iter": 1,
+      "kept": false,
+      "label": [
+        "faithful"
+      ],
+      "note": "unaudited"
+    },
+    {
+      "run": "run_20261117_183939",
+      "sample": "reference",
+      "page": "index",
+      "iter": 2,
+      "kept": true,
+      "label": [
+        "content_defect",
+        "visual_defect"
+      ],
+      "note": "FAQ 5->3, '11:00' hours dropped, invented showroom sentence, spec strip lost; visual: broken 2x4 features grid"
+    },
+    {
+      "run": "run_20261117_183939",
+      "sample": "reference",
+      "page": "index",
+      "iter": 3,
+      "kept": false,
+      "label": [
+        "faithful"
+      ],
+      "note": "unaudited"
+    },
+    {
+      "run": "run_20261117_232209",
+      "sample": "portfolio",
+      "page": "input",
+      "iter": 1,
+      "kept": false,
+      "label": [
+        "content_defect"
+      ],
+      "note": "invented hero sentence, English greeting translated, 'Price' heading renamed"
+    },
+    {
+      "run": "run_20261117_232209",
+      "sample": "portfolio",
+      "page": "input",
+      "iter": 2,
+      "kept": false,
+      "label": [
+        "faithful"
+      ],
+      "note": "unaudited"
+    },
+    {
+      "run": "run_20261117_232209",
+      "sample": "portfolio",
+      "page": "input",
+      "iter": 3,
+      "kept": true,
+      "label": [
+        "content_defect"
+      ],
+      "note": "invented hero sentence, English greeting translated, 'Price' heading renamed"
+    },
+    {
+      "run": "run_20261117_232209",
+      "sample": "portfolio",
+      "page": "input",
+      "iter": 4,
+      "kept": false,
+      "label": [
+        "faithful"
+      ],
+      "note": "unaudited"
+    },
+    {
+      "run": "run_20261117_232209",
+      "sample": "portfolio",
+      "page": "input",
+      "iter": 5,
+      "kept": false,
+      "label": [
+        "faithful"
+      ],
+      "note": "unaudited"
+    },
+    {
+      "run": "run_20261117_190118",
+      "sample": "portfolio",
+      "page": "input",
+      "iter": 1,
+      "kept": false,
+      "label": [
+        "faithful"
+      ],
+      "note": "unaudited"
+    },
+    {
+      "run": "run_20261117_190118",
+      "sample": "portfolio",
+      "page": "input",
+      "iter": 2,
+      "kept": true,
+      "label": [
+        "faithful"
+      ],
+      "note": "audited faithful (best by reviewers)"
+    },
+    {
+      "run": "run_20261117_190118",
+      "sample": "portfolio",
+      "page": "input",
+      "iter": 3,
+      "kept": false,
+      "label": [
+        "faithful"
+      ],
+      "note": "unaudited"
+    },
+    {
+      "run": "run_20261117_235057",
+      "sample": "brief",
+      "page": "index",
+      "iter": 1,
+      "kept": false,
+      "label": [
+        "faithful"
+      ],
+      "note": "unaudited"
+    },
+    {
+      "run": "run_20261117_235057",
+      "sample": "brief",
+      "page": "index",
+      "iter": 2,
+      "kept": false,
+      "label": [
+        "faithful"
+      ],
+      "note": "unaudited"
+    },
+    {
+      "run": "run_20261117_235057",
+      "sample": "brief",
+      "page": "index",
+      "iter": 3,
+      "kept": false,
+      "label": [
+        "faithful"
+      ],
+      "note": "unaudited"
+    },
+    {
+      "run": "run_20261117_235057",
+      "sample": "brief",
+      "page": "index",
+      "iter": 4,
+      "kept": true,
+      "label": [
+        "visual_defect"
+      ],
+      "note": "visual: orphan half-width card"
+    },
+    {
+      "run": "run_20261117_235057",
+      "sample": "brief",
+      "page": "index",
+      "iter": 5,
+      "kept": false,
+      "label": [
+        "visual_defect"
+      ],
+      "note": "visual: tablet logo overlaps CTA"
+    },
+    {
+      "run": "run_20261117_192642",
+      "sample": "brief",
+      "page": "index",
+      "iter": 1,
+      "kept": false,
+      "label": [
+        "faithful"
+      ],
+      "note": "unaudited"
+    },
+    {
+      "run": "run_20261117_192642",
+      "sample": "brief",
+      "page": "index",
+      "iter": 2,
+      "kept": true,
+      "label": [
+        "faithful"
+      ],
+      "note": "audited faithful (best by reviewers)"
+    },
+    {
+      "run": "run_20261117_192642",
+      "sample": "brief",
+      "page": "index",
+      "iter": 3,
+      "kept": false,
+      "label": [
+        "faithful"
+      ],
+      "note": "unaudited"
+    }
+  ]
+}

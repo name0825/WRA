@@ -136,3 +136,59 @@ def test_source_only_skip_rules_leave_page_extraction_lenient():
     assert find_dropped_quantities("<p>최대 30%할인</p>", "<p>최대 30% 할인</p>") == []
     assert find_dropped_quantities("<p>AC 220 V</p>", "<p>220V</p>") == []
     assert find_dropped_quantities("<p>2시간마다</p>", "<p>2시간</p>") == []
+
+
+def test_classed_question_divs_are_source_questions():
+    source = '<div class="faq-item"><div class="faq-question"><span>Is it waterproof?</span></div><div class="faq-answer">Yes.</div></div><div class="faq-question">어떻게 교체하나요</div>'
+    asked = [finding.split("'")[1] for finding in find_dropped_questions("<p>x</p>", source)]
+    assert asked == ["Is it waterproof?", "어떻게 교체하나요"]
+
+
+def test_classed_question_must_end_like_a_question_and_container_classes_are_ignored():
+    source = '<div class="faq-questions"><p>Shipping?</p></div><div class="faq-question">Shipping policy</div><div class="question-box">Why?</div>'
+    assert find_dropped_questions("<p>x</p>", source) == []
+
+
+def test_classed_question_is_lenient_on_the_page_side():
+    source = '<div class="faq-question">Is it waterproof?</div>'
+    assert find_dropped_questions("<section><h3>IS IT WATERPROOF</h3></section>", source) == []
+    assert len(find_dropped_questions("<p>Does it float?</p>", source)) == 1
+
+
+def _fact_page(html: str, created: bool = False) -> SimpleNamespace:
+    from wra.core.models import FeatureModel
+
+    return SimpleNamespace(html=html, created=created, features=FeatureModel())
+
+
+def test_fact_loss_findings_exist_only_where_coverage_is_not_enforced():
+    from wra.core.iteration import collect_fact_loss_findings
+
+    page = _fact_page('<p>800 lm</p><div class="faq-question">Why?</div>')
+    for level in ("low", "medium"):
+        assert collect_fact_loss_findings(page, "<p>x</p>", level) == []
+    for level in ("high", "ultra", "madmax"):
+        assert len(collect_fact_loss_findings(page, "<p>x</p>", level)) == 2
+    assert collect_fact_loss_findings(_fact_page(page.html, created=True), "<p>x</p>", "madmax") == []
+
+
+def test_fact_loss_findings_never_reach_the_hard_factual_cap_inputs():
+    from wra.core.iteration import collect_content_findings
+
+    page = _fact_page('<p>800 lm</p><div class="faq-question">Why?</div>')
+    for level in ("high", "ultra", "madmax"):
+        findings = collect_content_findings(page, "<p>x</p>", level)
+        assert not [finding for finding in findings if finding.startswith((DROPPED_QUANTITY_PREFIX, FAQ_QUESTION_PREFIX))]
+
+
+def test_classed_wrapper_with_a_question_heading_yields_only_the_heading():
+    source = '<div class="faq-question"><h3>환불 되나요?</h3><p>7일 이내 가능해요</p></div>'
+    asked = [finding.split("'")[1] for finding in find_dropped_questions("<h3>환불 되나요?</h3><p>일주일 안에 가능합니다</p>", source)]
+    assert asked == []
+    assert [finding.split("'")[1] for finding in find_dropped_questions("<p>x</p>", source)] == ["환불 되나요?"]
+
+
+def test_classed_text_with_a_question_mark_must_end_with_it_and_unclosed_paragraphs_do_not_absorb_the_rest():
+    assert find_dropped_questions("<p>x</p>", '<div class="faq-question">환불 되나요? 네 가능해요</div>') == []
+    source = '<p class="question">Is it waterproof?<p>Yes, it is rated IP67 and we ship worldwide to many countries, which is why customers like it so much.<p class="question">Can I return it?'
+    assert [finding.split("'")[1] for finding in find_dropped_questions("<p>x</p>", source)] == ["Is it waterproof?", "Can I return it?"]

@@ -73,3 +73,66 @@ def test_given_name_that_differs_from_the_source_given_name_is_not_flagged():
 
 def test_blank_source_is_ignored():
     assert find_misnamed_people(page("이민재입니다"), "") == []
+
+
+def _features(company_name=None, title=None):
+    from wra.core.models import BusinessInfo, FeatureModel, Metadata
+
+    return FeatureModel(metadata=Metadata(title=title), business=BusinessInfo(company_name=company_name))
+
+
+LAB_SOURCE = "<html><body><header><b>Intelligent Systems &amp; Interaction Lab</b><br>지능형 시스템 및 상호작용 연구실 (ISI Lab), 한백대학교</header></body></html>"
+
+def _lab_features():
+    return _features(title="Intelligent Systems & Interaction Lab (ISI Lab)")
+
+
+def test_hangul_lab_name_paired_with_the_latin_brand_must_survive():
+    from wra.validator.names import DROPPED_IDENTITY_PREFIX, find_dropped_identity_name
+
+    findings = find_dropped_identity_name(page("Intelligent Systems & Interaction Lab (ISI Lab)"), LAB_SOURCE, _lab_features())
+
+    assert findings == [f"{DROPPED_IDENTITY_PREFIX}: '지능형 시스템 및 상호작용 연구실' is in the source but not on the page"]
+
+
+def test_kept_hangul_name_is_not_flagged_even_when_respaced_or_romanized_beside_it():
+    from wra.validator.names import find_dropped_identity_name
+
+    assert find_dropped_identity_name(page("ISI Lab: 지능형시스템 및 상호작용  연구실"), LAB_SOURCE, _lab_features()) == []
+
+
+def test_hangul_phrase_not_paired_with_the_brand_is_ignored():
+    from wra.validator.names import find_dropped_identity_name
+
+    source = "<html><body><b>Acme Corp</b><p>우리는 훌륭한 연구실 (Other Lab)</p></body></html>"
+
+    assert find_dropped_identity_name(page("Acme Corp"), source, _features(title="Acme Corp")) == []
+
+
+def test_latin_only_source_name_is_never_held_to_a_transliteration():
+    from wra.validator.names import find_dropped_identity_name
+
+    source = "<html><body><h1>FlowStack</h1></body></html>"
+
+    assert find_dropped_identity_name(page("플로우스택"), source, _features(company_name="FlowStack", title="FlowStack")) == []
+
+
+def test_hangul_company_name_dropped_from_the_page_is_flagged_only_when_read_in_the_source():
+    from wra.validator.names import find_dropped_identity_name
+
+    source = "<html><body><h1>행복빵집</h1></body></html>"
+
+    assert len(find_dropped_identity_name(page("Happy Bakery"), source, _features(company_name="행복빵집"))) == 1
+    assert find_dropped_identity_name(page("행복 빵집 - 우리 동네"), source, _features(company_name="행복빵집")) == []
+    assert find_dropped_identity_name(page("Happy Bakery"), source, _features(company_name="다른이름")) == []
+    assert find_dropped_identity_name(page("x"), "", _features(company_name="행복빵집")) == []
+
+
+def test_hangul_nav_text_before_the_masthead_is_not_pulled_into_the_name():
+    from wra.validator.names import find_dropped_identity_name
+
+    source = "<html><body><nav>홈 소개 구성원 논문</nav><h1>서울 데이터 연구실 (Seoul Data Lab)</h1></body></html>"
+    features = _features(title="Seoul Data Lab")
+
+    assert find_dropped_identity_name(page("Seoul Data Lab 서울 데이터 연구실"), source, features) == []
+    assert [finding.split("'")[1] for finding in find_dropped_identity_name(page("Seoul Data Lab"), source, features)] == ["서울 데이터 연구실"]

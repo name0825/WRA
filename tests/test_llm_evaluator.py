@@ -1492,3 +1492,56 @@ def test_unrefuted_defects_do_not_cap_when_the_gate_skipped_refutation(tmp_path)
     result = evaluator.evaluate(FeatureModel(), make_spec(), "<p>Paper accepted</p>")
 
     assert result.content_preservation.score == 8.0
+
+
+def _freedom_evaluator(tmp_path, payload: dict, freedom: str):
+    import json
+
+    prompt_path = tmp_path / "system.md"
+    prompt_path.write_text("Evaluate this page.", encoding="utf-8")
+    client = FakeLLMClient(RuntimeError("unused"), json.dumps(payload))
+    return LLMEvaluator(client, "evaluator-model", prompt_path=prompt_path, min_num_ctx=1000, max_num_ctx=32768, ceiling_num_ctx=32768, max_retries=1, growth_power=2.0, content_freedom=freedom)
+
+
+FACT_LOSS = ["dropped source quantity: '800 lm' is in the source but not on the page", "dropped source question: 'Why?' is in the source but not on the page"]
+
+
+def test_fact_loss_findings_cost_a_fixed_penalty_and_leave_content_preservation_alone(tmp_path):
+    from wra.core.models import fact_loss_penalty_for
+
+    for freedom in ("high", "ultra", "madmax"):
+        result = _freedom_evaluator(tmp_path, _payload_with(), freedom).evaluate(FeatureModel(), make_spec(), "<html></html>", fact_loss_findings=FACT_LOSS)
+
+        assert result.fact_loss_penalty == fact_loss_penalty_for(2)
+        assert result.content_preservation.score == 8.0
+        assert result.overall_score == pytest.approx(8.0 - fact_loss_penalty_for(2))
+        assert "Fact-loss penalty" in result.summary and "800 lm" in result.summary
+
+
+def test_fact_loss_findings_are_ignored_at_low_and_medium_and_hidden_from_the_judge(tmp_path):
+    for freedom in ("low", "medium"):
+        evaluator = _freedom_evaluator(tmp_path, _payload_with(), freedom)
+        result = evaluator.evaluate(FeatureModel(), make_spec(), "<html></html>", fact_loss_findings=FACT_LOSS)
+
+        assert result.fact_loss_penalty == 0
+        assert result.overall_score == pytest.approx(8.0)
+        assert "800 lm" not in evaluator._llm_client.calls[0]["prompt"]
+
+
+def test_model_cannot_set_the_fact_loss_penalty_and_the_schema_does_not_offer_it(tmp_path):
+    from wra.evaluator.llm import EVALUATION_SCHEMA
+
+    assert "fact_loss_penalty" not in EVALUATION_SCHEMA["properties"]
+    assert "fact_loss_penalty" not in EVALUATION_SCHEMA.get("required", [])
+    result = _freedom_evaluator(tmp_path, _payload_with(fact_loss_penalty=1.5), "madmax").evaluate(FeatureModel(), make_spec(), "<html></html>")
+
+    assert result.fact_loss_penalty == 0
+    assert result.overall_score == pytest.approx(8.0)
+
+
+def test_fact_loss_findings_are_not_content_findings_and_never_trigger_the_factual_cap(tmp_path):
+    evaluator = _freedom_evaluator(tmp_path, _payload_with(), "madmax")
+    result = evaluator.evaluate(FeatureModel(), make_spec(), "<html></html>", fact_loss_findings=FACT_LOSS)
+
+    assert "Factual accuracy cap" not in result.content_preservation.feedback
+    assert "800 lm" not in evaluator._llm_client.calls[0]["prompt"].split("INPUT:")[1].split("deterministic_ux_findings")[0]

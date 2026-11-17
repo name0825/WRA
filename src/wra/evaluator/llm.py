@@ -7,7 +7,7 @@ from html.parser import HTMLParser
 from pathlib import Path
 
 from wra.browser.models import BrowserEvaluationResult
-from wra.core.models import CONTENT_GATE_THRESHOLD, FACTUAL_ACCURACY_CAP, ContentFreedom, EvaluationResult, FeatureModel, content_freedom_policy, content_preservation_is_a_gate
+from wra.core.models import CONTENT_GATE_THRESHOLD, FACTUAL_ACCURACY_CAP, ContentFreedom, EvaluationResult, FeatureModel, content_freedom_policy, content_preservation_is_a_gate, fact_loss_penalty_applies, fact_loss_penalty_for
 from wra.designer.schema import DesignSpec
 from wra.llm.client import LLMClient
 from wra.llm.context import COMPACT_JSON, OUTPUT_HEADROOM_TOKENS, estimate_num_ctx, growth_num_ctx
@@ -452,6 +452,17 @@ def _enforce_factual_caps(parsed: dict, content_findings: list[str]) -> None:
             return
 
 
+def _apply_fact_loss_penalty(parsed: dict, fact_loss_findings: list[str], content_freedom: str) -> None:
+    """Record the soft cost of dropped source facts. Set only here, never by the model."""
+    parsed.pop("fact_loss_penalty", None)
+    if not fact_loss_findings or not fact_loss_penalty_applies(content_freedom):
+        return
+    penalty = fact_loss_penalty_for(len(fact_loss_findings))
+    parsed["fact_loss_penalty"] = penalty
+    note = f"Fact-loss penalty -{penalty:g}: " + "; ".join(fact_loss_findings)
+    parsed["summary"] = f"{parsed['summary']} {note}" if isinstance(parsed.get("summary"), str) and parsed["summary"] else note
+
+
 def _drop_refuted_claims(parsed: dict, html: str, browser_result: BrowserEvaluationResult | None, visual_findings: list[str]) -> None:
     """Drop prose sentences that assert a loading failure or overflow the browser measurement contradicts.
 
@@ -530,8 +541,9 @@ def _evaluation_schema() -> dict:
     the model is constrained to.
     """
     schema = EvaluationResult.model_json_schema()
-    schema["properties"].pop("content_freedom", None)
-    schema["required"] = [name for name in schema.get("required", []) if name != "content_freedom"]
+    for name in ("content_freedom", "fact_loss_penalty"):
+        schema["properties"].pop(name, None)
+    schema["required"] = [name for name in schema.get("required", []) if name not in ("content_freedom", "fact_loss_penalty")]
     schema["properties"]["content_defects"].update(maxItems=_MAX_CONTENT_DEFECTS)
     return bound_strings(schema)
 
@@ -586,7 +598,7 @@ class LLMEvaluator:
             "source's facts correctly, and invents no external assets or checkable facts - not on how much source wording survived."
         )
 
-    def evaluate(self, features: FeatureModel, design_spec: DesignSpec, html: str, browser_result: BrowserEvaluationResult | None = None, content_findings: list[str] | None = None, ux_findings: list[str] | None = None, visual_findings: list[str] | None = None, model: str | None = None, think: bool | None = None, timeout: float | None = None) -> EvaluationResult:
+    def evaluate(self, features: FeatureModel, design_spec: DesignSpec, html: str, browser_result: BrowserEvaluationResult | None = None, content_findings: list[str] | None = None, ux_findings: list[str] | None = None, visual_findings: list[str] | None = None, model: str | None = None, think: bool | None = None, timeout: float | None = None, fact_loss_findings: list[str] | None = None) -> EvaluationResult:
         selected_model = model or self._model
         selected_think = self._think if think is None else think
         selected_timeout = self._timeout if timeout is None else timeout
@@ -645,6 +657,7 @@ class LLMEvaluator:
                     _verify_content_gate(parsed, html, content_findings or [], self._content_freedom, normalize_for_match(" ".join(_feature_strings(features.model_dump(mode="json")))))
                     _enforce_factual_caps(parsed, content_findings or [])
                     _drop_refuted_claims(parsed, html, browser_result, visual_findings or [])
+                    _apply_fact_loss_penalty(parsed, fact_loss_findings or [], self._content_freedom)
                 result = EvaluationResult.model_validate(parsed)
             except LLMTransportError:
                 logger.error("Evaluation aborted by LLM transport failure: model=%s", selected_model)

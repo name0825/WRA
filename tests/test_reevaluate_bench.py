@@ -156,3 +156,20 @@ def test_forced_resume_is_recorded_and_refused_without_the_flag(tmp_path):
 def test_fingerprint_is_written_atomically(tmp_path):
     reevaluate_bench.check_fingerprint(tmp_path, {"evaluator_model": "m"}, False)
     assert sorted(path.name for path in tmp_path.iterdir()) == ["fingerprint.json"]
+
+
+def test_offline_rescoring_reproduces_saved_scores_and_adds_only_the_fact_loss_penalty():
+    from wra.core.models import FeatureModel
+
+    module = reevaluate_bench
+    dims = {name: {"score": 8, "feedback": "x"} for name in module.EVALUATION_DIMENSIONS}
+    old = {**dims, "overall_score": 8.0, "summary": ""}
+    kept = {"sample": "s", "run_name": "r", "page": "index", "iteration": 1, "features": FeatureModel(), "html": "<p>800 lm</p>", "source_html": "<p>800 lm</p>", "old_evaluation": old}
+    lost = {**kept, "iteration": 2, "html": "<p>x</p>"}
+
+    rows = module.offline_rows([kept, lost], "madmax")
+
+    assert [row["parity_overall"] for row in rows] == [8.0, 8.0]
+    assert rows[0]["penalty"] == 0 and rows[0]["offline_overall"] == 8.0
+    assert rows[1]["penalty"] > 0 and rows[1]["offline_overall"] == 8.0 - rows[1]["penalty"]
+    assert module.offline_rows([lost], "low")[0]["penalty"] == 0

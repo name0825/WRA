@@ -5,7 +5,11 @@ paths pointed at the copied PNGs) without regenerating or re-rendering, to
 check whether visual judgments change now that the evaluator can see
 screenshots.
 
-Usage: reevaluate_bench.py BENCH_DIR [--out DIR] [--limit N] [--dry-run] [--force-resume]
+With --offline nothing is sent to an LLM: the saved dimension scores are run
+through the current score aggregation again, once without and once with the
+deterministic fact-loss penalty, and written to offline.tsv / offline.json.
+
+Usage: reevaluate_bench.py BENCH_DIR [--out DIR] [--limit N] [--dry-run] [--force-resume] [--offline]
 """
 
 import argparse
@@ -17,13 +21,15 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from wra.browser.models import BrowserEvaluationResult
 from wra.core.config import load_config
-from wra.core.models import EVALUATION_DIMENSIONS, FeatureModel
+from wra.core.iteration import collect_content_findings, collect_fact_loss_findings
+from wra.core.models import EVALUATION_DIMENSIONS, EvaluationResult, FeatureModel, fact_loss_penalty_for
 from wra.cli import _resolve_seed, build_visual_inspector
 from wra.designer.schema import DesignSpec
 from wra.evaluator.llm import LLMEvaluator
@@ -34,7 +40,6 @@ from wra.utils.logging import configure_logging
 from wra.validator.anchors import find_broken_anchors
 from wra.validator.browser_errors import find_browser_errors
 from wra.validator.syntax import find_syntax_defects
-from wra.validator.tokens import find_corrupted_tokens
 from wra.validator.visual import find_visual_defects
 
 QUOTE_RE = re.compile(r"'([^']{4,60})'")
@@ -105,7 +110,9 @@ def discover_iterations(bench_dir: Path) -> tuple[list[dict], list[str]]:
                     except Exception as exc:
                         errors.append(f"{sample}/{run_name}/{page}/iter{iteration}: {exc}")
                         continue
+                    source_path = run_dir / "data" / page / "original.html"
                     iterations.append({
+                        "source_html": source_path.read_text(encoding="utf-8") if source_path.exists() else "",
                         "sample": sample,
                         "run_name": run_name,
                         "page": page,
@@ -221,6 +228,35 @@ def build_table(bench_dir: Path, iterations: list[dict], out_dir: Path) -> list[
     return lines
 
 
+def page_of(item: dict) -> SimpleNamespace:
+    return SimpleNamespace(features=item["features"], html=item["source_html"], created=not item["source_html"])
+
+
+def offline_rows(iterations: list[dict], freedom: str) -> list[dict]:
+    rows = []
+    for item in iterations:
+        saved = {key: value for key, value in item["old_evaluation"].items() if key not in ("fact_loss_penalty", "content_freedom")}
+        findings = collect_fact_loss_findings(page_of(item), item["html"], freedom)
+        base = EvaluationResult.model_validate({**saved, "content_freedom": freedom})
+        penalised = EvaluationResult.model_validate({**saved, "content_freedom": freedom, "fact_loss_penalty": fact_loss_penalty_for(len(findings))})
+        rows.append({
+            "sample": item["sample"], "run": item["run_name"], "page": item["page"], "iteration": item["iteration"],
+            "old_overall": item["old_evaluation"]["overall_score"], "parity_overall": base.overall_score,
+            "penalty": penalised.fact_loss_penalty, "offline_overall": penalised.overall_score, "findings": findings,
+        })
+    return rows
+
+
+def run_offline(iterations: list[dict], out_dir: Path, freedom: str) -> None:
+    rows = offline_rows(iterations, freedom)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / "offline.json").write_text(json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf-8")
+    header = ["sample", "run", "page", "iter", "old_overall", "parity_overall", "penalty", "offline_overall", "findings"]
+    lines = ["\t".join(header)] + ["\t".join([row["sample"], row["run"], row["page"], str(row["iteration"]), f"{row['old_overall']:g}", f"{row['parity_overall']:g}", f"{row['penalty']:g}", f"{row['offline_overall']:g}", str(len(row["findings"]))]) for row in rows]
+    (out_dir / "offline.tsv").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    print("\n".join(lines))
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("bench_dir", type=Path)
@@ -228,6 +264,7 @@ def main() -> None:
     parser.add_argument("--limit", type=int)
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--force-resume", action="store_true")
+    parser.add_argument("--offline", action="store_true")
     args = parser.parse_args()
     bench_dir = args.bench_dir.resolve()
 
@@ -240,6 +277,9 @@ def main() -> None:
         return
 
     config = load_config()
+    if args.offline:
+        run_offline(iterations, args.out.resolve() if args.out else bench_dir / "offline", config.content.freedom)
+        return
     configure_logging(level=config.logging.level, console_level=config.logging.console_level, log_dir=config.logging.directory)
     client = OllamaClient(config.ollama.base_url, keep_alive=config.ollama.keep_alive, temperature=config.ollama.temperature, seed=_resolve_seed(config.ollama.seed))
     warn_if_vision_missing(config.ollama.base_url, "evaluator", [model.name for model in config.models.evaluator])
@@ -266,10 +306,11 @@ def main() -> None:
         inspection_findings = visual_inspector.inspect(browser_result, html, model=em.name, think=em.think, timeout=em.timeout)
         evaluation = evaluator.evaluate(
             features, design_spec, html, browser_result=browser_result,
-            content_findings=find_corrupted_tokens(html, features),
+            content_findings=collect_content_findings(page_of(item), html, config.content.freedom),
             ux_findings=find_broken_anchors(html) + find_browser_errors(browser_result) + find_syntax_defects(html),
             visual_findings=find_visual_defects(html, features, browser_result) + inspection_findings,
             model=em.name, think=em.think, timeout=em.timeout,
+            fact_loss_findings=collect_fact_loss_findings(page_of(item), html, config.content.freedom),
         )
         out_path.write_text(json.dumps({
             "evaluation": evaluation.model_dump(mode="json"),
