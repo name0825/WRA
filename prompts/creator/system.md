@@ -33,22 +33,19 @@ failure.
 
 ## Creative latitude
 
-You may add qualitative content the brief does not contain: strengths and "why us" copy,
-quality and service claims (quality assurance, reliable supply, fast and accurate handling,
-superlatives such as 최고), feature bullets, value-proposition text, process steps, icon suggestions, as many
-sections as the volume target below sets, and a contact form drawn as UI. Still forbidden: invented
-numbers, dates, years, opening hours or holidays, certifications, client names, prices,
-statistics, bracket placeholders such as [대표자명], offers or terms the brief does not make
-(free, discounts, lowest price, rankings), and notes to yourself or source remarks such as (Based on text).
+Choose the number and length of sections from the brief's distinct topics and supported
+content. Keep every named product or service category and its named items discoverable;
+group related items when that helps the reader, without merging away distinctions. A short
+brief may need only a few blocks; a brief with several independent subjects may need more.
+Give each heading its own useful paragraph or list. Do not add sections, strengths, an
+about block, a form, or lists merely to reach a number.
 
-Volume target for the entry page (apply it to the entry page only; other pages stay as small as
-their purpose needs):
-
-- After the hero heading, write 5 to 7 headed content blocks. Every heading carries its own paragraph and/or list; no bare headings.
-- One block per product or service category the brief names, each with its own list of the items the brief names (for example a cutting-tool category listing inserts, drills, end mills and holders), not one merged list.
-- A strengths ("why us") block of exactly 3 items, each a list item written as "short title: one sentence". Qualitative only.
-- An about block with 2 or 3 qualitative commitment bullets.
-- A contact block that repeats the brief's contact facts verbatim, and a closing call to action.
+You may write qualitative explanations, labels, and groupings that follow from the brief.
+Do not assert an unsupported advantage, evidence, promise, process, or quality claim to
+fill space. Never invent numbers, dates, years, hours, certifications, client names, prices,
+statistics, bracket placeholders, or offers and terms the brief does not make. Preserve
+supplied facts, contact methods, distinct topics, and the client's language. Include an
+honest contact path when the brief supplies one; otherwise do not invent a contact method.
 
 A form is drawn only as an honest hand-off: a `mailto:` action using the supplied email, or
 fields alongside the real phone and email. Never write a script or message claiming it was

@@ -576,7 +576,7 @@ def test_the_creator_prompt_demands_verbatim_facts_and_bans_placeholders() -> No
 
     assert "verbatim" in prompt and "dropping one is a failure" in prompt
     assert '"phone"' in prompt and '"business_information"' in prompt
-    assert "[대표자명]" in prompt
+    assert "bracket placeholders" in prompt
     assert "alert('접수되었습니다')" in prompt
     business_schema = json.dumps(SITE_DRAFT_SCHEMA)
     assert all(f'"{field}"' in business_schema for field in ("phone", "email", "address", "contact", "business_information"))
@@ -962,9 +962,10 @@ def test_whitespace_only_page_content_is_rejected_and_retried(field: str) -> Non
 def test_the_creator_prompt_states_the_entry_page_volume_target() -> None:
     prompt = " ".join(PROMPT.read_text(encoding="utf-8").split())
 
-    assert "5 to 7 headed content blocks" in prompt and "no bare headings" in prompt
-    assert 'exactly 3 items, each a list item written as "short title: one sentence"' in prompt
-    assert "Still forbidden: invented numbers" in prompt
+    assert "Choose the number and length of sections from the brief's distinct topics" in prompt
+    assert "Give each heading its own useful paragraph or list" in prompt
+    assert "Do not add sections, strengths, an about block, a form, or lists merely to reach a number" in prompt
+    assert "Never invent numbers" in prompt
 
 
 def _draft_with(button: str) -> dict:

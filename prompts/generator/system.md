@@ -78,7 +78,7 @@ Produce semantic, accessible HTML with:
 - a skip link to the main content, and headings in sequential order with no skipped level
 - an accessible name on every icon-only control, `aria-hidden="true"` on decorative SVG, and icons drawn as inline SVG in one consistent style, never emoji
 - `aria-current="page"` on the navigation item for the current page
-- a visible `<label>` on every form field, the matching input `type` and `autocomplete`, and error text placed next to its field
+- a visible `<label>` on every form field, the matching input `type` and `autocomplete`, and error text placed next to its field; support only validation and submission paths that actually exist, without invented loading or success states
 - tap targets at least 44×44px on mobile with at least 8px between neighbours; nothing reachable only on hover
 - `width` and `height` attributes (or CSS `aspect-ratio`) on every `<img>`, logos, avatars, and card images included; `max-height` alone does not count. Use `loading="lazy"` on images below the first viewport, never on the hero
 
@@ -91,7 +91,7 @@ Every in-page `href="#x"` must point to an element with `id="x"`; use the sectio
 - Do not let fixed `min-width`, `100vw`, or width-plus-padding exceed the viewport. Prefer width constraints that remain within the container.
 - Never hide horizontal overflow on `html` or `body` to mask a layout defect.
 - A `position: fixed` element (such as an off-canvas mobile menu) is positioned against the viewport only if no ancestor has `backdrop-filter`, `filter`, `transform`, `perspective`, or `will-change` of those; otherwise that ancestor becomes its containing block, and a menu parked off-screen with `translateX(100%)` widens the page and opens at the wrong size. Keep such a menu outside any header that has these properties, or put the header's blur on its `::before` pseudo-element instead of the header itself. Hide a closed off-canvas menu with `visibility: hidden` as well as moving it.
-- Let long unbroken strings such as URLs and email addresses wrap with `overflow-wrap: anywhere`.
+- Let long unbroken strings such as URLs and email addresses wrap with `overflow-wrap: anywhere`. Accommodate long headings, lists, and empty values without hiding required content; contain a genuinely wide table in its own scrollable region rather than making the page scroll horizontally.
 - Give header/nav logo images an explicit bounded size (e.g. `max-height: 48-64px; width: auto`); never let a logo scale to fill or overrun the header.
 - Size full-height sections with `min-height: 100dvh`, not `100vh`. Under a fixed or sticky header, give anchored sections a `scroll-margin-top` so the header never covers a link target or a focused control.
 
@@ -104,7 +104,7 @@ For decorative visuals without source assets, use CSS or inline SVG rather than 
 ## Implementation discipline
 
 - Build the design completely. Never simplify the composition, drop a section, or thin out the styling to shorten the output.
-- Complete the still composition before optional motion; removing effects must leave a substantial, readable page.
+- Complete the still composition before optional motion; removing effects must leave a substantial, readable page. For existing controls, check applicable open/closed, keyboard, cancellation, focus-return, input and error states; make content and essential controls usable if JavaScript or optional motion fails.
 - Where a hero is specified, keep its main message and action readily visible using type scale and spacing. The hero carries one primary action as a button or link to the page's main next step (contact, apply, or a key section of this page); never invent an external URL for it; let required content extend naturally rather than clipping, shrinking it below readability, or summarizing it to force a viewport fit.
 - Keep CTA button labels short enough to stay on one line at desktop.
 - Tint shadows toward the surrounding background hue instead of flat black drop shadows.
