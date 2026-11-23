@@ -107,7 +107,7 @@ def collect_fact_loss_findings(page: PreparedPage, html: str, freedom: ContentFr
     """Source facts the page dropped where coverage is not enforced: a soft penalty and refiner feedback, never a cap."""
     if page.created or coverage_is_enforced(freedom):
         return []
-    return find_dropped_quantities(html, page.html) + find_dropped_questions(html, page.html) + find_dropped_identity_name(html, page.html, page.features)
+    return find_dropped_quantities(html, page.html) + find_dropped_questions(html, page.html, reworded_ok=True) + find_dropped_identity_name(html, page.html, page.features)
 
 
 def _invented_form_findings(page: PreparedPage, html: str) -> list[str]:

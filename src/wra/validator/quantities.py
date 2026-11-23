@@ -174,11 +174,51 @@ def _question_key(text: str) -> str:
     return re.sub(r"[\W_]+", "", unicodedata.normalize("NFKC", text).casefold())
 
 
-def find_dropped_questions(html: str, source_html: str) -> list[str]:
+_QUESTION_SUFFIXES = tuple(sorted((
+    "에서도", "에서는", "에서", "으로", "하나요", "한가요", "인가요", "되나요", "입니까", "습니까", "는데",
+    "나요", "가요", "까요", "지", "까", "요", "은", "는", "이", "가", "을", "를", "의", "에", "와", "과", "도", "만", "로", "할", "하",
+), key=len, reverse=True))
+_QUESTION_STOPWORDS = frozenset({"어떻게", "얼마나", "무엇", "어떤", "어디", "언제", "가능", "가능한", "있나요", "되나요", "하나요", "the", "does", "this", "that", "what", "how", "can", "you", "your", "for", "are", "with", "there"})
+_TERM_RE = re.compile(r"[가-힣]+|[a-z]+|\d+")
+_PAGE_QUESTION_RE = re.compile(r"[^.!?？\n]*[?？]")
+_PAGE_QUESTION_CHARS = 120
+
+
+def _question_terms(text: str) -> list[str]:
+    terms: list[str] = []
+    for token in _TERM_RE.findall(unicodedata.normalize("NFKC", text).casefold()):
+        if token.isascii():
+            term = token[:5]
+        else:
+            term = next((token[:-len(suffix)] for suffix in _QUESTION_SUFFIXES if token.endswith(suffix) and len(token) > len(suffix)), token)
+        if term not in _QUESTION_STOPWORDS and token not in _QUESTION_STOPWORDS and (len(term) >= (3 if term.isascii() else 2) or term.isdigit()) and term not in terms:
+            terms.append(term)
+    return terms
+
+
+def _page_questions(html: str) -> list[str]:
+    parser = _QuestionParser()
+    parser.feed(html)
+    parser.close()
+    spoken = [match[-_PAGE_QUESTION_CHARS:] for match in _PAGE_QUESTION_RE.findall(unicodedata.normalize("NFKC", extract_visible_text(html)))]
+    return [_TERM_RE.findall(unicodedata.normalize("NFKC", text).casefold()) for text in parser.questions + spoken]
+
+
+def _is_reworded_on_page(question: str, page_questions: list[list[str]]) -> bool:
+    terms = _question_terms(question)
+    if not terms:
+        return False
+    needed = max(1, len(terms) // 2)
+    return any(sum(any(token.startswith(term) for token in page_question) for term in terms) >= needed for page_question in page_questions)
+
+
+def find_dropped_questions(html: str, source_html: str, reworded_ok: bool = False) -> list[str]:
     """Source FAQ questions (details summaries, question headings, terms, buttons) the page no longer carries.
 
     Compared case-, whitespace- and punctuation-insensitively; each distinct
     source question needs to appear somewhere in the page's visible text.
+    With reworded_ok, a question also counts as kept when a question on the
+    page shares at least half of its key terms.
     """
     if not source_html or not source_html.strip():
         return []
@@ -193,11 +233,12 @@ def find_dropped_questions(html: str, source_html: str) -> list[str]:
     if not spellings:
         return []
     page_text = _question_key(extract_visible_text(html))
+    page_questions = _page_questions(html) if reworded_ok else []
 
     findings = [
         f"{FAQ_QUESTION_PREFIX}: '{spelling}' is in the source but not on the page"
         for key, spelling in spellings.items()
-        if key not in page_text
+        if key not in page_text and not (reworded_ok and _is_reworded_on_page(spelling, page_questions))
     ]
     if findings:
         logger.warning("Dropped source questions detected: %s", findings)

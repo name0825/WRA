@@ -192,3 +192,37 @@ def test_classed_text_with_a_question_mark_must_end_with_it_and_unclosed_paragra
     assert find_dropped_questions("<p>x</p>", '<div class="faq-question">환불 되나요? 네 가능해요</div>') == []
     source = '<p class="question">Is it waterproof?<p>Yes, it is rated IP67 and we ship worldwide to many countries, which is why customers like it so much.<p class="question">Can I return it?'
     assert [finding.split("'")[1] for finding in find_dropped_questions("<p>x</p>", source)] == ["Is it waterproof?", "Can I return it?"]
+
+
+_REFERENCE_FAQ = (
+    "<details><summary>배송은 얼마나 걸리나요?</summary></details>"
+    "<details><summary>모니터 옆에서 써도 화면에 빛이 비치지 않나요?</summary></details>"
+    "<details><summary>광원 모듈은 어떻게 교체하나요?</summary></details>"
+    "<details><summary>반품할 수 있나요?</summary></details>"
+    "<details><summary>해외에서도 쓸 수 있나요?</summary></details>"
+)
+_REWORDED_FAQ = (
+    "<div><p><strong>배송은 어떻게 되나요?</strong><br>2일</p></div>"
+    "<h3>빛이 화면에 비치나요?</h3>"
+    "<h3>교체는 어떻게 하나요?</h3>"
+    "<h3>반품이 가능한가요?</h3>"
+    "<h3>해외 사용이 가능한가요?</h3>"
+)
+
+
+def test_reworded_questions_are_kept_when_rewording_is_allowed():
+    assert find_dropped_questions(_REWORDED_FAQ, _REFERENCE_FAQ, reworded_ok=True) == []
+    assert len(find_dropped_questions(_REWORDED_FAQ, _REFERENCE_FAQ)) == 5
+
+
+def test_removed_question_is_still_reported_when_rewording_is_allowed():
+    page = _REWORDED_FAQ.replace("<h3>반품이 가능한가요?</h3>", "").replace("<h3>해외 사용이 가능한가요?</h3>", "<p>반품 정책은 별도 안내</p>")
+    asked = [finding.split("'")[1] for finding in find_dropped_questions(page, _REFERENCE_FAQ, reworded_ok=True)]
+    assert asked == ["반품할 수 있나요?", "해외에서도 쓸 수 있나요?"]
+
+
+def test_unrelated_english_question_sharing_only_function_words_is_still_reported():
+    source = "<details><summary>How do I cancel my subscription?</summary></details>"
+    page = "<h3>How does FlowStack connect to my existing tools?</h3>"
+    assert len(find_dropped_questions(page, source, reworded_ok=True)) == 1
+    assert find_dropped_questions("<h3>Can I cancel the subscription?</h3>", source, reworded_ok=True) == []
