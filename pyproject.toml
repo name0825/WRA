@@ -8,8 +8,10 @@ version = "0.1.0"
 description = "Web Redesigner AI"
 requires-python = ">=3.12"
 dependencies = [
+    "flask",
     "ollama",
     "pillow",
+    "playwright",
     "pydantic",
     "PyYAML",
 ]
@@ -17,12 +19,6 @@ dependencies = [
 [project.optional-dependencies]
 test = [
     "pytest",
-]
-browser = [
-    "playwright",
-]
-viewer = [
-    "flask",
 ]
 
 [project.scripts]

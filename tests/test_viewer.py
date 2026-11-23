@@ -115,6 +115,8 @@ def test_a_forged_host_header_is_refused(viewer) -> None:
     assert client.get("/", headers={"Host": "evil.example:5002"}).status_code == 403
     assert client.get("/", headers={"Host": "localhost"}).status_code == 200
     assert client.get("/", headers={"Host": "127.0.0.1:5002"}).status_code == 200
+    assert client.get("/", headers={"Host": "192.168.0.164:5002"}).status_code == 200
+    assert client.get("/", headers={"Host": "[fe80::1]:5002"}).status_code == 200
 
 
 def test_a_run_in_progress_still_shows_the_entry_page_first(tmp_path: Path) -> None:

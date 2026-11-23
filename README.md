@@ -894,25 +894,15 @@ Python 3.12 이상이 필요하다.
 
 ```bash
 pip install -e .
+playwright install chromium
 ```
+
+Flask(결과 뷰어·어드민 콘솔)와 Playwright(브라우저 렌더링·평가)는 기본 의존성에 포함된다. Playwright 패키지를 설치하거나 업데이트한 뒤에는 `playwright install chromium`으로 브라우저를 받아야 한다. 빠뜨리면 `redesign` 실행 시 `Executable doesn't exist` 오류가 난다.
 
 테스트 의존성 포함:
 
 ```bash
 pip install -e ".[test]"
-```
-
-Browser Evaluation 사용:
-
-```bash
-pip install -e ".[browser]"
-playwright install chromium
-```
-
-결과 뷰어와 어드민 콘솔(`show-pages`) 사용:
-
-```bash
-pip install -e ".[viewer]"
 ```
 
 ## 프로젝트 구조

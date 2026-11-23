@@ -1,5 +1,6 @@
 """Local Flask console for WRA: run artifacts plus the admin pages."""
 
+import ipaddress
 import json
 import secrets
 from pathlib import Path
@@ -42,6 +43,11 @@ def _host_allowed(host_header: str, config: ViewerConfig) -> bool:
     hostname = hostname.lower()
     if hostname in LOOPBACK_HOSTNAMES:
         return True
+    try:
+        ipaddress.ip_address(hostname)
+        return True
+    except ValueError:
+        pass
     bind_host = (config.host or "").strip("[]").lower()
     return bind_host not in LOOPBACK_HOSTNAMES and bind_host != "" and hostname == bind_host
 
