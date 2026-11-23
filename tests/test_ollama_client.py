@@ -214,6 +214,26 @@ def test_no_instance_waits_through_failed_probes(monkeypatch) -> None:
     assert record.sleeps == [ollama_module._PROBE_INTERVAL] * 2
 
 
+def test_failure_logs_never_contain_base_url_credentials(monkeypatch, caplog) -> None:
+    class FailingClient:
+        def __init__(self, host=None, timeout=None) -> None:
+            pass
+
+        def generate(self, **kwargs):
+            raise httpx.ConnectError("connection refused: http://user:secret@host:11434/api/generate")
+
+    monkeypatch.setattr(ollama_module, "Client", FailingClient)
+    client = OllamaClient("http://user:secret@host:11434")
+
+    with caplog.at_level("DEBUG"), pytest.raises(httpx.ConnectError):
+        client.generate(prompt="hi", model="test-model")
+
+    logged = caplog.text + "\n".join(str(record.exc_text) for record in caplog.records)
+    assert "LLM request failed" in logged
+    assert "ConnectError" in logged
+    assert "secret" not in logged
+
+
 def test_model_that_never_answered_fails_fast_with_the_original_error(monkeypatch) -> None:
     error = _no_instance()
     client, record = _scripted_client(monkeypatch, [error])
@@ -384,3 +404,12 @@ def test_last_sleep_before_expiry_is_the_clamped_remainder(monkeypatch) -> None:
 
     assert record.sleeps == [5]
     assert len(record.probes) == 1
+
+
+def test_redact_url_hides_userinfo_and_keeps_endpoint():
+    from wra.llm.ollama import redact_url
+
+    redacted = redact_url("http://user:pass@host.example:11434/api")
+    assert "pass" not in redacted and "user" not in redacted
+    assert redacted == "http://host.example:11434/api"
+    assert redact_url("http://localhost:11434") == "http://localhost:11434"

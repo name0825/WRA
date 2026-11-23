@@ -447,3 +447,15 @@ def test_semantic_contacts_cannot_be_substrings_of_real_contacts() -> None:
     assert "1234-5678" not in features.business.contact
     assert "admin@example.org" in features.business.contact
     assert "010-1234-5678" in features.business.contact
+
+
+def test_email_pattern_is_linear_on_adversarial_input() -> None:
+    import time
+
+    from wra.analyzer.extractor import EMAIL_RE
+
+    for text in ("a@" + "a" * 40000, "a" * 40000 + "@" + "a" * 40000, "a@" * 20000, "a@a." * 10000, "a" * 40000):
+        started = time.perf_counter()
+        EMAIL_RE.findall(text)
+        assert time.perf_counter() - started < 0.5
+    assert EMAIL_RE.findall("mail Sales.Team+x@sub.example.co.kr now") == ["Sales.Team+x@sub.example.co.kr"]

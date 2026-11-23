@@ -10,6 +10,7 @@ from flask import Flask, abort, render_template_string, request, send_from_direc
 
 from wra.core.config import load_raw
 from wra.core.models import ViewerConfig
+from wra.viewer import security
 from wra.viewer.admin import create_admin_blueprint
 from wra.viewer.data import ARTIFACTS, asset_folder, criteria_scores, is_slug, iteration_artifacts, list_runs, load_run, read_json, safe_run_dir, score_band
 from wra.viewer.inputs import MAX_UPLOAD_BYTES
@@ -65,8 +66,11 @@ def create_app(config: ViewerConfig | None = None) -> Flask:
     # Admin logins live in the session cookie; a per-process key means a restart
     # simply asks for the password again, which is the safer default here.
     app.secret_key = secrets.token_hex(32)
-    # The console is served over plain HTTP by default, so Secure would lock
-    # the user out; SameSite still keeps the cookie off cross-site requests.
+    app.extensions[security.STORE_EXTENSION] = security.SessionStore()
+    # The console is served over plain HTTP by default, so Secure is opt-in
+    # (viewer.admin.secure_cookie) for HTTPS deployments; SameSite still keeps
+    # the cookie off cross-site requests.
+    app.config["SESSION_COOKIE_SECURE"] = resolved_config.admin.secure_cookie
     app.config["SESSION_COOKIE_HTTPONLY"] = True
     app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
     # A folder drop legitimately carries many files in one request; 20x a

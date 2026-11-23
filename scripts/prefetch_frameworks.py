@@ -7,13 +7,12 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from urllib.error import URLError
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 import yaml
 
-from wra.browser.framework_cache import DEFAULT_CACHE_DIR, cached_path_for_url, download_framework_asset, iter_framework_urls
+from wra.browser.framework_cache import DEFAULT_CACHE_DIR, cached_path_for_url, ensure_cached_path_for_url, iter_framework_entries
 from wra.core.models import FrameworkConfig
 
 FRAMEWORKS_YAML = Path(__file__).resolve().parent.parent / "config" / "frameworks.yaml"
@@ -23,16 +22,15 @@ def main() -> None:
     data = yaml.safe_load(FRAMEWORKS_YAML.read_text(encoding="utf-8")) or {}
     frameworks = FrameworkConfig.model_validate(data.get("frameworks", {}))
     DEFAULT_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    for url, extension in iter_framework_urls(frameworks):
+    for url, extension, sha256 in iter_framework_entries(frameworks):
         dest = cached_path_for_url(url, extension, DEFAULT_CACHE_DIR)
-        if dest.is_file():
-            print(f"cached already: {url}")
-            continue
+        already = dest.is_file()
         try:
-            download_framework_asset(url, dest)
-            print(f"downloaded: {url} -> {dest}")
-        except URLError as exc:
+            ensure_cached_path_for_url(url, extension, DEFAULT_CACHE_DIR, sha256)
+        except RuntimeError as exc:
             print(f"failed: {url} ({exc})")
+            continue
+        print(f"cached already: {url}" if already else f"downloaded: {url} -> {dest}")
 
 
 if __name__ == "__main__":

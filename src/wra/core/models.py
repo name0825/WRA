@@ -295,6 +295,7 @@ class AdminConfig(BaseModel):
     enabled: bool = True
     password: str | None = None
     session_hours: int = Field(default=12, gt=0)
+    secure_cookie: bool = False
     allow_config_edit: bool = False
     allow_run: bool = False
     allow_input_edit: bool = False
@@ -320,6 +321,8 @@ class Framework(BaseModel):
     name: str
     cdn: str
     tag: Literal["link", "script"] | None = None
+    sha256: str | None = Field(default=None, pattern=r"^[0-9a-fA-F]{64}$")
+    companion_sha256: str | None = Field(default=None, pattern=r"^[0-9a-fA-F]{64}$")
 
     def loading_tag(self, default: Literal["link", "script"]) -> str:
         """Resolve the HTML loading tag, falling back to the catalog's kind.

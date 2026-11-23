@@ -192,3 +192,18 @@ def test_ordinary_korean_hour_notation_passes(brief_hours: str, shown: str) -> N
 )
 def test_contradicting_hours_are_reported(brief_hours: str, shown: str) -> None:
     assert _hours_page_findings(brief_hours, shown) != []
+
+
+def test_label_matching_is_linear_on_adversarial_line():
+    import time
+
+    line = "주소: a" + " " * 40000 + "b"
+    started = time.perf_counter()
+    facts = extract_brief_facts(line)
+    assert time.perf_counter() - started < 0.5
+    assert facts["address"] == line[len("주소: "):]
+
+
+def test_label_matching_still_strips_decoration():
+    facts = extract_brief_facts("- **주소:** 서울시 강남구 테헤란로 1 **  ")
+    assert facts["address"] == "서울시 강남구 테헤란로 1"

@@ -421,12 +421,12 @@ def test_a_recorded_asset_folder_resolving_to_a_reserved_root_by_another_spellin
     assert asset_folder(run) == "assets"
 
 
-@pytest.mark.parametrize("slug", ["index", "about-us", "page-2", "a.b", "v1.2", "Contact", "console", "communication", "com10", "lpt0", "com", "aux-x"])
+@pytest.mark.parametrize("slug", ["index", "about-us", "page-2", "a.b", "v1.2", "Contact", "console", "communication", "com10", "lpt10", "com", "aux-x"])
 def test_ordinary_slugs_are_accepted(slug: str) -> None:
     assert is_slug(slug)
 
 
-@pytest.mark.parametrize("slug", ["con", "nul", "prn", "aux", "CON", "Nul", "COM1", "com9", "LPT1", "lpt9", "aux.x", "NUL.tar.gz", "com1.html", "about.", "x..", "a.b."])
+@pytest.mark.parametrize("slug", ["con", "nul", "prn", "aux", "CON", "Nul", "COM1", "com9", "LPT1", "lpt9", "com0", "COM0", "lpt0.txt", "aux.x", "NUL.tar.gz", "com1.html", "about.", "x..", "a.b."])
 def test_windows_device_names_and_a_trailing_dot_are_not_slugs(slug: str) -> None:
     assert not is_slug(slug)
 

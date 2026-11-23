@@ -1,8 +1,13 @@
 from concurrent.futures import ThreadPoolExecutor
 import hashlib
+import io
 import json
 import logging
+import os
 from pathlib import Path
+import tempfile
+
+from PIL import Image
 
 from wra.browser.guard import guard_context, launch_guarded
 from wra.browser.models import BrowserConfig
@@ -32,10 +37,36 @@ def _required(model, fields: list[str]) -> dict:
 VISION_INSIGHT_SCHEMA = _required(VisionInsight, ["subject", "mood", "role", "has_text", "text"])
 PAGE_IMPRESSION_SCHEMA = _required(PageImpression, ["mood", "density", "layout", "strengths", "weaknesses"])
 
-SOURCE_PREVIEW_NAME = ".source_preview.html"
+SOURCE_PREVIEW_PREFIX = ".source_preview"
 # Ollama cannot decode these, so sending them only buys a 400 per file: ICO is
 # an unsupported container, SVG is vector markup rather than an image.
 UNSUPPORTED_SUFFIXES = {".ico", ".svg"}
+
+MAX_DECODE_PIXELS = 40_000_000
+
+def _reencoded_image(path: Path) -> bytes | None:
+    """Decode the file fully and return a fresh PNG, so only pixels leave.
+
+    A valid header proves nothing about what follows it; re-encoding drops any
+    trailing or embedded non-image data and rejects files that do not decode.
+    The declared size is checked before decoding: a tiny file can claim a
+    canvas that costs gigabytes of memory.
+    """
+    try:
+        with Image.open(path) as image:
+            if image.width * image.height > MAX_DECODE_PIXELS:
+                logger.warning("Vision skipped, image exceeds %d pixels: %s (%dx%d)", MAX_DECODE_PIXELS, path, image.width, image.height)
+                return None
+            image.load()
+            if image.mode not in {"1", "L", "LA", "P", "RGB", "RGBA", "I;16"}:
+                image = image.convert("RGBA" if "A" in image.getbands() else "RGB")
+            buffer = io.BytesIO()
+            image.save(buffer, format="PNG")
+            return buffer.getvalue()
+    except Exception as exc:
+        logger.warning("Vision skipped, file is not a decodable image: %s (%s)", path, type(exc).__name__)
+        return None
+
 
 class VisionAnalyzer:
     """Read the source media with a vision model, once per input.
@@ -74,21 +105,29 @@ class VisionAnalyzer:
     def analyze_assets(self, assets: list[AssetInfo], source_paths: dict[str, Path]) -> None:
         """Attach a vision insight to each selected asset, in place."""
         prompt = self._image_prompt_path.read_text(encoding="utf-8")
-        work = [(asset, source_paths[asset.path]) for asset in self.select_images(assets) if source_paths.get(asset.path) and source_paths[asset.path].is_file()]
+        work = []
+        for asset in self.select_images(assets):
+            path = source_paths.get(asset.path)
+            if not path or not path.is_file():
+                continue
+            work.append((asset, path))
         if not work:
             return
         workers = min(self._config.concurrency, len(work))
         logger.info("Vision analysis started: images=%d concurrency=%d", len(work), workers)
         if workers <= 1:
-            for asset, path in work:
-                self._analyze_one(prompt, asset, path)
+            for item in work:
+                self._analyze_one(prompt, *item)
             return
         with ThreadPoolExecutor(max_workers=workers) as pool:
             list(pool.map(lambda item: self._analyze_one(prompt, *item), work))
 
     def _analyze_one(self, prompt: str, asset: AssetInfo, path: Path) -> None:
         try:
-            data = self._request(prompt, path, VISION_INSIGHT_SCHEMA)
+            payload = _reencoded_image(path)
+            if payload is None:
+                return
+            data = self._request(prompt, path, VISION_INSIGHT_SCHEMA, payload)
             asset.vision = VisionInsight.model_validate(self._coerce_insight(data))
             logger.info("Vision insight: asset=%s role=%s subject=%s", asset.path, asset.vision.role, asset.vision.subject)
         except Exception as exc:
@@ -107,12 +146,12 @@ class VisionAnalyzer:
             logger.warning("Source page impression skipped: %s", exc)
             return None
 
-    def _request(self, prompt: str, image_path: Path, schema: dict) -> dict:
+    def _request(self, prompt: str, image_path: Path, schema: dict, payload: bytes | None = None) -> dict:
         cached = self._read_cache(prompt, image_path)
         if cached is not None:
             logger.debug("Vision cache hit: %s", image_path)
             return cached
-        response = self._llm_client.generate(prompt=prompt, model=self._model, options={"num_ctx": self._num_ctx} if self._num_ctx is not None else None, images=[str(image_path)], think=self._think, format=schema, timeout=self._timeout)
+        response = self._llm_client.generate(prompt=prompt, model=self._model, options={"num_ctx": self._num_ctx} if self._num_ctx is not None else None, images=[payload if payload is not None else str(image_path)], think=self._think, format=schema, timeout=self._timeout)
         data = json.loads(normalize_json_response(response))
         if not isinstance(data, dict):
             raise ValueError("Vision model response must be a JSON object")
@@ -194,7 +233,6 @@ def render_source_page(html: str, asset_root: str | Path, screenshot_path: str |
     lives, but the screenshot is written wherever the caller asks, so pages do
     not overwrite each other's captures.
     """
-    preview_path = Path(asset_root) / SOURCE_PREVIEW_NAME
     screenshot_path = Path(screenshot_path)
     screenshot_path.parent.mkdir(parents=True, exist_ok=True)
     try:
@@ -205,8 +243,11 @@ def render_source_page(html: str, asset_root: str | Path, screenshot_path: str |
 
     viewport = browser_config.viewports[0] if browser_config.viewports else None
     width, height = (viewport.width, viewport.height) if viewport else (1440, 900)
-    preview_path.write_text(html, encoding="utf-8")
+    descriptor, preview_name = tempfile.mkstemp(dir=asset_root, prefix=SOURCE_PREVIEW_PREFIX, suffix=".html")
+    preview_path = Path(preview_name)
     try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            handle.write(html)
         with sync_playwright() as playwright:
             browser = launch_guarded(playwright)
             try:

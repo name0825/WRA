@@ -1,5 +1,8 @@
+import io
 import json
 from pathlib import Path
+
+from PIL import Image
 
 from wra.analyzer.vision import VisionAnalyzer
 from wra.core.models import AssetInfo, VisionConfig
@@ -39,7 +42,7 @@ def _analyzer(tmp_path: Path, client, **overrides) -> VisionAnalyzer:
 
 def _image(tmp_path: Path, name: str, size: int = 8192) -> Path:
     path = tmp_path / name
-    path.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\0" * size)
+    Image.new("RGB", (8 + size % 1000, 8), "red").save(path, format="PNG")
     return path
 
 
@@ -81,7 +84,7 @@ def test_concurrent_analysis_covers_every_image(tmp_path: Path) -> None:
 def test_concurrent_analysis_isolates_one_failure(tmp_path: Path) -> None:
     class OneBadImage(RecordingClient):
         def generate(self, prompt, model, options=None, images=None, *, think=None, format=None, timeout=None):
-            if images and "photo2.png" in images[0]:
+            if images and Image.open(io.BytesIO(images[0])).width == 8 + (8192 + 2) % 1000:
                 raise RuntimeError("Failed to load image or audio file")
             return self.response
 
@@ -214,4 +217,133 @@ def test_source_screenshot_goes_through_the_browser_guard(tmp_path: Path, monkey
     assert seen["root"] == tmp_path.resolve()
     assert seen["guarded_before_page"] is True
     assert seen["viewport"] is not None
-    assert seen["url"].endswith(vision.SOURCE_PREVIEW_NAME)
+    assert Path(seen["url"]).name.startswith(vision.SOURCE_PREVIEW_PREFIX)
+    assert list(tmp_path.glob(vision.SOURCE_PREVIEW_PREFIX + "*")) == []
+
+
+def test_source_preview_never_touches_a_preexisting_file_or_link(tmp_path: Path, monkeypatch) -> None:
+    import os
+    import sys
+    import types
+    from contextlib import contextmanager
+
+    from wra.analyzer import vision
+    from wra.browser.models import BrowserConfig
+
+    victim = tmp_path / "victim.txt"
+    victim.write_text("precious", encoding="utf-8")
+    planted = tmp_path / ".source_preview.html"
+    try:
+        os.link(victim, planted)
+    except OSError:
+        planted.write_text("precious", encoding="utf-8")
+    seen: dict = {}
+
+    class FakePage:
+        def goto(self, url, **kwargs):
+            seen["url"] = url
+
+        def wait_for_load_state(self, *args, **kwargs):
+            pass
+
+        def screenshot(self, path, **kwargs):
+            Path(path).write_bytes(b"png")
+
+    class FakeContext:
+        def new_page(self):
+            return FakePage()
+
+        def close(self):
+            pass
+
+    class FakeBrowser:
+        def new_context(self, **kwargs):
+            return FakeContext()
+
+        def close(self):
+            pass
+
+    @contextmanager
+    def fake_sync_playwright():
+        yield object()
+
+    fake_module = types.ModuleType("playwright.sync_api")
+    fake_module.sync_playwright = fake_sync_playwright
+    monkeypatch.setitem(sys.modules, "playwright.sync_api", fake_module)
+    monkeypatch.setattr(vision, "launch_guarded", lambda playwright: FakeBrowser())
+    monkeypatch.setattr(vision, "guard_context", lambda context, root: None)
+
+    vision.render_source_page("<p>attacker</p>", tmp_path, tmp_path / "out.png", BrowserConfig(), reveal_animations=False)
+
+    assert victim.read_text(encoding="utf-8") == "precious"
+    assert planted.read_text(encoding="utf-8") == "precious"
+    assert Path(seen["url"]).name != planted.name
+    assert sorted(path.name for path in tmp_path.glob(".source_preview*")) == [planted.name]
+
+
+def test_a_non_image_with_an_image_suffix_is_never_sent(tmp_path: Path) -> None:
+    client = RecordingClient(INSIGHT)
+    analyzer = _analyzer(tmp_path, client)
+    fake = tmp_path / "photo.jpg"
+    fake.write_text("secret = hunter2\n" * 1000, encoding="utf-8")
+    asset = AssetInfo(path="assets/photo.jpg", kind="image", bytes=fake.stat().st_size)
+    analyzer.analyze_assets([asset], {"assets/photo.jpg": fake})
+    assert client.calls == []
+    assert asset.vision is None
+
+
+def test_a_real_image_is_still_sent(tmp_path: Path) -> None:
+    client = RecordingClient(INSIGHT)
+    analyzer = _analyzer(tmp_path, client)
+    asset = AssetInfo(path="assets/hero.png", kind="image", bytes=90000, width=1600, height=900)
+    analyzer.analyze_assets([asset], {"assets/hero.png": _image(tmp_path, "hero.png")})
+    assert len(client.calls) == 1
+
+
+def test_a_forged_png_header_with_trailing_secret_is_not_sent(tmp_path: Path) -> None:
+    import struct
+
+    client = RecordingClient(INSIGHT)
+    analyzer = _analyzer(tmp_path, client)
+    forged = tmp_path / "photo.png"
+    forged.write_bytes(b"\x89PNG\r\n\x1a\n" + struct.pack(">I", 13) + b"IHDR" + struct.pack(">II", 800, 600) + b"\x08\x02\x00\x00\x00" + b"secret = hunter2\n" * 1000)
+    asset = AssetInfo(path="assets/photo.png", kind="image", bytes=forged.stat().st_size)
+    analyzer.analyze_assets([asset], {"assets/photo.png": forged})
+    assert client.calls == []
+    assert asset.vision is None
+
+
+def test_trailing_data_after_a_real_image_never_leaves(tmp_path: Path) -> None:
+    client = RecordingClient(INSIGHT)
+    analyzer = _analyzer(tmp_path, client)
+    path = _image(tmp_path, "hero.png")
+    path.write_bytes(path.read_bytes() + b"secret = hunter2\n" * 1000)
+    asset = AssetInfo(path="assets/hero.png", kind="image", bytes=path.stat().st_size)
+    analyzer.analyze_assets([asset], {"assets/hero.png": path})
+    assert len(client.calls) == 1
+    sent = client.calls[0]["images"][0]
+    assert isinstance(sent, bytes)
+    assert b"hunter2" not in sent
+    assert sent[:8] == b"\x89PNG\r\n\x1a\n"
+
+
+def test_an_oversized_canvas_is_skipped_without_being_decoded(tmp_path: Path, monkeypatch) -> None:
+    import struct
+    import zlib
+
+    def chunk(kind: bytes, body: bytes) -> bytes:
+        return struct.pack(">I", len(body)) + kind + body + struct.pack(">I", zlib.crc32(kind + body))
+
+    huge = tmp_path / "huge.png"
+    header = struct.pack(">IIBBBBB", 13000, 13000, 8, 0, 0, 0, 0)
+    huge.write_bytes(b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", header) + chunk(b"IDAT", zlib.compress(b"\x00" * 64)) + chunk(b"IEND", b""))
+    loads = []
+    original_load = Image.Image.load
+    monkeypatch.setattr(Image.Image, "load", lambda self, *args, **kwargs: (loads.append(1), original_load(self, *args, **kwargs))[1])
+    client = RecordingClient(INSIGHT)
+    analyzer = _analyzer(tmp_path, client)
+    asset = AssetInfo(path="assets/huge.png", kind="image", bytes=90000)
+    analyzer.analyze_assets([asset], {"assets/huge.png": huge})
+    assert loads == []
+    assert client.calls == []
+    assert asset.vision is None

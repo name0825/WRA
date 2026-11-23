@@ -79,9 +79,53 @@ def test_an_expired_session_is_treated_as_logged_out(console) -> None:
     client, _ = console(password="secret")
     client.post("/admin/login", data={"password": "secret"}, environ_overrides=LOOPBACK, headers=SAME_ORIGIN)
     assert client.get("/admin/", environ_overrides=LOOPBACK).status_code == 200
+    store = client.application.extensions[security.STORE_EXTENSION]
     with client.session_transaction() as flask_session:
-        flask_session[security.SESSION_KEY] = (datetime.now() - timedelta(hours=1)).isoformat()
+        token = flask_session[security.SESSION_KEY]
+    store._expiry[token] = datetime.now() - timedelta(hours=1)
     assert client.get("/admin/", environ_overrides=LOOPBACK).status_code == 302
+
+
+def _session_cookie(client) -> str:
+    return client.get_cookie("session").value
+
+
+def test_a_cookie_replayed_after_logout_is_refused(console) -> None:
+    client, _ = console(password="secret")
+    client.post("/admin/login", data={"password": "secret"}, environ_overrides=LOOPBACK, headers=SAME_ORIGIN)
+    stolen = _session_cookie(client)
+    assert client.get("/admin/config", environ_overrides=LOOPBACK).status_code == 200
+    client.post("/admin/logout", environ_overrides=LOOPBACK, headers=SAME_ORIGIN)
+    client.set_cookie("session", stolen)
+    response = client.get("/admin/config", environ_overrides=LOOPBACK)
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/admin/login")
+
+
+def test_a_login_issues_a_fresh_session_id_and_drops_the_old_one(console) -> None:
+    client, _ = console(password="secret")
+    client.post("/admin/login", data={"password": "secret"}, environ_overrides=LOOPBACK, headers=SAME_ORIGIN)
+    first = _session_cookie(client)
+    client.post("/admin/login", data={"password": "secret"}, environ_overrides=LOOPBACK, headers=SAME_ORIGIN)
+    assert _session_cookie(client) != first
+    assert client.get("/admin/config", environ_overrides=LOOPBACK).status_code == 200
+    client.set_cookie("session", first)
+    assert client.get("/admin/config", environ_overrides=LOOPBACK).status_code == 302
+
+
+def test_a_session_is_forgotten_by_a_restarted_server(console) -> None:
+    client, _ = console(password="secret")
+    client.post("/admin/login", data={"password": "secret"}, environ_overrides=LOOPBACK, headers=SAME_ORIGIN)
+    client.application.extensions[security.STORE_EXTENSION]._expiry.clear()
+    assert client.get("/admin/config", environ_overrides=LOOPBACK).status_code == 302
+
+
+def test_the_session_cookie_is_secure_only_when_configured(console) -> None:
+    plain, _ = console(password="secret")
+    secured, _ = console(password="secret", secure_cookie=True)
+    for client, expect in ((plain, False), (secured, True)):
+        response = client.post("/admin/login", data={"password": "secret"}, environ_overrides=LOOPBACK, headers=SAME_ORIGIN)
+        assert ("Secure" in response.headers["Set-Cookie"]) is expect
 
 
 def test_a_post_from_another_origin_is_refused(console) -> None:
@@ -540,6 +584,30 @@ def test_a_clean_upload_path_keeps_folders_and_drops_the_rest(tmp_path: Path) ->
     assert inputs.clean_upload_path("../logo.png") == "logo.png"
     assert inputs.clean_upload_path("...") is None
     assert inputs.clean_upload_path("") is None
+
+
+@pytest.mark.parametrize("name", ["nul.txt", "NUL.html", "aux.txt", "con.css", "Com1.txt", "lpt9.md", "COM¹.txt",
+    "nul .txt", "nul...txt", "nul. ", "dir/prn.txt", "con/index.html", "conin$.txt"])
+def test_an_upload_named_after_a_windows_device_is_refused(tmp_path: Path, name: str) -> None:
+    assert inputs.clean_upload_path(name) is None
+    with pytest.raises(ValueError):
+        inputs.save_upload(tmp_path, name, b"x")
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_an_upload_keeps_a_backup_of_the_file_it_replaces(tmp_path: Path) -> None:
+    inputs.save_upload(tmp_path, "site/index.html", b"old")
+    assert not (tmp_path / inputs.BACKUP_DIR).exists()
+    inputs.save_upload(tmp_path, "site/index.html", b"new")
+    assert (tmp_path / "site" / "index.html").read_bytes() == b"new"
+    backups = list((tmp_path / inputs.BACKUP_DIR / "site").glob("index.html.*.bak"))
+    assert [backup.read_bytes() for backup in backups] == [b"old"]
+
+
+def test_an_upload_cannot_name_the_backup_directory(tmp_path: Path) -> None:
+    inputs.save_upload(tmp_path, ".backups/x.html", b"x")
+    assert (tmp_path / "backups" / "x.html").is_file()
+    assert not (tmp_path / inputs.BACKUP_DIR).exists()
 
 
 def test_only_a_raster_image_is_served_inline(console, tmp_path: Path) -> None:

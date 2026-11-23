@@ -1,8 +1,10 @@
 import json
 import logging
+import re
 import threading
 from time import monotonic, sleep
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
 from ollama import Client, ResponseError
 
@@ -11,6 +13,22 @@ from .client import LLMClient
 from .schema import format_label
 
 logger = logging.getLogger(__name__)
+
+
+def redact_url(url: str) -> str:
+    try:
+        parts = urlsplit(url)
+        return urlunsplit(parts._replace(netloc=parts.netloc.rpartition("@")[2], query="", fragment=""))
+    except ValueError:
+        return "<unparseable url>"
+
+
+_USERINFO_RE = re.compile(r"(?<=://)[^/@\s]*@")
+
+
+def describe_exception(exc: BaseException) -> str:
+    return f"{type(exc).__name__}: {_USERINFO_RE.sub('', str(exc))}"
+
 
 # A model with no configured timeout would otherwise inherit the ollama client's
 # own default of None, which httpx reads as "wait forever": one stalled request
@@ -57,7 +75,7 @@ class OllamaClient(LLMClient):
         self._seed_lock = threading.Lock()
         self._clients: dict[float, Client] = {}
         self._responsive_models: set[str] = set()
-        logger.debug("Initialized Ollama client: %s timeout=%s keep_alive=%s temperature=%s seed=%s", base_url, default_timeout, keep_alive, temperature, seed)
+        logger.debug("Initialized Ollama client: %s timeout=%s keep_alive=%s temperature=%s seed=%s", redact_url(base_url), default_timeout, keep_alive, temperature, seed)
 
     def _resolve_timeout(self, timeout: float | None) -> float:
         return self._default_timeout if timeout is None else timeout
@@ -154,10 +172,10 @@ class OllamaClient(LLMClient):
                 if isinstance(exc, json.JSONDecodeError) and kind is None:
                     logger.warning("LLM returned a non-empty invalid body: model=%s body_chars=%d body=%r", model, len(exc.doc), exc.doc[:200])
                 if kind is None or model not in self._responsive_models:
-                    logger.exception("LLM request failed: model=%s", model)
+                    logger.error("LLM request failed: model=%s error=%s", model, describe_exception(exc))
                     raise
                 if resends >= _TRANSPORT_RETRIES:
-                    logger.exception("LLM request failed: model=%s", model)
+                    logger.error("LLM request failed: model=%s error=%s", model, describe_exception(exc))
                     raise LLMTransportError(f"LLM transport failure ({kind}) for model {model} after {resends + 1} attempt(s)") from exc
                 logger.warning(
                     "LLM transport failure: model=%s kind=%s attempt=%d/%d; waiting for the model to answer",

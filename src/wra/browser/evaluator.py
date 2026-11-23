@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import bisect
+import os
 import re
 import shutil
 import tempfile
@@ -11,7 +12,7 @@ import logging
 
 from wra.browser.contrast import CONTRAST_CANDIDATES_SCRIPT, contrast_failures
 from wra.browser.craft_measure import measure_craft
-from wra.browser.framework_cache import DEFAULT_CACHE_DIR, ensure_cached_path_for_url, iter_framework_urls
+from wra.browser.framework_cache import DEFAULT_CACHE_DIR, ensure_cached_path_for_url, iter_framework_urls, read_verified_framework_bytes
 from wra.browser.guard import guard_context, launch_guarded
 from wra.browser.http_cache import DEFAULT_HTTP_CACHE_DIR, fetch_cached
 from wra.browser.models import BrowserConfig, BrowserEvaluationResult, BrowserViewportResult
@@ -905,8 +906,15 @@ def _localize_framework_cdns(html: str, frameworks: FrameworkConfig, cache_dir: 
         cached = ensure_cached_path_for_url(url, extension, cache_dir)
         cache_root.mkdir(parents=True, exist_ok=True)
         local_path = cache_root / cached.name
-        if not local_path.is_file():
-            shutil.copyfile(cached, local_path)
+        data = read_verified_framework_bytes(url, cached)
+        descriptor, partial_name = tempfile.mkstemp(prefix=f"{cached.name}.", suffix=".part", dir=cache_root)
+        try:
+            with os.fdopen(descriptor, "wb") as partial:
+                partial.write(data)
+            os.replace(partial_name, local_path)
+        except BaseException:
+            Path(partial_name).unlink(missing_ok=True)
+            raise
         html = html.replace(url, f"{cache_dirname}/{cached.name}")
     return html
 

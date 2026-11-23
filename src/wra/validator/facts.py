@@ -13,7 +13,8 @@ _LABELS = (
     ("전화", r"전화(?:\s*번호)?|연락처|tel(?:ephone)?|phone"),
     ("이메일", r"이메일|e-?mail"),
 )
-_LABEL_RES = tuple((label, re.compile(rf"^[\s\-*•]*(?:{pattern})[\s*]*[:：][\s*]*(.+?)[\s*]*$", re.I)) for label, pattern in _LABELS)
+_LABEL_RES = tuple((label, re.compile(rf"^[\s\-*•]*(?:{pattern})[\s*]*[:：][\s*]*(.+)$", re.I)) for label, pattern in _LABELS)
+_TRAILING_FILLER = " \t\r\n\f\v 　*"
 _REGISTRATION_RE = re.compile(r"(?<!\d)\d{3}-\d{2}-\d{5}(?!\d)")
 _NUMERIC_RE = re.compile(r"[\d\s()+.:\-–—~]+")
 _NUMBER_CHUNK_RE = re.compile(r"\d[\d\s().+-]*")
@@ -27,6 +28,7 @@ _STREET_RE = re.compile(r"\S+(?:대로|로|길)\s*\d+(?:-\d+)?")
 
 
 def _labeled(text: str) -> tuple[str, str] | None:
+    text = text.rstrip(_TRAILING_FILLER)
     for label, pattern in _LABEL_RES:
         match = pattern.match(text)
         if match:

@@ -13,6 +13,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path, PurePosixPath
 
+from wra.viewer.data import WINDOWS_DEVICE_NAMES
+
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024
 MAX_TEXT_BYTES = 512 * 1024
 MAX_FILES_LISTED = 2000
@@ -22,6 +24,7 @@ BACKUPS_KEPT = 5
 # Kept under a dotted name so neither the listing nor the pipeline, which both
 # skip entries starting with a dot, ever sees a backup as source material.
 BACKUP_DIR = ".backups"
+_SUPERSCRIPT_DIGITS = str.maketrans("¹²³", "123")
 
 TEXT_SUFFIXES = {".html", ".htm", ".css", ".js", ".mjs", ".json", ".txt", ".md", ".xml", ".yaml", ".yml", ".csv", ".svg"}
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".avif", ".ico", ".bmp", ".svg"}
@@ -129,6 +132,12 @@ def safe_file(root: Path, relative: str) -> Path | None:
     return path if path is not None and path.is_file() else None
 
 
+def _is_device_name(part: str) -> bool:
+    stem = part.split(".", 1)[0].rstrip(" .").lower()
+    stem = stem.translate(_SUPERSCRIPT_DIGITS)
+    return stem in WINDOWS_DEVICE_NAMES or stem in ("conin$", "conout$")
+
+
 def clean_upload_path(name: str) -> str | None:
     """The relative path an uploaded file should take under the input root.
 
@@ -143,7 +152,7 @@ def clean_upload_path(name: str) -> str | None:
         if not part:
             continue
         part = "".join(character for character in part if character not in '<>:"|?*' and ord(character) >= 32)
-        if not part or part in (".", ".."):
+        if not part or part in (".", "..") or _is_device_name(part):
             return None
         parts.append(part)
     if not parts:
@@ -173,6 +182,8 @@ def save_upload(root: Path, relative: str, data: bytes) -> Path:
     if path is None:
         raise ValueError(f"입력 폴더 밖을 가리킵니다: {cleaned}")
     path.parent.mkdir(parents=True, exist_ok=True)
+    if path.is_file():
+        _backup(root, path, path.relative_to(root.resolve()).as_posix())
     path.write_bytes(data)
     return path
 

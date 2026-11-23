@@ -2,6 +2,7 @@ from dataclasses import dataclass, field
 from collections import Counter
 from pathlib import Path
 import logging
+import os
 import posixpath
 import re
 import shutil
@@ -129,13 +130,29 @@ def _unique_slugs(relatives: list[str]) -> dict[str, str]:
     return slugs
 
 
+def _is_walkable_directory(path: Path, real_root: Path) -> bool:
+    if path.is_symlink() or path.is_junction() or not path.resolve().is_relative_to(real_root):
+        logger.warning("Input directory skipped, link or resolves outside the input directory: %s", path)
+        return False
+    return True
+
+
 def scan(directory: str | Path) -> list[InputFile]:
     root = Path(directory)
     if not root.is_dir():
         raise InputError(f"Input directory not found: {root}")
     files: list[InputFile] = []
-    for path in sorted(root.rglob("*")):
+    real_root = root.resolve()
+    candidates: list[Path] = []
+    for current, directories, names in os.walk(root, followlinks=False):
+        current_path = Path(current)
+        directories[:] = [name for name in directories if _is_walkable_directory(current_path / name, real_root)]
+        candidates.extend(current_path / name for name in names)
+    for path in sorted(candidates):
         if not path.is_file() or _is_ignored(path, root):
+            continue
+        if path.is_symlink() or not path.resolve().is_relative_to(real_root):
+            logger.warning("Input file skipped, resolves outside the input directory: %s", path)
             continue
         kind = classify(path)
         if kind == "other" and not path.suffix:

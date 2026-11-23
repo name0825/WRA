@@ -6,6 +6,8 @@ from collections.abc import Iterable
 
 import httpx
 
+from wra.llm.ollama import describe_exception as _describe, redact_url
+
 logger = logging.getLogger(__name__)
 
 _TIMEOUT = 2.0
@@ -29,10 +31,10 @@ def _fetch_v1_model_capabilities(base_url: str) -> tuple[dict[str, list | None] 
         data = response.json()
         return {entry["id"]: entry.get("capabilities") for entry in data["data"]}, False
     except httpx.TransportError as exc:
-        logger.debug("Host unreachable at %s for vision capability check: %s", url, exc)
+        logger.debug("Host unreachable at %s for vision capability check: %s", redact_url(url), _describe(exc))
         return None, True
     except Exception as exc:
-        logger.debug("Could not read %s for vision capability check: %s", url, exc)
+        logger.debug("Could not read %s for vision capability check: %s", redact_url(url), _describe(exc))
         return None, False
 
 
@@ -44,7 +46,7 @@ def _fetch_api_show_capabilities(base_url: str, model: str) -> list | None:
         capabilities = response.json().get("capabilities")
         return list(capabilities) if capabilities is not None else None
     except Exception as exc:
-        logger.debug("Could not read %s for model %s vision capability check: %s", url, model, exc)
+        logger.debug("Could not read %s for model %s vision capability check: %s", redact_url(url), model, _describe(exc))
         return None
 
 
@@ -88,13 +90,13 @@ def _probe_image_support(base_url: str, role: str, model: str, keep_alive: str |
         text_only = _prompt_eval_count(base_url, model, None, keep_alive, _PROBE_COLD_LOAD_TIMEOUT)
         with_image = _prompt_eval_count(base_url, model, [_solid_png_base64()], keep_alive, _PROBE_TIMEOUT)
     except Exception as exc:
-        logger.debug("Image-input probe failed for model '%s' at %s: %s", model, base_url, exc)
+        logger.debug("Image-input probe failed for model '%s' at %s: %s", model, redact_url(base_url), _describe(exc))
         return
     if with_image - text_only < _MIN_IMAGE_TOKENS:
         logger.warning(
             "The server at %s ignores image inputs for model '%s' (prompt tokens %d with image vs %d without); "
             "role '%s' vision stages run blind.",
-            base_url,
+            redact_url(base_url),
             model,
             with_image,
             text_only,

@@ -400,3 +400,74 @@ def test_copied_stylesheet_urls_follow_the_new_placement(tmp_path: Path) -> None
     assert '@import "base.css"' in css
     assert (run_dir / "assets" / "hero.png").is_file()
     assert (run_dir / "assets" / "base.css").is_file()
+
+
+def _link_directory(link: Path, target: Path) -> bool:
+    import os
+    import subprocess
+
+    try:
+        if os.name == "nt":
+            result = subprocess.run(["cmd", "/c", "mklink", "/J", str(link), str(target)], capture_output=True)
+            return result.returncode == 0
+        link.symlink_to(target, target_is_directory=True)
+        return True
+    except OSError:
+        return False
+
+
+def test_scan_skips_links_that_leave_the_input_directory(tmp_path: Path) -> None:
+    from wra.core.inputs import scan
+
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "secret.png").write_bytes(PNG_1x1)
+    root = tmp_path / "input"
+    (root / "assets").mkdir(parents=True)
+    (root / "index.html").write_text("<html><body>Home</body></html>", encoding="utf-8")
+    _png(root / "assets" / "real.png", 4, 4)
+    if not _link_directory(root / "assets" / "linkdir", outside):
+        pytest.skip("directory link could not be created")
+
+    relatives = {item.relative for item in scan(root)}
+    assert "assets/real.png" in relatives
+    assert not any(relative.startswith("assets/linkdir") for relative in relatives)
+
+
+def test_scan_skips_file_symlinks_outside_the_input_directory(tmp_path: Path) -> None:
+    from wra.core.inputs import scan
+
+    outside = tmp_path / "secret.png"
+    outside.write_bytes(PNG_1x1)
+    root = tmp_path / "input"
+    root.mkdir()
+    (root / "index.html").write_text("<html><body>Home</body></html>", encoding="utf-8")
+    try:
+        (root / "logo.png").symlink_to(outside)
+    except OSError:
+        pytest.skip("file symlink could not be created")
+
+    assert {item.relative for item in scan(root)} == {"index.html"}
+
+
+def test_scan_does_not_descend_into_directory_junction_loop(tmp_path):
+    import subprocess
+    from wra.core.inputs import scan
+
+    source = tmp_path / "in"
+    source.mkdir()
+    (source / "index.html").write_text("<html></html>", encoding="utf-8")
+    (source / "about.html").write_text("<html></html>", encoding="utf-8")
+    result = subprocess.run(["cmd", "/c", "mklink", "/J", str(source / "loop"), str(source)], capture_output=True) if __import__("os").name == "nt" else None
+    if result is None or result.returncode != 0:
+        pytest.skip("directory junction could not be created")
+    assert [item.relative for item in scan(source)] == ["about.html", "index.html"]
+
+
+def test_scan_keeps_regular_nested_files(tmp_path):
+    from wra.core.inputs import scan
+
+    (tmp_path / "sub").mkdir()
+    (tmp_path / "index.html").write_text("<html></html>", encoding="utf-8")
+    (tmp_path / "sub" / "page.html").write_text("<html></html>", encoding="utf-8")
+    assert [item.relative for item in scan(tmp_path)] == ["index.html", "sub/page.html"]

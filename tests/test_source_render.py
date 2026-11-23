@@ -91,4 +91,4 @@ def test_a_page_whose_reveal_script_never_runs_would_capture_blank(tmp_path: Pat
 
 def test_reveal_pass_leaves_no_preview_file_behind(tmp_path: Path) -> None:
     render_source_page(_page(OBSERVER), tmp_path, tmp_path / "source.png", BrowserConfig())
-    assert list(tmp_path.glob(".source_preview.html")) == []
+    assert list(tmp_path.glob(".source_preview*")) == []

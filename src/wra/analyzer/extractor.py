@@ -19,7 +19,7 @@ from wra.core.models import (
 )
 
 
-EMAIL_RE = re.compile(r"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}", re.I)
+EMAIL_RE = re.compile(r"[A-Z0-9._%+-]{1,64}@[A-Z0-9.-]{1,253}\.[A-Z]{2,63}", re.I)
 PHONE_RE = re.compile(r"(?<![\d)])(?:\+\d{1,3}[\s.-]?\(?\d{1,4}\)?[\s.-]\d{3,4}[\s.-]\d{4}|\(?0\d{1,2}\)?[\s.-]?\d{3,4}[\s.-]?\d{4}|1[5-8]\d{2}[\s.-]?\d{4})(?!\d)")
 
 

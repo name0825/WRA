@@ -6,7 +6,7 @@ import re
 from typing import Any
 
 SLUG_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
-WINDOWS_DEVICE_NAMES = {"con", "prn", "aux", "nul", *(f"com{number}" for number in range(1, 10)), *(f"lpt{number}" for number in range(1, 10))}
+WINDOWS_DEVICE_NAMES = {"con", "prn", "aux", "nul", *(f"com{number}" for number in range(10)), *(f"lpt{number}" for number in range(10))}
 MAX_JSON_BYTES = 20 * 1024 * 1024
 DEFAULT_ASSET_FOLDER = "assets"
 RESERVED_ASSET_ROOTS = {"final", "original", "iteration", "iterations", "data"}
