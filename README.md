@@ -876,12 +876,13 @@ input:
 
 `scripts/`의 측정 스크립트:
 
-- `run_bench.py <log_dir> [sample ...] [--mode rewrite|refine] [--check]` — 샘플을 벤치마크 설정으로 차례로 돌린다. 샘플마다 `config/config.yaml`을 바꾸고 원래 파일은 백업에서 복원한다.
+- `run_bench.py <log_dir> [sample ...] [--mode rewrite|refine] [--check] [--iterations N]` — 샘플을 벤치마크 설정으로 차례로 돌린다. 샘플마다 `config/config.yaml`을 바꾸고 원래 파일은 백업에서 복원한다.
   - `--mode` (기본 `rewrite`) — `refine`이면 `pipeline.refine.enabled: true`로 돌리고, 실행 메타에 모드를 기록한다.
   - `--check` — 실행하지 않고, 샘플·모드별 설정이 벤치마크 조건(회차 수, refine, 종료 조건 등)에 맞는지 검증해 요약을 출력한다.
+  - `--iterations N` — 회차 수 (기본 `3`, `scripts/run_bench.py` 의 `add_argument` 기준).
   - 회차마다 경로(`initial`, `refine`, `redesign`)가 저장 결과에 함께 기록된다.
 - `aggregate_quality_bench.py <log_dir>` — 저장된 벤치마크 실행을 모델·브라우저 호출 없이 집계한다.
-- `reevaluate_bench.py <bench_dir> [--out] [--limit] [--dry-run] [--force-resume]` — 저장된 회차를 현재 평가기로 다시 채점한다.
+- `reevaluate_bench.py <bench_dir> [--out] [--limit] [--dry-run] [--force-resume] [--offline]` — 저장된 회차를 현재 평가기로 다시 채점한다.
 - `discrimination.py [반복 수] [--legacy-ref GIT_REF]` — 원본과 망가뜨린 변형을 같은 조건으로 채점해 평가기의 변별력을 확인한다.
 - `replay_eval_experiment.py OUT_DIR [--items N] [--limit-trials M] [--dry-run] ...` — 저장된 회차를 num_ctx·스크린샷 크기 조건별로 다시 평가한다.
 - `prefetch_frameworks.py` — CDN 프레임워크 카탈로그를 로컬 캐시에 받아 오프라인 브라우저 평가에 쓴다.
@@ -932,16 +933,16 @@ WRA/
 ├── src/wra/
 │   ├── cli.py
 │   ├── analyzer/       analyzer, extractor, html_parser, assets, vision
-│   ├── browser/        evaluator, contrast, reveal, guard, framework_cache, http_cache, models
+│   ├── browser/        evaluator, contrast, reveal, guard, framework_cache, http_cache, models, craft_measure
 │   ├── core/           config, inputs, preparation, iteration, output, models
 │   ├── creator/        creator
 │   ├── designer/       planner, recovery, schema, site_plan
 │   ├── evaluator/      llm, screenshots, visual_check
-│   ├── generator/      generator, recovery, 결정론적 보정 모듈(*_repair.py)
+│   ├── generator/      generator, recovery, page_render, hangul_wrap, 결정론적 보정 모듈(*_repair.py)
 │   ├── llm/            client, ollama, model_selector, context, recovery, response, schema, vision_capability, byte_fallback
 │   ├── refiner/        refiner
 │   ├── utils/          logging, placeholders
-│   ├── validator/      html, structure, design, anchors, claims, facts, syntax, tokens, visual, browser_errors
+│   ├── validator/      html, structure, design, anchors, claims, facts, syntax, tokens, visual, browser_errors, craft, dates, forms, names, quantities, regression
 │   └── viewer/         server, admin, admin_templates, data, inputs, logs, process, security, settings, templates
 │
 └── tests/              pytest 테스트 (test_*.py)
@@ -955,8 +956,8 @@ WRA/
 - Pydantic
 - PyYAML
 - Pillow (스크린샷 처리)
-- Playwright (optional, `browser` extra)
-- Flask (optional, `viewer` extra: 결과 뷰어·어드민 콘솔)
+- Playwright (브라우저 렌더링·평가, 설치 후 `playwright install chromium` 필요)
+- Flask (결과 뷰어·어드민 콘솔)
 - pytest (optional, `test` extra)
 
 LLM 호출은 `LLMClient` 인터페이스로 추상화되어 있으며 현재 구현은 Ollama 공식 Python 패키지의 `Client`를 사용한다.
