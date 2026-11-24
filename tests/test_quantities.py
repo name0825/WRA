@@ -158,7 +158,7 @@ def test_classed_question_is_lenient_on_the_page_side():
 def _fact_page(html: str, created: bool = False) -> SimpleNamespace:
     from wra.core.models import FeatureModel
 
-    return SimpleNamespace(html=html, created=created, features=FeatureModel())
+    return SimpleNamespace(html=html, created=created, features=FeatureModel(), brief="", is_entry=True)
 
 
 def test_fact_loss_findings_exist_only_where_coverage_is_not_enforced():

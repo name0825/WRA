@@ -91,6 +91,10 @@ Compose freely within it: sections, layouts, components, and rhythm are still yo
 this page should not be a copy of its sibling. What must not change is the material the site is made
 of. A visitor moving between these pages should never wonder whether they left the site.
 
+When the design constraints carry a `user_design`, the client's brief fixed those decisions, whatever
+the design mode. Use its palette hex values as `color_system` and its fonts as `typography` exactly,
+keep its logo in the header, and treat its `layout`, `must`, and `avoid` lists as binding.
+
 ## Layout discipline
 
 - If an opening hero serves the page, give it one clear message or subject-specific visual and a legible action when needed. Do not force a hero onto reference pages or tools, or overload it with competing modules.

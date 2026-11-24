@@ -6,6 +6,7 @@ import re
 from pathlib import Path
 
 import pytest
+from ollama import ResponseError
 
 from wra.cli import creating_config
 from wra.core.inputs import InputError, discover
@@ -1157,3 +1158,34 @@ def test_creator_resizes_context_for_recovery_with_the_previous_draft(monkeypatc
 
     assert client.options[1]["num_ctx"] == len(client.prompts[1])
     assert len(client.prompts[1]) > len(client.prompts[0])
+
+
+class FailingClient:
+    def __init__(self, error: Exception) -> None:
+        self.error = error
+        self.calls = 0
+
+    def generate(self, prompt, model, options=None, images=None, *, think=None, format=None, timeout=None):
+        self.calls += 1
+        raise self.error
+
+
+def test_a_model_that_does_not_exist_is_not_retried() -> None:
+    client = FailingClient(ResponseError("model 'test' not found", 404))
+    with pytest.raises(CreatorError, match="not found"):
+        _creator(client, max_retries=3).create(BRIEF, ASSETS)
+    assert client.calls == 1
+
+
+def test_instance_loss_is_still_retried() -> None:
+    client = FailingClient(ResponseError("No instance found for model", 404))
+    with pytest.raises(CreatorError):
+        _creator(client, max_retries=2).create(BRIEF, ASSETS)
+    assert client.calls == 3
+
+
+def test_a_content_failure_is_still_retried() -> None:
+    client = ReplyClient("not json")
+    with pytest.raises(CreatorError):
+        _creator(client, max_retries=1).create(BRIEF, ASSETS)
+    assert client.calls == 2

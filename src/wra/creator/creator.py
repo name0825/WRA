@@ -4,6 +4,7 @@ import re
 from collections.abc import Callable
 from pathlib import Path
 
+from ollama import ResponseError
 from pydantic import BaseModel, Field, field_validator
 
 from wra.analyzer.extractor import EMAIL_RE, PHONE_RE
@@ -60,6 +61,11 @@ class CreatorError(ValueError):
 
 class UnsupportedClaimError(CreatorError):
     """Raised when a valid draft makes an offer the brief never made."""
+
+
+def _is_model_not_found(exc: Exception) -> bool:
+    """A 404 that is not instance loss: the model never existed, so another attempt cannot help."""
+    return isinstance(exc, ResponseError) and exc.status_code == 404 and "No instance found" not in str(exc)
 
 
 class Creator:
@@ -137,6 +143,9 @@ class Creator:
                 return draft
             except Exception as exc:
                 last_error = exc
+                if _is_model_not_found(exc):
+                    logger.error("Site creation cannot continue: %s", exc)
+                    break
                 if attempt >= self._max_retries:
                     break
                 logger.warning("Site creation attempt %d failed: %s; retrying with repair guidance", attempt + 1, exc)

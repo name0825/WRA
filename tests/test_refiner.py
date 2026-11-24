@@ -436,3 +436,20 @@ def test_no_regressions_leaves_an_empty_block() -> None:
     client = ReplyClient(BETTER)
     _refiner(client).refine(FeatureModel(), PAGE, _evaluation())
     assert "regressions_to_avoid:\n[]" in client.prompts[0]
+
+
+def test_empty_gaps_are_listed_before_clipped_text() -> None:
+    client = ReplyClient(BETTER)
+    _refiner(client).refine(FeatureModel(), PAGE, _evaluation(), visual_findings=["[mobile] clipped_text: heading cut at 390px", "[desktop] empty_gap: 480px blank band below the hero"])
+
+    prompt = client.prompts[0]
+    assert prompt.index("[desktop] empty_gap") < prompt.index("[mobile] clipped_text")
+
+
+def test_unrecognised_visual_findings_keep_their_order() -> None:
+    client = ReplyClient(BETTER)
+    findings = ["first note without a kind", "[mobile] mystery_issue: second", "[desktop] another_unknown: third"]
+    _refiner(client).refine(FeatureModel(), PAGE, _evaluation(), visual_findings=findings)
+
+    prompt = client.prompts[0]
+    assert prompt.index(findings[0]) < prompt.index(findings[1]) < prompt.index(findings[2])

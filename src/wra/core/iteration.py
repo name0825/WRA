@@ -5,11 +5,15 @@ import logging
 import shutil
 
 from wra.browser.models import BrowserEvaluationResult
-from wra.core.models import EVALUATION_DIMENSIONS, ContentFreedom, FACTUAL_ACCURACY_RULE, SOURCE_LANGUAGE_RULE, STRUCTURAL_DIMENSIONS, EvaluationResult, FeatureModel, content_freedom_policy, coverage_is_enforced
+from wra.core.brief import BriefDirectives
+from wra.core.models import EVALUATION_DIMENSIONS, ContentFreedom, FACTUAL_ACCURACY_RULE, FrameworkConfig, SOURCE_LANGUAGE_RULE, STRUCTURAL_DIMENSIONS, EvaluationResult, FeatureModel, content_freedom_policy, coverage_is_enforced
 from wra.core.output import OutputManager
 from wra.core.preparation import PreparedPage
+from wra.generator.logo_insert import insert_missing_logo
 from wra.designer.schema import DesignSpec
+from wra.validator.adherence import find_directive_deviations, find_unapplied_design_tokens
 from wra.validator.anchors import find_broken_anchors
+from wra.validator.brief_facts import find_dropped_brief_facts, locate_brief_facts
 from wra.validator.browser_errors import find_browser_errors
 from wra.validator.claims import find_unsupported_claims
 from wra.validator.craft import find_refinable_craft_defects
@@ -19,6 +23,7 @@ from wra.validator.names import find_dropped_identity_name, find_misnamed_people
 from wra.validator.facts import find_missing_business_facts
 from wra.validator.forms import find_invented_forms
 from wra.validator.html import HTMLValidationResult, validate_html
+from wra.validator.language import find_language_drift
 from wra.validator.regression import find_regressions
 from wra.validator.syntax import find_syntax_defects
 from wra.validator.tokens import find_corrupted_tokens
@@ -105,9 +110,56 @@ def collect_content_findings(page: PreparedPage, html: str, freedom: ContentFree
 
 def collect_fact_loss_findings(page: PreparedPage, html: str, freedom: ContentFreedom) -> list[str]:
     """Source facts the page dropped where coverage is not enforced: a soft penalty and refiner feedback, never a cap."""
-    if page.created or coverage_is_enforced(freedom):
+    if coverage_is_enforced(freedom):
         return []
+    if page.created:
+        return find_dropped_brief_facts(html, page.brief) if page.brief and page.is_entry else []
     return find_dropped_quantities(html, page.html) + find_dropped_questions(html, page.html, reworded_ok=True) + find_dropped_identity_name(html, page.html, page.features)
+
+
+def _source_fact_loss_findings(page: PreparedPage, html: str, freedom: ContentFreedom) -> list[str]:
+    return [] if page.created else collect_fact_loss_findings(page, html, freedom)
+
+
+def collect_missing_brief_facts(page: PreparedPage, html: str, freedom: ContentFreedom) -> list[dict]:
+    """Brief dates, links and items the page dropped, each with the brief entry to restore it from."""
+    if coverage_is_enforced(freedom) or not (page.created and page.brief and page.is_entry):
+        return []
+    return locate_brief_facts(page.brief, find_dropped_brief_facts(html, page.brief, limit=_MAX_MISSING_BRIEF_FACTS))
+
+
+def _missing_facts_kwargs(page: PreparedPage, html: str, freedom: ContentFreedom) -> dict:
+    facts = collect_missing_brief_facts(page, html, freedom)
+    return {"missing_brief_facts": facts} if facts else {}
+
+
+def _adherence_findings(page: PreparedPage, html: str, design_spec, frameworks: FrameworkConfig) -> list[str]:
+    """Where the page ignores the design it was built from or the brief's own directives and language."""
+    findings = find_unapplied_design_tokens(html, design_spec, frameworks) if isinstance(design_spec, DesignSpec) else []
+    directives = page.directives
+    if directives is not None:
+        findings += find_directive_deviations(html, list(directives.palette.values()), list(directives.fonts.values()), directives.logo, directives.nav)
+    if page.created:
+        findings += find_language_drift(html, page.features.metadata.language)
+    return findings
+
+
+_MAX_MISSING_BRIEF_FACTS = 40
+_PALETTE_ROLES = {"background": "background", "bg": "background", "surface": "surface", "text": "text", "muted": "muted_text", "muted_text": "muted_text", "primary": "primary", "accent": "accent"}
+_FONT_ROLES = ("heading", "body")
+
+
+def _apply_user_design(design_spec: DesignSpec, directives: BriefDirectives) -> DesignSpec:
+    """The brief's palette and fonts are not the designer's to change, so they overwrite whatever it chose."""
+    colors = {_PALETTE_ROLES[key]: value for key, value in directives.palette.items() if key in _PALETTE_ROLES}
+    fonts = {key: value for key, value in directives.fonts.items() if key in _FONT_ROLES}
+    design = design_spec.design
+    update = {}
+    if colors:
+        update["color_system"] = design.color_system.model_copy(update=colors)
+    if fonts:
+        update["typography"] = design.typography.model_copy(update=fonts)
+    return design_spec.model_copy(update={"design": design.model_copy(update=update)}) if update else design_spec
 
 
 def _invented_form_findings(page: PreparedPage, html: str) -> list[str]:
@@ -279,7 +331,7 @@ class IterationEngine:
         if self._refines(state):
             logger.info("Current task: refining the best page (score=%.2f)", previous_result.evaluation.overall_score)
             try:
-                html = self._refiner.refine(features, previous_result.html, previous_result.evaluation, design_spec=previous_result.design_spec, content_findings=collect_content_findings(state.page, previous_result.html, self._config.content.freedom) + collect_fact_loss_findings(state.page, previous_result.html, self._config.content.freedom),ux_findings=find_broken_anchors(previous_result.html) + find_browser_errors(previous_result.browser) + find_syntax_defects(previous_result.html) + _brief_fact_findings(state.page, previous_result.html) + _invented_form_findings(state.page, previous_result.html) +find_refinable_craft_defects(previous_result.html, features) + find_refinable_browser_defects(previous_result.browser), visual_findings=find_visual_defects(previous_result.html, features, previous_result.browser) + previous_result.visual_inspection_findings, model=refiner_model.name, think=refiner_model.think, timeout=refiner_model.timeout, asset_root=output_manager.run_dir, regressions=(state.setback or {}).get("regressions"))
+                html = self._refiner.refine(features, previous_result.html, previous_result.evaluation, design_spec=previous_result.design_spec, content_findings=collect_content_findings(state.page, previous_result.html, self._config.content.freedom) + _source_fact_loss_findings(state.page, previous_result.html, self._config.content.freedom),ux_findings=find_broken_anchors(previous_result.html) + find_browser_errors(previous_result.browser) + find_syntax_defects(previous_result.html) + _brief_fact_findings(state.page, previous_result.html) + _invented_form_findings(state.page, previous_result.html) +find_refinable_craft_defects(previous_result.html, features) + find_refinable_browser_defects(previous_result.browser), visual_findings=find_visual_defects(previous_result.html, features, previous_result.browser) + previous_result.visual_inspection_findings + _adherence_findings(state.page, previous_result.html, previous_result.design_spec, self._config.frameworks), model=refiner_model.name, think=refiner_model.think, timeout=refiner_model.timeout, asset_root=output_manager.run_dir, regressions=(state.setback or {}).get("regressions"), **_missing_facts_kwargs(state.page, previous_result.html, self._config.content.freedom))
                 route = "refine"
             except Exception as exc:
                 # A refinement that will not come out valid is not worth an
@@ -298,8 +350,15 @@ class IterationEngine:
                 route = "redesign"
                 design_spec = self._designer.revise(features=features, previous_design_spec=previous_result.design_spec, previous_html=previous_result.html, evaluation=previous_result.evaluation, design_constraints=design_constraints, model=designer_model.name, think=designer_model.think, timeout=designer_model.timeout, allow_forms=state.page.created)
 
+            if state.page.directives is not None:
+                design_spec = _apply_user_design(design_spec, state.page.directives)
             logger.info("Current task: HTML generation")
-            html = self._generator.generate(features, design_spec, generation_rules=self._build_generation_rules(), model=generator_model.name, think=generator_model.think, timeout=generator_model.timeout, asset_root=output_manager.run_dir, preserve_facts=iteration > 1)
+            html = self._generator.generate(features, design_spec, generation_rules=self._build_generation_rules(state.page), model=generator_model.name, think=generator_model.think, timeout=generator_model.timeout, asset_root=output_manager.run_dir, preserve_facts=iteration > 1, **(_missing_facts_kwargs(state.page, previous_result.html, self._config.content.freedom) if previous_result is not None else {}))
+        brief_logo = state.page.directives.logo if state.page.directives is not None else None
+        if brief_logo:
+            html, logo_repairs = insert_missing_logo(html, brief_logo, (features.business.company_name if features.business else None) or features.metadata.title or "")
+            if logo_repairs:
+                logger.info("Repaired missing brief logo: %s", logo_repairs)
         logger.info("Current task: HTML validation")
         validation = validate_html(html, features, content_freedom=self._config.content.freedom)
         browser_result = BrowserEvaluationResult(enabled=False)
@@ -316,7 +375,7 @@ class IterationEngine:
                     logger.info("Current task: visual inspection")
                     inspection_findings = self._visual_inspector.inspect(browser_result, html, model=evaluator_model.name, think=evaluator_model.think, timeout=evaluator_model.timeout)
                 logger.info("Current task: LLM evaluation")
-                evaluation = self._evaluator.evaluate(features, design_spec, html, browser_result=browser_result, content_findings=collect_content_findings(state.page, html, self._config.content.freedom),ux_findings=find_broken_anchors(html) + find_browser_errors(browser_result) + find_syntax_defects(html) + _brief_fact_findings(state.page, html) + _invented_form_findings(state.page, html), visual_findings=find_visual_defects(html, features, browser_result) + inspection_findings, model=evaluator_model.name, think=evaluator_model.think, timeout=evaluator_model.timeout, fact_loss_findings=collect_fact_loss_findings(state.page, html, self._config.content.freedom))
+                evaluation = self._evaluator.evaluate(features, design_spec, html, browser_result=browser_result, content_findings=collect_content_findings(state.page, html, self._config.content.freedom),ux_findings=find_broken_anchors(html) + find_browser_errors(browser_result) + find_syntax_defects(html) + _brief_fact_findings(state.page, html) + _invented_form_findings(state.page, html), visual_findings=find_visual_defects(html, features, browser_result) + inspection_findings + _adherence_findings(state.page, html, design_spec, self._config.frameworks), model=evaluator_model.name, think=evaluator_model.think, timeout=evaluator_model.timeout, fact_loss_findings=collect_fact_loss_findings(state.page, html, self._config.content.freedom))
             except Exception as exc:
                 logger.exception("Evaluation failed for iteration %d, page '%s'", iteration, slug)
                 evaluation_error = exc
@@ -432,6 +491,17 @@ class IterationEngine:
             }
         if page is not None and page.created:
             constraints["page_origin"] = {"kind": "brief", "instruction": "This page is built from a client brief; an honest `mailto:` form is allowed."}
+        if page is not None and page.directives is not None:
+            directives = page.directives
+            constraints["user_design"] = {
+                "palette": directives.palette,
+                "typography": directives.fonts,
+                "logo": directives.logo,
+                "layout": directives.layout,
+                "must": directives.must,
+                "avoid": directives.avoid,
+                "instruction": "Fixed by the client's brief even in auto mode: copy palette into color_system and fonts into typography exactly; keep the logo in the header; layout, must and avoid are binding.",
+            }
         if mode != "auto":
             constraints["available_presets"] = self._config.design.presets
         exploration_axes = (
@@ -446,13 +516,16 @@ class IterationEngine:
         constraints["content_freedom"] = {"level": freedom, "instruction": policy["planning"], "coverage_required": coverage_is_enforced(freedom), "factual_accuracy": FACTUAL_ACCURACY_RULE, "source_language": SOURCE_LANGUAGE_RULE}
         return constraints
 
-    def _build_generation_rules(self) -> list[str]:
+    def _build_generation_rules(self, page: PreparedPage | None = None) -> list[str]:
         freedom = self._config.content.freedom
-        return [
+        rules = [
             f"Content freedom `{freedom}`: {content_freedom_policy(freedom)['authoring']}",
             f"Factual accuracy: {FACTUAL_ACCURACY_RULE}",
             f"Source language: {SOURCE_LANGUAGE_RULE}",
         ]
+        if page is not None and page.directives is not None and page.directives.logo:
+            rules.append(f"Use the logo asset `{page.directives.logo}` in the header via <img>.")
+        return rules
 
     def _finalize(self, result, output_manager):
         logger.info("Finalizing page '%s' from iteration %d", result.slug, result.iteration)

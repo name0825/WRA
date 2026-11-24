@@ -31,10 +31,18 @@ _FENCE_RE = re.compile(r"```(?:html)?\s*(.*?)\s*```", re.IGNORECASE | re.DOTALL)
 _DOCUMENT_RE = re.compile(r"<!DOCTYPE html.*?</html>", re.IGNORECASE | re.DOTALL)
 _FINDING_RE = re.compile(r"corrupted source token: '(?P<source>[^']*)' rendered as '(?P<rendered>[^']*)'")
 _CONTEXT_WIDTH = 45
+_VISUAL_KIND_RE = re.compile(r"\]\s*([a-z_]+):")
+_VISUAL_KIND_ORDER = ("empty_gap", "broken_layout", "overlapping_elements", "unreadable_text", "clipped_text", "broken_image", "raw_markup", "horizontal_overflow")
 
 
 class RefinerError(ValueError):
     """Raised when a page cannot be refined into valid HTML."""
+
+
+def _visual_rank(finding: str) -> int:
+    match = _VISUAL_KIND_RE.search(finding)
+    kind = match.group(1) if match else ""
+    return _VISUAL_KIND_ORDER.index(kind) if kind in _VISUAL_KIND_ORDER else len(_VISUAL_KIND_ORDER)
 
 
 class HTMLRefiner:
@@ -60,7 +68,7 @@ class HTMLRefiner:
         self._ceiling_num_ctx = ceiling_num_ctx
         self._output_headroom_tokens = output_headroom_tokens
 
-    def refine(self, features: FeatureModel, html: str, evaluation: EvaluationResult, design_spec: DesignSpec | None = None, content_findings: list[str] | None = None, ux_findings: list[str] | None = None, visual_findings: list[str] | None = None, model: str | None = None, think: bool | None = None, timeout: float | None = None, asset_root: str | Path | None = None, regressions: list[str] | None = None) -> str:
+    def refine(self, features: FeatureModel, html: str, evaluation: EvaluationResult, design_spec: DesignSpec | None = None, content_findings: list[str] | None = None, ux_findings: list[str] | None = None, visual_findings: list[str] | None = None, model: str | None = None, think: bool | None = None, timeout: float | None = None, asset_root: str | Path | None = None, regressions: list[str] | None = None, missing_brief_facts: list[dict] | None = None) -> str:
         selected_model = model or self._model
         selected_think = self._think if think is None else think
         selected_timeout = self._timeout if timeout is None else timeout
@@ -69,6 +77,7 @@ class HTMLRefiner:
 
         _, placeholder_map = protect_features(features)
         protected_html = protect_text(html, placeholder_map)
+        ordered_findings = sorted(visual_findings or [], key=_visual_rank)
 
         # Data first, instructions last: Ollama drops the front of an over-long
         # prompt, which would otherwise remove the output contract.
@@ -82,8 +91,9 @@ class HTMLRefiner:
             f"weakest_dimensions:\n{json.dumps([{'dimension': name, 'score': score, 'feedback': feedback} for name, score, feedback in weakest], ensure_ascii=False, separators=COMPACT_JSON)}\n\n"
             f"improvement_suggestions:\n{json.dumps(evaluation.improvement_suggestions, ensure_ascii=False, separators=COMPACT_JSON)}\n\n"
             f"content_repairs:\n{json.dumps(self.content_repairs(html, content_findings or []), ensure_ascii=False, separators=COMPACT_JSON)}\n\n"
+            f"{self._missing_brief_facts_block(missing_brief_facts)}"
             f"ux_findings:\n{json.dumps(ux_findings or [], ensure_ascii=False, separators=COMPACT_JSON)}\n\n"
-            f"visual_findings:\n{json.dumps(visual_findings or [], ensure_ascii=False, separators=COMPACT_JSON)}\n\n"
+            f"visual_findings:\n{json.dumps(ordered_findings, ensure_ascii=False, separators=COMPACT_JSON)}\n\n"
             f"regressions_to_avoid:\n{json.dumps(regressions or [], ensure_ascii=False, separators=COMPACT_JSON)}\n\n"
             f"{self._prompt_path.read_text(encoding='utf-8')}"
         )
@@ -176,6 +186,12 @@ class HTMLRefiner:
             )
 
         raise RefinerError(f"Refinement failed after {self._max_retries + 1} attempt(s): {last_error}")
+
+    @staticmethod
+    def _missing_brief_facts_block(facts: list[dict] | None) -> str:
+        if not facts:
+            return ""
+        return f"missing_brief_facts:\n{json.dumps(facts, ensure_ascii=False, separators=COMPACT_JSON)}\n\n"
 
     @staticmethod
     def content_repairs(html: str, findings: list[str]) -> list[dict]:

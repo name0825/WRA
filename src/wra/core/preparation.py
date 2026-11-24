@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from itertools import zip_longest
 from pathlib import Path
 import json
@@ -7,11 +7,13 @@ import shutil
 
 from wra.analyzer.assets import build_asset_infos, build_script_digest, build_style_digest
 from wra.analyzer.vision import VisionAnalyzer, render_source_page
+from wra.core.brief import BriefDirectives
 from wra.core.inputs import InputBundle, InputPage, collect_css, collect_js, copy_assets, page_map_for, rewrite_asset_paths
 from wra.core.models import BusinessInfo, Content, FeatureModel, Media, PageImpression, Requirements, ScriptDigest, SourceAssets, StyleDigest, Structure, WRAConfig
 from wra.core.output import DATA_DIRECTORY
 from wra.creator.creator import feature_model_for
 from wra.designer.site_plan import SitePlan, SitePlanPage, identity_plan
+from wra.validator.language import infer_language
 
 logger = logging.getLogger(__name__)
 
@@ -66,10 +68,27 @@ class PreparedPage:
     sources: tuple[str, ...] = ()
     content_focus: str = ""
     created: bool = False
+    # Only set for a created single-page site, where the brief's own facts can
+    # be held against that one page; with several pages each carries a share.
+    brief: str = ""
+    directives: BriefDirectives | None = None
 
     @property
     def site_path(self) -> Path:
         return self.run_root / f"{self.slug}.html"
+
+
+def _with_output_logo(directives: BriefDirectives | None, asset_map: dict[str, str]) -> BriefDirectives | None:
+    """Swap the brief's logo path for where that file lands in the run, or drop it when no such asset was supplied."""
+    if directives is None or not directives.logo or directives.logo.lower().startswith(("http://", "https://")):
+        return directives
+    reference = directives.logo.replace("\\", "/").split("?")[0].split("#")[0].lstrip("/")
+    reference = reference[2:] if reference.startswith("./") else reference
+    target = asset_map.get(reference.lower()) or asset_map.get(reference.rsplit("/", 1)[-1].lower())
+    if target is None:
+        logger.warning("Brief logo is not among the supplied assets, so it is not enforced: %s", directives.logo)
+    resolved = replace(directives, logo=target)
+    return None if resolved.is_empty() else resolved
 
 
 def merge_feature_models(models: list[FeatureModel], title: str = "") -> FeatureModel:
@@ -279,11 +298,13 @@ class InputPreparer:
         (root / DATA_DIRECTORY).mkdir(parents=True, exist_ok=True)
         (root / DATA_DIRECTORY / "brief.json").write_text(draft.model_dump_json(indent=2), encoding="utf-8")
 
+        directives = _with_output_logo(bundle.directives, bundle.asset_map)
         prepared: list[PreparedPage] = []
         for index, page in enumerate(draft.pages):
             data_dir = root / DATA_DIRECTORY / page.slug
             data_dir.mkdir(parents=True, exist_ok=True)
             features = feature_model_for(draft, page, asset_infos)
+            features.metadata.language = features.metadata.language or infer_language(bundle.brief)
             # No source page means no source styles, scripts, or impression;
             # only the media the client supplied carries over.
             features.source_assets = SourceAssets(assets=asset_infos)
@@ -299,6 +320,8 @@ class InputPreparer:
                 is_entry=index == 0,
                 content_focus=page.purpose,
                 created=True,
+                brief=bundle.brief if len(draft.pages) == 1 and index == 0 else "",
+                directives=directives,
             ))
         logger.info("Site created from brief: pages=%d", len(prepared))
         return prepared

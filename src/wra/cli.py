@@ -23,6 +23,7 @@ from wra.generator.generator import HTMLGenerator
 from wra.generator.page_render import configure_preview_localization
 from wra.generator.recovery import RecoveryPolicy as GeneratorRecoveryPolicy
 from wra.llm.model_selector import ModelSelector
+from wra.llm.preflight import configured_model_names, ensure_browser_available, ensure_models_available
 from wra.llm.vision_capability import warn_if_vision_missing
 from wra.refiner.refiner import HTMLRefiner
 from wra.llm.ollama import OllamaClient, redact_url
@@ -153,6 +154,9 @@ def _run() -> None:
     seed = _resolve_seed(config.ollama.seed)
     logger.info("LLM sampling: temperature=%s seed=%s", config.ollama.temperature, seed)
     llm_client = OllamaClient(config.ollama.base_url, keep_alive=config.ollama.keep_alive, temperature=config.ollama.temperature, seed=seed)
+    ensure_models_available(config.ollama.base_url, configured_model_names(config, creates=bundle.creates))
+    if config.browser.enabled:
+        ensure_browser_available()
     warn_if_vision_missing(config.ollama.base_url, "evaluator", [model.name for model in config.models.evaluator], keep_alive=config.ollama.keep_alive)
     if config.input.vision.enabled and config.models.vision:
         warn_if_vision_missing(config.ollama.base_url, "vision", [model.name for model in config.models.vision], keep_alive=config.ollama.keep_alive)

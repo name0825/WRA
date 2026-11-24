@@ -59,6 +59,8 @@ Implement the DesignSpec's:
 - interaction intent
 - motion level and principles
 
+When a "Required :root tokens" block is given, paste it verbatim as the first rule of your `<style>` and reference those colors and fonts through `var(--color-*)` / `var(--font-*)` instead of retyping the values.
+
 Do not replace it with a generic SaaS, portfolio, landing-page, or template design, and do not introduce a competing visual direction.
 
 ## HTML quality

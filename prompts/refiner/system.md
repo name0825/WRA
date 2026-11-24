@@ -41,6 +41,12 @@ and every place it currently appears. Make all of them, including the ones insid
 `<meta>`, and other head elements where nothing is visible on screen. These are not
 suggestions and not matters of judgement: the source says one thing and the page says another.
 
+`missing_brief_facts`, when present, are dates, links and list items the client's brief states
+and the page dropped. Each entry gives the `fact` and the `source_line` of the brief that holds it.
+Restore every one, copying the fact and the wording of its `source_line` verbatim, into the
+section it belongs to (a dated entry goes back into its timeline, a link into its project or
+contact block, an item into its list). Do not paraphrase them and do not skip any.
+
 `ux_findings`, when present, are confirmed UX defects such as an in-page link whose target
 does not exist, a brief contact fact missing from the page (fix it by adding the fact to
 the footer or contact section), an invented `<form>` the source did not have (remove it and keep the contact facts as `mailto:`/`tel:` links), or a CSS craft defect that names its own fix (`transition: all`, a removed focus outline, disabled zoom). Fix each one, e.g. by adding the missing `id` or pointing the link at a
