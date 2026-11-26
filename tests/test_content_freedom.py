@@ -43,8 +43,8 @@ def test_design_constraints_carry_content_freedom(freedom: str, coverage_require
 
 def test_design_constraints_carry_page_origin_only_for_created_pages() -> None:
     engine = make_engine("low")
-    created = SimpleNamespace(slug="contact", content_focus=None, created=True, directives=None)
-    existing = SimpleNamespace(slug="about", content_focus=None, created=False, directives=None)
+    created = SimpleNamespace(slug="contact", content_focus=None, created=True, directives=None, features=FeatureModel())
+    existing = SimpleNamespace(slug="about", content_focus=None, created=False, directives=None, features=FeatureModel())
 
     assert engine._build_design_constraints(1, page=created)["page_origin"]["kind"] == "brief"
     assert "page_origin" not in engine._build_design_constraints(1, page=existing)

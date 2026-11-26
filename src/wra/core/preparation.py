@@ -304,10 +304,12 @@ class InputPreparer:
             data_dir = root / DATA_DIRECTORY / page.slug
             data_dir.mkdir(parents=True, exist_ok=True)
             features = feature_model_for(draft, page, asset_infos)
-            features.metadata.language = features.metadata.language or infer_language(bundle.brief)
+            features.metadata.language = infer_language(bundle.brief) or features.metadata.language
             # No source page means no source styles, scripts, or impression;
             # only the media the client supplied carries over.
             features.source_assets = SourceAssets(assets=asset_infos)
+            if len(draft.pages) == 1 and index == 0:
+                features.records = bundle.records
             (data_dir / "created.json").write_text(page.model_dump_json(indent=2), encoding="utf-8")
             logger.info("Created page ready: slug=%s entry=%s headings=%d images=%d", page.slug, index == 0, len(page.headings), len(page.images))
             prepared.append(PreparedPage(

@@ -102,3 +102,33 @@ def test_directive_language_and_brief_fact_findings_reach_the_evaluator_and_the_
     assert any(item.startswith(DIRECTIVE_PREFIX) and "#112233" in item for item in visual)
     assert any(item == find_language_drift(english, "ko")[0] for item in visual)
     assert any(MISSING_BRIEF_FACT_PREFIX in item and "Fastify" in item for item in evaluator.fact_loss[0])
+
+
+def test_a_locked_language_reaches_the_rules_the_constraints_and_the_floor_gate(tmp_path: Path) -> None:
+    from wra.core.iteration import collect_floor_violations
+
+    engine = _engine()
+    korean = _page(tmp_path, language="ko")
+
+    rules = engine._build_generation_rules(korean)
+    assert any("fixed to `ko`" in rule and "never translate the brief" in rule for rule in rules)
+    assert "fixed to `ko`" in engine._build_design_constraints(1, page=korean)["output_language"]
+
+    assert not any("fixed to" in rule for rule in engine._build_generation_rules(_page(tmp_path)))
+    assert not any("fixed to" in rule for rule in engine._build_generation_rules(_page(tmp_path, created=False, language="ko")))
+    assert "output_language" not in engine._build_design_constraints(1, page=_page(tmp_path))
+
+    english = "<html lang=\"en\"><body><main>" + "<p>This portfolio presents a developer and the work that developer has shipped.</p>" * 8 + "</main></body></html>"
+    assert any("language" in finding for finding in collect_floor_violations(korean, english, "madmax"))
+    assert not any("language" in finding for finding in collect_floor_violations(_page(tmp_path, language="en"), english, "madmax"))
+
+
+def test_the_records_constraint_forbids_invented_sections(tmp_path: Path) -> None:
+    from wra.core.models import RecordSection
+
+    page = _page(tmp_path)
+    page.features.records = [RecordSection(id="section1", heading="수상")]
+
+    instruction = _engine()._build_design_constraints(1, page=page)["brief_records"]["instruction"]
+
+    assert "only content sections" in instruction and "invent no job title" in instruction

@@ -2,8 +2,10 @@ import importlib.util
 
 import pytest
 
+from test_generator import make_spec
 from wra.browser.contrast import CONTRAST_CANDIDATES_SCRIPT, contrast_failures
 from wra.generator.theme_repair import repair_overridden_root_theme
+from wra.generator.theme_tokens import ensure_theme_skeleton
 
 pytestmark = pytest.mark.skipif(importlib.util.find_spec("playwright") is None, reason="playwright not installed")
 
@@ -105,3 +107,10 @@ def test_author_body_colour_is_kept(tmp_path):
     block = repaired.split('<style data-wra-repair="theme">')[1].split("</style>")[0]
     assert "background-color:transparent" in block
     assert "color:inherit" not in block
+
+
+def test_the_skeleton_does_not_hide_an_author_root_theme(tmp_path):
+    html, _ = ensure_theme_skeleton(_page("html { background: #111; color: #eee; } .band { background-color: #111; padding: 16px; }", _DARK_BODY), make_spec())
+    repaired, repairs = _repair(tmp_path, html)
+    assert len(repairs) == 1
+    assert 'data-wra-repair="theme"' in repaired

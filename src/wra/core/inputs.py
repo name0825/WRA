@@ -8,7 +8,8 @@ import re
 import shutil
 from urllib.parse import quote, unquote
 
-from wra.core.brief import BriefDirectives, parse_brief_directives
+from wra.core.brief import BriefDirectives, parse_brief_directives, parse_brief_records
+from wra.core.models import RecordSection
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +63,9 @@ class InputBundle:
     brief: str = ""
     # What a structured (YAML) brief fixes outright: palette, fonts, logo, nav.
     directives: BriefDirectives | None = None
+    # The dated entries, links and tag lists a structured brief states, which
+    # every generated page has to carry verbatim.
+    records: list[RecordSection] = field(default_factory=list)
     # Media the redesign may place. This is what the models are shown.
     asset_map: dict[str, str] = field(default_factory=dict)
     # Everything the source page needs to render, stylesheets and scripts
@@ -267,7 +271,7 @@ def discover(directory: str | Path, entry: str | None = None, asset_directory: s
     asset_map = {key: target for key, target in render_map.items() if key in media_keys}
 
     if not html_files:
-        bundle = InputBundle(root=root, entry=None, pages=[], files=files, brief=brief, directives=parse_brief_directives(files), asset_map=asset_map, render_map=render_map)
+        bundle = InputBundle(root=root, entry=None, pages=[], files=files, brief=brief, directives=parse_brief_directives(files), records=parse_brief_records(files), asset_map=asset_map, render_map=render_map)
         logger.info("Input discovered: root=%s brief_chars=%d images=%d (creating, no source page)", root, len(brief), len(bundle.files_of("image")))
         return bundle
 

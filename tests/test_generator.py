@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import re
+
 import pytest
 
 from wra.core.models import FeatureModel, Framework, FrameworkConfig
@@ -265,7 +267,7 @@ def test_generator_returns_valid_first_attempt_untouched(tmp_path):
 
     html = generator.generate(FeatureModel(), make_spec())
 
-    assert html == html_response
+    assert re.sub(r'<style id="wra-theme"[^>]*>.*?</style>\n?', "", html, flags=re.DOTALL) == html_response
     assert len(client.calls) == 1
 
 

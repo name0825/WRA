@@ -10,6 +10,7 @@ from wra.generator.fixed_trap_repair import repair_trapped_fixed
 from wra.generator.js_repair import repair_js_syntax
 from wra.generator.logo_repair import repair_oversized_header_logo
 from wra.generator.hangul_wrap import repair_hangul_heading_wrap
+from wra.generator.record_sync import sync_brief_records
 from wra.generator.reveal_repair import repair_js_off_hidden
 from wra.generator.tailwind_repair import repair_tailwind_v3_remnants, repair_unknown_apply_utilities
 from wra.generator.edge_repair import repair_edge_hugging_text
@@ -18,12 +19,14 @@ from wra.generator.table_wrap_repair import repair_wide_tables
 from wra.generator.script_repair import repair_script_mixing
 from wra.generator.skiplink_repair import repair_protruding_skip_link
 from wra.generator.theme_repair import repair_overridden_root_theme
+from wra.generator.theme_tokens import ensure_theme_skeleton
 from wra.llm.client import LLMClient
 from wra.llm.context import COMPACT_JSON, estimate_num_ctx
 from wra.utils.placeholders import protect_features, protect_text, restore
 from wra.validator.anchors import repair_broken_anchors, repair_doubled_url_schemes
 from wra.validator.tokens import repair_corrupted_tokens, repair_dropped_numerals, repair_translated_proper_nouns
 from wra.validator.html import validate_html
+from wra.validator.language import output_language_rule
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +71,7 @@ class HTMLRefiner:
         self._ceiling_num_ctx = ceiling_num_ctx
         self._output_headroom_tokens = output_headroom_tokens
 
-    def refine(self, features: FeatureModel, html: str, evaluation: EvaluationResult, design_spec: DesignSpec | None = None, content_findings: list[str] | None = None, ux_findings: list[str] | None = None, visual_findings: list[str] | None = None, model: str | None = None, think: bool | None = None, timeout: float | None = None, asset_root: str | Path | None = None, regressions: list[str] | None = None, missing_brief_facts: list[dict] | None = None) -> str:
+    def refine(self, features: FeatureModel, html: str, evaluation: EvaluationResult, design_spec: DesignSpec | None = None, content_findings: list[str] | None = None, ux_findings: list[str] | None = None, visual_findings: list[str] | None = None, model: str | None = None, think: bool | None = None, timeout: float | None = None, asset_root: str | Path | None = None, regressions: list[str] | None = None, missing_brief_facts: list[dict] | None = None, language: str | None = None) -> str:
         selected_model = model or self._model
         selected_think = self._think if think is None else think
         selected_timeout = self._timeout if timeout is None else timeout
@@ -92,6 +95,7 @@ class HTMLRefiner:
             f"improvement_suggestions:\n{json.dumps(evaluation.improvement_suggestions, ensure_ascii=False, separators=COMPACT_JSON)}\n\n"
             f"content_repairs:\n{json.dumps(self.content_repairs(html, content_findings or []), ensure_ascii=False, separators=COMPACT_JSON)}\n\n"
             f"{self._missing_brief_facts_block(missing_brief_facts)}"
+            f"{self._language_block(language)}"
             f"ux_findings:\n{json.dumps(ux_findings or [], ensure_ascii=False, separators=COMPACT_JSON)}\n\n"
             f"visual_findings:\n{json.dumps(ordered_findings, ensure_ascii=False, separators=COMPACT_JSON)}\n\n"
             f"regressions_to_avoid:\n{json.dumps(regressions or [], ensure_ascii=False, separators=COMPACT_JSON)}\n\n"
@@ -125,6 +129,13 @@ class HTMLRefiner:
                 refined, script_rewrites = repair_script_mixing(refined, features, self._llm_client, selected_model, think=selected_think, timeout=selected_timeout)
                 if script_rewrites:
                     logger.info("Repaired script-mixing tokens: %s", script_rewrites)
+                refined, record_repairs = sync_brief_records(refined, features.records, self._content_freedom)
+                if record_repairs:
+                    logger.info("Synced brief records: %s", record_repairs)
+                if isinstance(design_spec, DesignSpec):
+                    refined, theme_skeleton = ensure_theme_skeleton(refined, design_spec)
+                    if theme_skeleton:
+                        logger.info("Ensured theme skeleton: %s", theme_skeleton)
                 refined, js_repairs = repair_js_syntax(refined, self._llm_client, selected_model, think=selected_think, timeout=selected_timeout)
                 if js_repairs:
                     logger.info("Repaired JS syntax errors: %s", js_repairs)
@@ -186,6 +197,10 @@ class HTMLRefiner:
             )
 
         raise RefinerError(f"Refinement failed after {self._max_retries + 1} attempt(s): {last_error}")
+
+    @staticmethod
+    def _language_block(language: str | None) -> str:
+        return f"Output language (fixed): {output_language_rule(language)}\n\n" if language else ""
 
     @staticmethod
     def _missing_brief_facts_block(facts: list[dict] | None) -> str:

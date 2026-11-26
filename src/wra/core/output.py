@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from dataclasses import asdict, dataclass
 import json
 from pathlib import Path
@@ -59,6 +60,19 @@ class _Best:
     score: float | None
     html: str
     browser_source: Path | None
+    floor_violations: list[str] | None = None
+
+
+def outranks(score: float | None, violations: int, best_score: float | None, best_violations: int) -> bool:
+    if score is None:
+        return False
+    if best_score is None:
+        return True
+    if (violations == 0) != (best_violations == 0):
+        return violations == 0
+    if violations != best_violations:
+        return violations < best_violations
+    return score > best_score
 
 
 class OutputManager:
@@ -101,7 +115,7 @@ class OutputManager:
     def page_data_dir(self, slug: str) -> Path:
         return self.run_dir / DATA_DIRECTORY / slug
 
-    def save_iteration(self, iteration: int, slug: str, html: str, design_spec: Any | None = None, validation: Any | None = None, evaluation: Any | None = None, browser: Any | None = None, score: float | None = None, path: str | None = None, refine_failed: bool = False, adoptable: bool = True) -> IterationOutput:
+    def save_iteration(self, iteration: int, slug: str, html: str, design_spec: Any | None = None, validation: Any | None = None, evaluation: Any | None = None, browser: Any | None = None, score: float | None = None, path: str | None = None, refine_failed: bool = False, adoptable: bool = True, floor_violations: Sequence[str] | None = None) -> IterationOutput:
         logger.info("Saving iteration artifacts: iteration=%d page=%s mode=%s score=%s", iteration, slug, self.save_mode, score if score is not None else "n/a")
         html_path = design_spec_path = validation_path = evaluation_path = browser_path = None
         if self.save_mode == "all":
@@ -126,6 +140,8 @@ class OutputManager:
                 self._write_json(data_dir / "browser.json", browser)
             if path is not None:
                 self._write_json(data_dir / "route.json", {"path": path, "refine_failed": refine_failed})
+            if floor_violations is not None:
+                self._write_json(data_dir / "floor.json", {"passed": not floor_violations, "violations": list(floor_violations)})
             logger.debug("Iteration artifacts saved: %s", iteration_dir)
 
         best = self._best.get(slug)
@@ -133,8 +149,8 @@ class OutputManager:
         # It must not replace a scored page: `_publish` writes the best straight
         # to the run root, so accepting it overwrites the good page with a
         # broken one -- and disagrees with the loop, which keeps the old best.
-        if best is None or (adoptable and score is not None and (best.score is None or score > best.score)):
-            self._best[slug] = _Best(iteration=iteration, score=score, html=html, browser_source=self._browser_source(browser))
+        if best is None or (adoptable and outranks(score, len(floor_violations or ()), best.score, len(best.floor_violations or ()))):
+            self._best[slug] = _Best(iteration=iteration, score=score, html=html, browser_source=self._browser_source(browser), floor_violations=list(floor_violations) if floor_violations is not None else None)
             logger.info("New best iteration for page '%s': iteration=%d score=%s", slug, iteration, score if score is not None else "n/a")
             # Publish now rather than at the end of the run. Termination is
             # normally disabled, so every run ends by being stopped, and a stop
@@ -163,6 +179,12 @@ class OutputManager:
         self.write_result()
         return final_path
 
+    def replace_best_html(self, slug: str, html: str, floor_violations: Sequence[str]) -> None:
+        best = self._best.get(slug)
+        if best is not None:
+            best.html = html
+            best.floor_violations = list(floor_violations)
+
     def finalize(self, slug: str, fallback_html: str | None = None) -> Path:
         final_path = self._publish(slug, fallback_html=fallback_html)
         best = self._best.get(slug)
@@ -176,8 +198,11 @@ class OutputManager:
         for slug in order:
             best = self._best.get(slug)
             pages[slug] = {"best_iteration": best.iteration if best else None, "best_score": best.score if best else None}
+            if best is not None and best.floor_violations is not None:
+                pages[slug]["floor_met"] = not best.floor_violations
+                pages[slug]["floor_violations"] = list(best.floor_violations)
         entry = next(iter(pages), None)
-        self._write_json(path, {
+        result = {
             "save_mode": self.save_mode,
             "asset_directory": self.asset_directory,
             "pages": pages,
@@ -187,7 +212,10 @@ class OutputManager:
             # Its numbers, repeated for a quick read of the run.
             "best_iteration": pages[entry]["best_iteration"] if entry else None,
             "best_score": pages[entry]["best_score"] if entry else None,
-        })
+        }
+        if entry and "floor_met" in pages[entry]:
+            result["floor_met"] = pages[entry]["floor_met"]
+        self._write_json(path, result)
         return path
 
     @staticmethod

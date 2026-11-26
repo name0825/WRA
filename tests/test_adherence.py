@@ -91,3 +91,14 @@ def test_each_missed_directive_group_yields_one_finding() -> None:
 
 def test_empty_directives_yield_nothing() -> None:
     assert find_directive_deviations("<p>x</p>", [], [], None, []) == []
+
+
+def test_the_injected_theme_block_does_not_count_as_the_page_using_the_design() -> None:
+    bootstrap = FrameworkConfig(css=[Framework(name="Bootstrap", cdn="https://cdn.example/bootstrap.css", tag="link")])
+    themed = '<html><head><style id="wra-theme">:root{--color-primary:#60A5FA;}body{background:var(--color-bg)}</style><style>h1{margin:0}</style></head><body class="container">x</body></html>'
+
+    assert find_unapplied_design_tokens(themed, _spec("Bootstrap"), bootstrap)
+
+    used = themed.replace("h1{margin:0}", "h1{color:var(--color-primary)}")
+    assert find_unapplied_design_tokens(used, _spec("Bootstrap"), bootstrap) == []
+    assert find_directive_deviations(themed, ["#60A5FA"], [], None, []) == []

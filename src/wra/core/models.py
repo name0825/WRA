@@ -3,7 +3,7 @@ import json
 import logging
 import re
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_serializer, model_validator
 
 from wra.browser.models import BrowserConfig
 
@@ -676,6 +676,17 @@ class SemanticAnalysis(BaseModel):
     requirements: Requirements
 
 
+class BriefRecord(BaseModel):
+    id: str
+    fields: dict[str, str | list[str]] = Field(default_factory=dict)
+
+
+class RecordSection(BaseModel):
+    id: str
+    heading: str = ""
+    records: list[BriefRecord] = Field(default_factory=list)
+
+
 class FeatureModel(BaseModel):
     site: Site = Field(default_factory=Site)
     metadata: Metadata = Field(default_factory=Metadata)
@@ -686,6 +697,14 @@ class FeatureModel(BaseModel):
     business: BusinessInfo | None = None
     navigation: dict[str, object] = Field(default_factory=dict)
     requirements: Requirements = Field(default_factory=Requirements)
+    records: list[RecordSection] = Field(default_factory=list)
+
+    @model_serializer(mode="wrap")
+    def _omit_empty_records(self, handler):
+        data = handler(self)
+        if not data.get("records"):
+            data.pop("records", None)
+        return data
 
 
 EVALUATION_DIMENSIONS = (

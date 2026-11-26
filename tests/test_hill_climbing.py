@@ -506,3 +506,157 @@ def test_a_stuck_reveal_is_redesigned_after_a_failed_attempt_even_when_stall_red
 
 def test_a_structural_weakness_without_a_stuck_reveal_is_still_redesigned() -> None:
     assert not _refining_engine()._refines(_stuck_state(forced_visible=0))
+
+
+# --- the floor gate -----------------------------------------------------------
+
+def _floored(iteration: int, score: float | None, violations: list[str]) -> SimpleNamespace:
+    result = _result(iteration, _evaluation(score) if score is not None else None)
+    result.floor_violations = violations
+    return result
+
+
+def test_a_higher_scoring_result_failing_the_floor_is_not_adopted_and_counts_as_a_stall() -> None:
+    state = _state()
+    state.record(_floored(1, 6.0, []))
+    assert not state.record(_floored(2, 9.0, ["brief fact missing from page: item A"]))
+
+    assert state.best.iteration == 1
+    assert state.stalled == 1
+    assert state.setback["floor_violations"] == ["brief fact missing from page: item A"]
+    assert "acceptance floor" in state.setback["instruction"]
+
+
+def test_a_lower_scoring_result_passing_the_floor_replaces_a_failing_best() -> None:
+    state = _state()
+    state.record(_floored(1, 9.0, ["x"]))
+    state.record(_floored(2, 9.5, ["x", "y"]))
+    assert state.best.iteration == 1
+    assert state.stalled == 1
+    assert state.record(_floored(3, 6.0, []))
+    assert state.best.iteration == 3
+    assert state.stalled == 0
+    assert state.setback is None
+
+
+def test_when_every_result_fails_the_floor_the_fewest_violations_are_the_base() -> None:
+    state = _state()
+    state.record(_floored(1, 9.0, ["a", "b", "c"]))
+    assert state.record(_floored(2, 5.0, ["a", "b"]))
+    assert not state.record(_floored(3, 9.9, ["a", "b", "c"]))
+    assert state.record(_floored(4, 6.0, ["a"]))
+    assert state.best.iteration == 4
+
+
+def test_the_setback_lists_at_most_ten_floor_violations() -> None:
+    state = _state()
+    state.record(_floored(1, 6.0, []))
+    state.record(_floored(2, 5.0, [f"v{index}" for index in range(15)]))
+    assert state.setback["floor_violations"] == [f"v{index}" for index in range(10)]
+
+
+def test_regressions_block_adoption_unless_the_best_fails_the_floor_and_the_candidate_passes() -> None:
+    state = _state()
+    state.record(_floored(1, 6.0, []))
+    assert not state.adopts(0, ["lost phone"])
+    assert state.adopts(0, [])
+
+    state = _state()
+    state.record(_floored(1, 6.0, ["x"]))
+    assert state.adopts(0, ["lost phone"])
+    assert not state.adopts(1, ["lost phone"])
+    assert not state.record(_floored(2, 7.0, ["y"]), ["lost phone"])
+    assert state.record(_floored(3, 5.0, []), ["lost phone"])
+    assert state.best.iteration == 3
+
+
+def test_the_threshold_does_not_stop_a_page_whose_best_fails_the_floor() -> None:
+    engine = _engine(_config(patience=0))
+    state = _state()
+    state.record(_floored(1, 9.8, ["x"]))
+    assert not engine._should_terminate(1, state)
+
+    state.record(_floored(2, 9.6, []))
+    assert engine._should_terminate(2, state)
+
+
+def test_patience_counts_a_higher_scoring_failing_result_as_a_stall() -> None:
+    engine = _engine(_config(patience=2))
+    state = _state()
+    state.record(_floored(1, 6.0, []))
+    state.record(_floored(2, 8.0, ["x"]))
+    assert not engine._should_terminate(2, state)
+    state.record(_floored(3, 9.0, ["x"]))
+    assert engine._should_terminate(3, state)
+
+
+FLOOR_BRIEF = "## 서비스\n- Alpha Zeta\n- Bravo Yankee\n- Charlie Xray\n"
+
+
+def _floor_page(items: tuple[str, ...]) -> str:
+    return "<html><body>" + "".join(f"<p>{item}</p>" for item in items) + "</body></html>"
+
+
+ALL_ITEMS = _floor_page(("Alpha Zeta", "Bravo Yankee", "Charlie Xray"))
+TWO_ITEMS = _floor_page(("Alpha Zeta", "Bravo Yankee"))
+ONE_ITEM = _floor_page(("Alpha Zeta",))
+
+
+class _FloorGenerator(_HtmlGenerator):
+    def generate(self, features, design_spec, generation_rules, model, think=None, timeout=None, asset_root=None, preserve_facts=False, **missing):
+        return super().generate(features, design_spec, generation_rules, model)
+
+
+def _run_floor_engine(tmp_path: Path, monkeypatch, pages, evaluations, created=True):
+    monkeypatch.setattr("wra.core.iteration.validate_html", lambda html, features, content_freedom="low": SimpleNamespace(valid=True, errors=[], warnings=[]))
+    monkeypatch.setattr("wra.core.iteration.find_corrupted_tokens", lambda html, features, content_freedom="low": [])
+    config = _config(patience=0)
+    pipeline = config.pipeline.model_copy(update={
+        "max_iterations": len(pages), "evaluation_threshold": 99.0,
+        "refine": config.pipeline.refine.model_copy(update={"enabled": False}),
+        "output": config.pipeline.output.model_copy(update={"save_mode": "best"}),
+    })
+    config = config.model_copy(update={"pipeline": pipeline, "content": config.content.model_copy(update={"freedom": "high"}), "browser": config.browser.model_copy(update={"enabled": False})})
+    engine = IterationEngine(config=config, designer=_NoteDesigner(), generator=_FloorGenerator(pages), evaluator=_ScriptedEvaluator(evaluations))
+    page = PreparedPage(slug="index", relative="index.html", html="", features=FeatureModel(), run_root=tmp_path, data_dir=tmp_path / "data" / "index",
+                        is_entry=True, created=created, brief=FLOOR_BRIEF if created else None)
+    return engine.run_pages([page])
+
+
+def _floor_result_json(tmp_path: Path) -> dict:
+    import json
+
+    return json.loads((tmp_path / "result.json").read_text(encoding="utf-8"))
+
+
+def test_a_higher_scoring_page_that_drops_brief_items_is_not_published(tmp_path: Path, monkeypatch) -> None:
+    results = _run_floor_engine(tmp_path, monkeypatch, [ALL_ITEMS, ONE_ITEM], [_evaluation(6.0), _evaluation(9.0)])
+
+    assert results[0].html == ALL_ITEMS
+    assert (tmp_path / "index.html").read_text(encoding="utf-8") == ALL_ITEMS
+    result = _floor_result_json(tmp_path)
+    assert result["pages"]["index"]["best_iteration"] == 1
+    assert result["pages"]["index"]["floor_met"] is True
+    assert result["floor_met"] is True
+
+
+def test_when_every_page_drops_brief_items_the_fewest_drops_are_published_and_the_miss_is_logged(tmp_path: Path, monkeypatch, caplog) -> None:
+    with caplog.at_level("WARNING", logger="wra.core.iteration"):
+        results = _run_floor_engine(tmp_path, monkeypatch, [ONE_ITEM, TWO_ITEMS], [_evaluation(8.0), _evaluation(5.0)])
+
+    assert results[0].html == TWO_ITEMS
+    assert (tmp_path / "index.html").read_text(encoding="utf-8") == TWO_ITEMS
+    result = _floor_result_json(tmp_path)
+    assert result["pages"]["index"]["floor_met"] is False
+    assert len(result["pages"]["index"]["floor_violations"]) == 1
+    assert results[0].floor_violations == result["pages"]["index"]["floor_violations"]
+    assert any("floor not met" in record.message for record in caplog.records)
+
+
+def test_a_redesign_page_is_selected_by_score_alone(tmp_path: Path, monkeypatch) -> None:
+    results = _run_floor_engine(tmp_path, monkeypatch, [ALL_ITEMS, ONE_ITEM], [_evaluation(6.0), _evaluation(9.0)], created=False)
+
+    assert results[0].html == ONE_ITEM
+    result = _floor_result_json(tmp_path)
+    assert result["pages"]["index"]["best_iteration"] == 2
+    assert result["pages"]["index"]["floor_met"] is True

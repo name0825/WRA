@@ -13,6 +13,8 @@ DIRECTIVE_PREFIX = "brief directive not met"
 
 _CLASS_ATTR_RE = re.compile(r'class\s*=\s*"([^"]*)"', re.IGNORECASE)
 _LINK_TAG_RE = re.compile(r"<link\b[^>]*>", re.IGNORECASE)
+_THEME_STYLE_RE = re.compile(r"<style\b[^>]*\bid\s*=\s*[\"']?wra-theme[\"']?[^>]*>.*?</style\s*>", re.IGNORECASE | re.DOTALL)
+_TOKEN_USE_RE = re.compile(r"var\(\s*--(?:color|font)-")
 
 
 def _theme_text(html: str) -> str:
@@ -20,13 +22,18 @@ def _theme_text(html: str) -> str:
 
 
 def find_unapplied_design_tokens(html: str, design_spec: DesignSpec, frameworks: FrameworkConfig) -> list[str]:
-    """Flag a page that loads the designed CSS framework but uses none of the designed colours."""
+    """Flag a page that loads the designed CSS framework but uses none of the designed colours.
+
+    The injected `wra-theme` block does not count as the page using them; a colour
+    literal or a `var(--color-*)` / `var(--font-*)` reference outside it does.
+    """
     if frameworks.find_css(design_spec.design.framework.css.name) is None:
         return []
     designed = {color for value in design_spec.design.color_system.model_dump().values() for color in _colors_in(str(value))}
     if not designed:
         return []
-    if designed & set(_colors_in(_theme_text(html))):
+    authored = _theme_text(_THEME_STYLE_RE.sub("", html))
+    if designed & set(_colors_in(authored)) or _TOKEN_USE_RE.search(authored):
         return []
     return [
         f"{FRAMEWORK_THEME_PREFIX}: none of the designed colours ({', '.join(sorted(designed))}) appear in the page's CSS, "

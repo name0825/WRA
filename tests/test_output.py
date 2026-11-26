@@ -229,3 +229,76 @@ def test_every_page_is_published_as_it_is_scored(tmp_path: Path) -> None:
     assert (tmp_path / "index.html").is_file() and (tmp_path / "about.html").is_file()
     result = json.loads((tmp_path / "result.json").read_text(encoding="utf-8"))
     assert result["pages"]["about"]["best_score"] == 6.0
+
+
+# --- the floor gate: a page failing deterministic checks is not the best while a passing one exists ---
+
+def _floor_result(tmp_path: Path) -> dict:
+    return json.loads((tmp_path / "result.json").read_text(encoding="utf-8"))
+
+
+def test_a_higher_scoring_page_failing_the_floor_does_not_replace_a_passing_best(tmp_path: Path) -> None:
+    manager = OutputManager(tmp_path, "all")
+    manager.register_pages(["index"])
+    manager.save_iteration(iteration=1, slug="index", html="<html>passing</html>", score=6.0, floor_violations=[])
+    manager.save_iteration(iteration=2, slug="index", html="<html>failing</html>", score=9.0, floor_violations=["brief fact missing from page: item A"])
+
+    assert (tmp_path / "index.html").read_text(encoding="utf-8") == "<html>passing</html>"
+    result = _floor_result(tmp_path)
+    assert result["pages"]["index"] == {"best_iteration": 1, "best_score": 6.0, "floor_met": True, "floor_violations": []}
+    assert result["floor_met"] is True
+
+
+def test_a_lower_scoring_page_passing_the_floor_replaces_a_failing_best(tmp_path: Path) -> None:
+    manager = OutputManager(tmp_path, "all")
+    manager.register_pages(["index"])
+    manager.save_iteration(iteration=1, slug="index", html="<html>failing</html>", score=9.0, floor_violations=["x"])
+    manager.save_iteration(iteration=2, slug="index", html="<html>passing</html>", score=6.0, floor_violations=[])
+
+    assert (tmp_path / "index.html").read_text(encoding="utf-8") == "<html>passing</html>"
+    assert _floor_result(tmp_path)["pages"]["index"]["best_iteration"] == 2
+
+
+def test_when_every_page_fails_the_floor_the_fewest_violations_win_then_the_score(tmp_path: Path) -> None:
+    manager = OutputManager(tmp_path, "all")
+    manager.register_pages(["index"])
+    manager.save_iteration(iteration=1, slug="index", html="<html>two</html>", score=9.0, floor_violations=["a", "b"])
+    manager.save_iteration(iteration=2, slug="index", html="<html>one</html>", score=5.0, floor_violations=["a"])
+    assert (tmp_path / "index.html").read_text(encoding="utf-8") == "<html>one</html>"
+    manager.save_iteration(iteration=3, slug="index", html="<html>one better</html>", score=7.0, floor_violations=["c"])
+    assert (tmp_path / "index.html").read_text(encoding="utf-8") == "<html>one better</html>"
+    manager.save_iteration(iteration=4, slug="index", html="<html>one worse</html>", score=6.0, floor_violations=["d"])
+    assert (tmp_path / "index.html").read_text(encoding="utf-8") == "<html>one better</html>"
+    result = _floor_result(tmp_path)
+    assert result["pages"]["index"]["floor_met"] is False
+    assert result["floor_met"] is False
+
+
+def test_an_unscored_page_never_wins_the_floor_gate(tmp_path: Path) -> None:
+    manager = OutputManager(tmp_path, "all")
+    manager.save_iteration(iteration=1, slug="index", html="<html>failing</html>", score=5.0, floor_violations=["a", "b"])
+    manager.save_iteration(iteration=2, slug="index", html="<broken", score=None, floor_violations=[])
+    assert (tmp_path / "index.html").read_text(encoding="utf-8") == "<html>failing</html>"
+
+
+def test_floor_keys_are_absent_when_no_violations_were_given(tmp_path: Path) -> None:
+    manager = OutputManager(tmp_path, "all")
+    manager.register_pages(["index"])
+    manager.save_iteration(iteration=1, slug="index", html="<html>a</html>", score=7.0)
+
+    result = _floor_result(tmp_path)
+    assert result["pages"]["index"] == {"best_iteration": 1, "best_score": 7.0}
+    assert "floor_met" not in result
+    assert not (tmp_path / "iterations" / "iter1" / "data" / "index" / "floor.json").exists()
+
+
+def test_floor_json_is_written_per_iteration_in_all_mode_only(tmp_path: Path) -> None:
+    manager = OutputManager(tmp_path / "all", "all")
+    manager.save_iteration(iteration=1, slug="index", html="<html>a</html>", score=7.0, floor_violations=["a"])
+    floor = json.loads((tmp_path / "all" / "iterations" / "iter1" / "data" / "index" / "floor.json").read_text(encoding="utf-8"))
+    assert floor == {"passed": False, "violations": ["a"]}
+
+    best_only = OutputManager(tmp_path / "best", "best")
+    best_only.register_pages(["index"])
+    best_only.save_iteration(iteration=1, slug="index", html="<html>a</html>", score=7.0, floor_violations=[])
+    assert not (tmp_path / "best" / "iterations").exists()

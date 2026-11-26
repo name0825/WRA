@@ -453,3 +453,24 @@ def test_unrecognised_visual_findings_keep_their_order() -> None:
 
     prompt = client.prompts[0]
     assert prompt.index(findings[0]) < prompt.index(findings[1]) < prompt.index(findings[2])
+
+
+def test_the_refiner_prompt_fixes_the_output_language_only_when_given() -> None:
+    client = ReplyClient(BETTER)
+    _refiner(client).refine(FeatureModel(), PAGE, _evaluation(), language="ko")
+    prompt = client.prompts[0]
+    assert "Output language (fixed): Output language is fixed to `ko`" in prompt
+    assert prompt.index("Output language (fixed): Output") < prompt.index("ux_findings:")
+
+    quiet = ReplyClient(BETTER)
+    _refiner(quiet).refine(FeatureModel(), PAGE, _evaluation())
+    assert "Output language (fixed): Output" not in quiet.prompts[0]
+
+
+def test_the_refiner_keeps_the_theme_skeleton_on_a_real_design_spec() -> None:
+    from test_generator import make_spec
+
+    refined = _refiner(ReplyClient(BETTER)).refine(FeatureModel(), PAGE, _evaluation(), design_spec=make_spec("Bootstrap"))
+
+    assert refined.count('id="wra-theme"') == 1
+    assert "--bs-body-bg:var(--color-bg)" in refined

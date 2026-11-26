@@ -59,7 +59,9 @@ Implement the DesignSpec's:
 - interaction intent
 - motion level and principles
 
-When a "Required :root tokens" block is given, paste it verbatim as the first rule of your `<style>` and reference those colors and fonts through `var(--color-*)` / `var(--font-*)` instead of retyping the values.
+WRA injects the "Required :root tokens" block as `<style id="wra-theme">` ahead of your styles. Do not redeclare it or remove it; reference those colors and fonts through `var(--color-*)` / `var(--font-*)` instead of retyping the values.
+
+If `Generation Rules` fix an output language, every heading, paragraph, list item, button label, alt text and aria-label is written in that language.
 
 Do not replace it with a generic SaaS, portfolio, landing-page, or template design, and do not introduce a competing visual direction.
 
@@ -141,6 +143,15 @@ Implement the DesignSpec's motion level and nothing beyond it. Every animation a
 Use only the framework dependencies selected by the DesignSpec and listed in the `Available configured frameworks` block.
 
 WRA injects the framework CDN tags after generation, so **do not output framework CDN tags yourself**, and never invent a framework name or CDN URL.
+
+## Brief records
+
+When the Feature Model has `records`, they are the client's own entries, grouped by section. Give every record a home on the page; you may group several record sections into one, reorder records, and present them as cards, a timeline, or a table, but never drop or merge a record.
+
+- Put each record in one element carrying `data-wra-record="<record id>"`, and each field value in an element inside it carrying `data-wra-field="<field key>"`. A list field (`stack`, `items`, `points`) goes in one element holding one child per item.
+- Copy every value verbatim: dates, titles, names, statuses, links, and every list item exactly as written. Do not reformat a date, translate a value, or shorten a link.
+- Prose fields (`summary`, `points`, `body`, `note`) may be reworded only as far as the content freedom entry allows.
+- The two attributes are plain markup; add no styling that depends on them.
 
 ## Output contract
 

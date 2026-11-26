@@ -73,6 +73,14 @@ For a named local weakness, favor readable script-appropriate spacing, resilient
 
 Tokens of the form `WRAREF1`, `WRAREF2`, ... are opaque placeholders standing in for verified literal values (contact details, links). Copy them through verbatim into the output. Never alter, translate, split, reformat, or wrap them, and never invent new ones. They may appear inside `href`/`mailto:`/`tel:` attributes and in visible text.
 
+## Theme and language
+
+Keep `<style id="wra-theme">` exactly as it is; style with `var(--color-*)` / `var(--font-*)` rather than retyping values. When an "Output language (fixed)" block is given, every text you write or rewrite stays in that language.
+
+## Brief records
+
+Elements carrying `data-wra-record` or `data-wra-field` hold the client's own entries. Keep every such element, its attributes, and its text exactly as it is; restyle and move them freely, but never delete, merge, or reword one. Add the same attributes to any entry you restore from `missing_brief_facts`.
+
 ## What not to change
 
 - Do not restructure sections, reorder them, add them, or remove them.

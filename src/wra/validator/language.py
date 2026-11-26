@@ -45,6 +45,13 @@ def infer_language(text: str) -> str | None:
     return None
 
 
+def output_language_rule(language: str) -> str:
+    return (
+        f"Output language is fixed to `{language}`: every heading, paragraph, list item, button label, alt text and aria-label is written in it; "
+        f"never translate the brief; names, URLs and technical terms stay as written; `<html lang=\"{language}\">`."
+    )
+
+
 def find_language_drift(html: str, language: str | None) -> list[str]:
     """Flag a page whose body text is written in a different script than the expected language."""
     if not language:

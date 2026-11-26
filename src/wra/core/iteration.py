@@ -1,5 +1,5 @@
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 import logging
 import shutil
@@ -7,9 +7,10 @@ import shutil
 from wra.browser.models import BrowserEvaluationResult
 from wra.core.brief import BriefDirectives
 from wra.core.models import EVALUATION_DIMENSIONS, ContentFreedom, FACTUAL_ACCURACY_RULE, FrameworkConfig, SOURCE_LANGUAGE_RULE, STRUCTURAL_DIMENSIONS, EvaluationResult, FeatureModel, content_freedom_policy, coverage_is_enforced
-from wra.core.output import OutputManager
+from wra.core.output import OutputManager, outranks
 from wra.core.preparation import PreparedPage
 from wra.generator.logo_insert import insert_missing_logo
+from wra.generator.record_sync import sync_brief_records
 from wra.designer.schema import DesignSpec
 from wra.validator.adherence import find_directive_deviations, find_unapplied_design_tokens
 from wra.validator.anchors import find_broken_anchors
@@ -23,7 +24,7 @@ from wra.validator.names import find_dropped_identity_name, find_misnamed_people
 from wra.validator.facts import find_missing_business_facts
 from wra.validator.forms import find_invented_forms
 from wra.validator.html import HTMLValidationResult, validate_html
-from wra.validator.language import find_language_drift
+from wra.validator.language import find_language_drift, output_language_rule
 from wra.validator.regression import find_regressions
 from wra.validator.syntax import find_syntax_defects
 from wra.validator.tokens import find_corrupted_tokens
@@ -48,6 +49,11 @@ class IterationResult:
     final_path: Path
     visual_inspection_findings: list[str] = field(default_factory=list)
     regressions: list[str] = field(default_factory=list)
+    floor_violations: list[str] = field(default_factory=list)
+
+
+def _floor_violations(result) -> list[str]:
+    return getattr(result, "floor_violations", None) or []
 
 
 @dataclass
@@ -70,12 +76,18 @@ class _PageRun:
     def best_score(self) -> float | None:
         return self.best.evaluation.overall_score if self.best and self.best.evaluation else None
 
+    def adopts(self, violations: int, regressions: Sequence[str]) -> bool:
+        if not regressions:
+            return True
+        return self.best is not None and bool(_floor_violations(self.best)) and violations == 0
+
     def record(self, result: IterationResult, regressions: Sequence[str] = ()) -> bool:
         """Take the result as the new base if it improved on the best so far and lost nothing the best had."""
         self.last = result
         score = result.evaluation.overall_score if result.evaluation else None
-        best = self.best_score
-        improved = (self.best is None or (score is not None and (best is None or score > best))) and not regressions
+        violations = len(_floor_violations(result))
+        best_violations = len(_floor_violations(self.best)) if self.best is not None else 0
+        improved = (self.best is None or outranks(score, violations, self.best_score, best_violations)) and self.adopts(violations, regressions)
         if improved:
             self.best = result
             self.stalled = 0
@@ -133,9 +145,17 @@ def _missing_facts_kwargs(page: PreparedPage, html: str, freedom: ContentFreedom
     return {"missing_brief_facts": facts} if facts else {}
 
 
-def _adherence_findings(page: PreparedPage, html: str, design_spec, frameworks: FrameworkConfig) -> list[str]:
-    """Where the page ignores the design it was built from or the brief's own directives and language."""
-    findings = find_unapplied_design_tokens(html, design_spec, frameworks) if isinstance(design_spec, DesignSpec) else []
+def _locked_language(page: PreparedPage | None) -> str | None:
+    return page.features.metadata.language if page is not None and page.created and page.features.metadata.language else None
+
+
+def _language_kwargs(page: PreparedPage) -> dict:
+    language = _locked_language(page)
+    return {"language": language} if language else {}
+
+
+def _directive_and_language_findings(page: PreparedPage, html: str) -> list[str]:
+    findings: list[str] = []
     directives = page.directives
     if directives is not None:
         findings += find_directive_deviations(html, list(directives.palette.values()), list(directives.fonts.values()), directives.logo, directives.nav)
@@ -144,7 +164,21 @@ def _adherence_findings(page: PreparedPage, html: str, design_spec, frameworks: 
     return findings
 
 
+def _adherence_findings(page: PreparedPage, html: str, design_spec, frameworks: FrameworkConfig) -> list[str]:
+    """Where the page ignores the design it was built from or the brief's own directives and language."""
+    findings = find_unapplied_design_tokens(html, design_spec, frameworks) if isinstance(design_spec, DesignSpec) else []
+    return findings + _directive_and_language_findings(page, html)
+
+
+def collect_floor_violations(page: PreparedPage, html: str, freedom: ContentFreedom) -> list[str]:
+    violations: list[str] = []
+    if page.created and page.brief and page.is_entry and not coverage_is_enforced(freedom):
+        violations += find_dropped_brief_facts(html, page.brief, limit=_FLOOR_BRIEF_FACT_LIMIT)
+    return violations + _directive_and_language_findings(page, html)
+
+
 _MAX_MISSING_BRIEF_FACTS = 40
+_FLOOR_BRIEF_FACT_LIMIT = 1000
 _PALETTE_ROLES = {"background": "background", "bg": "background", "surface": "surface", "text": "text", "muted": "muted_text", "muted_text": "muted_text", "primary": "primary", "accent": "accent"}
 _FONT_ROLES = ("heading", "body")
 
@@ -185,6 +219,15 @@ def _describe_setback(rejected: IterationResult, best: IterationResult | None, r
                 "An attempt from this same starting point lost something the better page had and was discarded, "
                 "whatever it scored; you are revising the better page again, not that one. Keep what the better page "
                 "does well and do not repeat the losses listed under regressions."
+            )
+    floor_violations = _floor_violations(rejected)
+    if floor_violations:
+        note["floor_violations"] = list(floor_violations[:10])
+        if note["score"] is not None and note["best_score"] is not None and note["score"] >= note["best_score"]:
+            note["instruction"] = (
+                "An attempt from this same starting point failed the acceptance floor and was discarded, whatever it "
+                "scored; you are revising the better page again, not that one. Keep what the better page does well and "
+                "do not repeat the failures listed under floor_violations."
             )
     if rejected.evaluation is None:
         note["regressed"] = ["the attempt produced no valid HTML to score"]
@@ -294,8 +337,30 @@ class IterationEngine:
             if state.last is None:
                 logger.warning("Page '%s' produced no result to finalize", state.page.slug)
                 continue
-            results.append(self._finalize(state.best or state.last, output_manager))
+            chosen = state.best or state.last
+            violations = _floor_violations(chosen)
+            if violations:
+                logger.warning("floor not met: page=%s iteration=%d violations=%d: %s", chosen.slug, chosen.iteration, len(violations), violations[:5])
+                chosen = self._repair_unmet_floor(state, chosen, output_manager)
+            results.append(self._finalize(chosen, output_manager))
         return results
+
+    def _repair_unmet_floor(self, state: _PageRun, result: IterationResult, output_manager: OutputManager) -> IterationResult:
+        page = state.page
+        if not (page.created and page.is_entry and page.features.records):
+            return result
+        freedom = self._config.content.freedom
+        html, repairs = sync_brief_records(result.html, page.features.records, freedom)
+        if not repairs:
+            return result
+        validation = validate_html(html, page.features, content_freedom=freedom)
+        violations = collect_floor_violations(page, html, freedom)
+        if not validation.valid or len(violations) >= len(_floor_violations(result)):
+            logger.warning("Brief record sync did not meet the floor: page=%s valid=%s violations=%d -> %d", page.slug, validation.valid, len(_floor_violations(result)), len(violations))
+            return result
+        logger.info("Brief record sync repaired the floor: page=%s repairs=%d violations=%d -> %d", page.slug, len(repairs), len(_floor_violations(result)), len(violations))
+        output_manager.replace_best_html(page.slug, html, violations)
+        return replace(result, html=html, validation=validation, floor_violations=violations)
 
     @staticmethod
     def _build_site_context(pages: list[PreparedPage]) -> dict:
@@ -331,7 +396,7 @@ class IterationEngine:
         if self._refines(state):
             logger.info("Current task: refining the best page (score=%.2f)", previous_result.evaluation.overall_score)
             try:
-                html = self._refiner.refine(features, previous_result.html, previous_result.evaluation, design_spec=previous_result.design_spec, content_findings=collect_content_findings(state.page, previous_result.html, self._config.content.freedom) + _source_fact_loss_findings(state.page, previous_result.html, self._config.content.freedom),ux_findings=find_broken_anchors(previous_result.html) + find_browser_errors(previous_result.browser) + find_syntax_defects(previous_result.html) + _brief_fact_findings(state.page, previous_result.html) + _invented_form_findings(state.page, previous_result.html) +find_refinable_craft_defects(previous_result.html, features) + find_refinable_browser_defects(previous_result.browser), visual_findings=find_visual_defects(previous_result.html, features, previous_result.browser) + previous_result.visual_inspection_findings + _adherence_findings(state.page, previous_result.html, previous_result.design_spec, self._config.frameworks), model=refiner_model.name, think=refiner_model.think, timeout=refiner_model.timeout, asset_root=output_manager.run_dir, regressions=(state.setback or {}).get("regressions"), **_missing_facts_kwargs(state.page, previous_result.html, self._config.content.freedom))
+                html = self._refiner.refine(features, previous_result.html, previous_result.evaluation, design_spec=previous_result.design_spec, content_findings=collect_content_findings(state.page, previous_result.html, self._config.content.freedom) + _source_fact_loss_findings(state.page, previous_result.html, self._config.content.freedom),ux_findings=find_broken_anchors(previous_result.html) + find_browser_errors(previous_result.browser) + find_syntax_defects(previous_result.html) + _brief_fact_findings(state.page, previous_result.html) + _invented_form_findings(state.page, previous_result.html) +find_refinable_craft_defects(previous_result.html, features) + find_refinable_browser_defects(previous_result.browser), visual_findings=find_visual_defects(previous_result.html, features, previous_result.browser) + previous_result.visual_inspection_findings + _adherence_findings(state.page, previous_result.html, previous_result.design_spec, self._config.frameworks), model=refiner_model.name, think=refiner_model.think, timeout=refiner_model.timeout, asset_root=output_manager.run_dir, regressions=(state.setback or {}).get("regressions"), **_missing_facts_kwargs(state.page, previous_result.html, self._config.content.freedom), **_language_kwargs(state.page))
                 route = "refine"
             except Exception as exc:
                 # A refinement that will not come out valid is not worth an
@@ -384,13 +449,14 @@ class IterationEngine:
 
         logger.info("Current task: saving iteration %d for page '%s'", iteration, slug)
         regressions = self._regressions(state, iteration, html, browser_result, evaluation)
-        saved = output_manager.save_iteration(iteration=iteration, slug=slug, html=html, design_spec=design_spec, validation=validation, evaluation=evaluation, browser=browser_result, score=evaluation.overall_score if evaluation else None, path=route, refine_failed=refine_failed, adoptable=not regressions)
+        floor_violations = collect_floor_violations(state.page, html, self._config.content.freedom)
+        saved = output_manager.save_iteration(iteration=iteration, slug=slug, html=html, design_spec=design_spec, validation=validation, evaluation=evaluation, browser=browser_result, score=evaluation.overall_score if evaluation else None, path=route, refine_failed=refine_failed, adoptable=state.adopts(len(floor_violations), regressions), floor_violations=floor_violations)
         logger.info("Iteration %d completed for page '%s': validation=%s score=%s", iteration, slug, validation.valid, f"{evaluation.overall_score:.2f}" if evaluation else "n/a")
         if evaluation_error is not None:
             # The page was saved above; re-raise so an evaluator failure still
             # surfaces instead of silently looping unscored pages forever.
             raise evaluation_error
-        return IterationResult(slug=slug, iteration=iteration, features=features, design_spec=design_spec, html=html, validation=validation, browser=browser_result, evaluation=evaluation, html_path=saved.html_path, validation_path=saved.validation_path, final_path=output_manager.run_dir / f"{slug}.html", visual_inspection_findings=inspection_findings, regressions=regressions)
+        return IterationResult(slug=slug, iteration=iteration, features=features, design_spec=design_spec, html=html, validation=validation, browser=browser_result, evaluation=evaluation, html_path=saved.html_path, validation_path=saved.validation_path, final_path=output_manager.run_dir / f"{slug}.html", visual_inspection_findings=inspection_findings, regressions=regressions, floor_violations=floor_violations)
 
     def _select_models(self) -> dict:
         """One model choice per iteration.
@@ -491,6 +557,18 @@ class IterationEngine:
             }
         if page is not None and page.created:
             constraints["page_origin"] = {"kind": "brief", "instruction": "This page is built from a client brief; an honest `mailto:` form is allowed."}
+        if page is not None and page.features.records:
+            constraints["brief_records"] = {
+                "sections": [{"id": section.id, "heading": section.heading, "records": len(section.records)} for section in page.features.records],
+                "instruction": (
+                    "Plan a home on the page for every section listed in the Feature Model `records`; several may share one section. Never drop a record. "
+                    "These are the only content sections: add no other (a hero, navigation, footer and contact built from listed content are fine); "
+                    "invent no job title, role, tagline, philosophy or strengths."
+                ),
+            }
+        language = _locked_language(page)
+        if language:
+            constraints["output_language"] = output_language_rule(language)
         if page is not None and page.directives is not None:
             directives = page.directives
             constraints["user_design"] = {
@@ -523,6 +601,9 @@ class IterationEngine:
             f"Factual accuracy: {FACTUAL_ACCURACY_RULE}",
             f"Source language: {SOURCE_LANGUAGE_RULE}",
         ]
+        language = _locked_language(page)
+        if language:
+            rules.append(output_language_rule(language))
         if page is not None and page.directives is not None and page.directives.logo:
             rules.append(f"Use the logo asset `{page.directives.logo}` in the header via <img>.")
         return rules
@@ -531,7 +612,7 @@ class IterationEngine:
         logger.info("Finalizing page '%s' from iteration %d", result.slug, result.iteration)
         final_path = output_manager.finalize(result.slug, fallback_html=result.html)
         logger.info("Final output ready: %s", final_path)
-        return IterationResult(slug=result.slug, iteration=result.iteration, features=result.features, design_spec=result.design_spec, html=result.html, validation=result.validation, browser=result.browser, evaluation=result.evaluation, html_path=result.html_path, validation_path=result.validation_path, final_path=final_path)
+        return IterationResult(slug=result.slug, iteration=result.iteration, features=result.features, design_spec=result.design_spec, html=result.html, validation=result.validation, browser=result.browser, evaluation=result.evaluation, html_path=result.html_path, validation_path=result.validation_path, final_path=final_path, floor_violations=_floor_violations(result))
 
     def _should_terminate(self, iteration, state: _PageRun) -> bool:
         termination = self._config.pipeline.termination
@@ -543,7 +624,7 @@ class IterationEngine:
             logger.info("Early termination disabled: continuing to next iteration")
             return False
         best = state.best_score
-        if best is not None and best >= self._config.pipeline.evaluation_threshold:
+        if best is not None and best >= self._config.pipeline.evaluation_threshold and not _floor_violations(state.best):
             logger.info("Page '%s': evaluation threshold reached: %.2f >= %.2f", slug, best, self._config.pipeline.evaluation_threshold)
             return True
         if termination.patience and state.stalled >= termination.patience:

@@ -31,6 +31,13 @@ Copy every checkable fact the brief gives (phone and fax numbers, email addresse
 addresses, opening hours, registration numbers) verbatim into `business`; dropping one is a
 failure.
 
+## Briefs that already have sections
+
+When the brief itself has headed sections (markdown headings, lists of entries), those
+sections are the page's sections: use their headings and every entry as given, and add no
+other content section. Invent no job title, role, tagline, philosophy or strengths block the
+brief does not state.
+
 ## Creative latitude
 
 Choose the number and length of sections from the brief's distinct topics and supported
@@ -64,7 +71,7 @@ A number you invent here is a number the finished page will state as fact.
 ## Language
 
 Write every heading, paragraph, list item, and button label in the language the brief uses.
-A Korean brief produces a Korean site. Keep proper nouns exactly as the brief spells them.
+A Korean brief produces a Korean site, never an English one, whatever language these instructions are in. Keep proper nouns exactly as the brief spells them.
 
 ## Images
 
