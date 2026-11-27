@@ -39,6 +39,7 @@ _TRANSPORT_RETRIES = 3
 _RECOVERY_WAIT_CAP = 600.0
 _PROBE_INTERVAL = 10.0
 _PROBE_TIMEOUT = 30.0
+_RETRY_AFTER_RE = re.compile(r"Try again in (\d+(?:\.\d+)?) ?s", re.IGNORECASE)
 
 
 class LLMTransportError(RuntimeError):
@@ -50,7 +51,14 @@ def _transport_kind(exc: Exception) -> str | None:
         return "empty_body"
     if isinstance(exc, ResponseError) and exc.status_code == 404 and "No instance found" in str(exc):
         return "no_instance"
+    if isinstance(exc, ResponseError) and exc.status_code == 503 and "model_not_ready" in str(exc):
+        return "model_not_ready"
     return None
+
+
+def _retry_after(exc: Exception) -> float | None:
+    match = _RETRY_AFTER_RE.search(str(exc))
+    return float(match.group(1)) if match else None
 
 
 class OllamaClient(LLMClient):
@@ -98,9 +106,10 @@ class OllamaClient(LLMClient):
         while monotonic() < deadline:
             try:
                 self._get_client(_PROBE_TIMEOUT).generate(**probe_kwargs)
-            except Exception:
+            except Exception as exc:
                 failed_probes += 1
-                sleep(max(0.0, min(_PROBE_INTERVAL, deadline - monotonic())))
+                interval = _retry_after(exc) or _PROBE_INTERVAL
+                sleep(max(0.0, min(interval, deadline - monotonic())))
             else:
                 self._responsive_models.add(model)
                 return failed_probes
@@ -171,7 +180,7 @@ class OllamaClient(LLMClient):
                 kind = _transport_kind(exc)
                 if isinstance(exc, json.JSONDecodeError) and kind is None:
                     logger.warning("LLM returned a non-empty invalid body: model=%s body_chars=%d body=%r", model, len(exc.doc), exc.doc[:200])
-                if kind is None or model not in self._responsive_models:
+                if kind is None or (kind != "model_not_ready" and model not in self._responsive_models):
                     logger.error("LLM request failed: model=%s error=%s", model, describe_exception(exc))
                     raise
                 if resends >= _TRANSPORT_RETRIES:

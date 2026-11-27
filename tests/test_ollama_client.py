@@ -234,6 +234,35 @@ def test_failure_logs_never_contain_base_url_credentials(monkeypatch, caplog) ->
     assert "secret" not in logged
 
 
+def _model_not_ready(seconds=10):
+    body = {"message": f"The model is not ready yet: it failed to start, and is being started again. Try again in {seconds} s.", "code": "model_not_ready"}
+    return ResponseError(str(body), 503)
+
+
+def test_model_not_ready_waits_for_the_hinted_delay_then_resends(monkeypatch) -> None:
+    client, record = _scripted_client(
+        monkeypatch,
+        [_model_not_ready(), _reply("second")],
+        [_model_not_ready(7), _reply("pong")],
+    )
+
+    result = client.generate(prompt="hi", model="test-model")
+
+    assert result == "second"
+    assert len(record.sends) == 2
+    assert record.sleeps == [7]
+
+
+def test_persistent_model_not_ready_raises_after_the_recovery_cap(monkeypatch) -> None:
+    client, record = _scripted_client(monkeypatch, [_model_not_ready()], [_model_not_ready() for _ in range(100)])
+
+    with pytest.raises(LLMTransportError):
+        client.generate(prompt="hi", model="test-model")
+
+    assert len(record.sends) == 1
+    assert record.clock[0] >= ollama_module._RECOVERY_WAIT_CAP
+
+
 def test_model_that_never_answered_fails_fast_with_the_original_error(monkeypatch) -> None:
     error = _no_instance()
     client, record = _scripted_client(monkeypatch, [error])
